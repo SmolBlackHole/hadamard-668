@@ -8,14 +8,21 @@ import numpy as np
 
 from gpu import check_orthogonality
 from .base import SearchStrategy
-from constructions import autocorrelation_energy, build_goethals_seidel, build_williamson, symmetric_circulant
+from constructions import (
+    apply_symmetric_flip,
+    autocorrelation_state,
+    build_goethals_seidel,
+    build_williamson,
+    correlation_energy,
+    symmetric_circulant,
+)
 
 
 class AnnealingSearch(SearchStrategy):
     """Verfeinert zirkulante Kandidaten mit temperaturgesteuerten Flips.
 
     Zweck: Durchbricht lokale Minima der zirkulanten Hill-Climb-Suche.
-    Mechanik: Akzeptiert schlechtere Autokorrelationsenergie gemäß exponentieller Temperaturschedule.
+    Mechanik: Aktualisiert die Autokorrelation inkrementell und akzeptiert schlechtere Flips gemäß exponentieller Temperaturschedule.
     Grundlage: Ein Anstieg ``ΔE`` wird mit ``exp(-ΔE / (T · E_scale))`` akzeptiert; ``T`` sinkt exponentiell.
     Pipeline: Kann nur gültige Williamson-Matrizen als Eingabe weiterverfeinern.
     Grenzen: Goethals-Seidel-Ausgaben können nicht als ``refine``-Start dienen.
@@ -48,26 +55,23 @@ class AnnealingSearch(SearchStrategy):
     def _search(self, current: list[np.ndarray], steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
-        best_half = [sequence.copy() for sequence in current]
-        energy = best_energy = autocorrelation_energy(
-            tuple(symmetric_circulant(sequence) for sequence in current))
+        sequences = np.stack(
+            [symmetric_circulant(sequence) for sequence in current])
+        correlations = autocorrelation_state(sequences)
+        energy = best_energy = correlation_energy(correlations) // 2
+        best_sequences = sequences.copy()
 
         def matrices() -> tuple[np.ndarray, dict[str, int], bool]:
-            sequences = [symmetric_circulant(sequence)
-                         for sequence in best_half]
             iterator = iter(self._builders())
-            best_matrix = next(iterator)(*sequences)
+            best_matrix = next(iterator)(*best_sequences)
             best_metrics = check_orthogonality(best_matrix)
             for build in iterator:
-                matrix = build(*sequences)
+                matrix = build(*best_sequences)
                 metrics = check_orthogonality(matrix)
                 if metrics["energy"] < best_metrics["energy"]:
                     best_matrix, best_metrics = matrix, metrics
             return best_matrix, best_metrics, best_metrics["energy"] == 0
 
-        best_matrix, best_metrics, exact = matrices()
-        if exact:
-            return best_matrix, best_metrics, time.perf_counter() - started
         accepted = uphill = best_at = 0
         energy_scale = max(best_energy, 1)
         for step in range(steps):
@@ -75,9 +79,9 @@ class AnnealingSearch(SearchStrategy):
                 (self.t_end / self.t_start) ** (step / steps)
             sequence_index, value_index = rng.integers(
                 0, 4), rng.integers(0, self.HALF)
-            current[sequence_index][value_index] *= -1
-            new_energy = autocorrelation_energy(
-                tuple(symmetric_circulant(sequence) for sequence in current))
+            new_energy = apply_symmetric_flip(
+                sequences, correlations, int(sequence_index),
+                int(value_index)) // 2
             delta = new_energy - energy
             if delta <= 0 or (temperature > 0.0001 and rng.random() < math.exp(-delta / (temperature * energy_scale))):
                 if delta > 0:
@@ -85,10 +89,14 @@ class AnnealingSearch(SearchStrategy):
                 energy, accepted = new_energy, accepted + 1
                 if new_energy < best_energy:
                     best_energy = new_energy
-                    best_half = [sequence.copy() for sequence in current]
+                    best_sequences = sequences.copy()
                     best_at = step
+                    if best_energy == 0:
+                        break
             else:
-                current[sequence_index][value_index] *= -1
+                apply_symmetric_flip(
+                    sequences, correlations, int(sequence_index),
+                    int(value_index))
         best_matrix, best_metrics, _ = matrices()
         elapsed = time.perf_counter() - started
         print(

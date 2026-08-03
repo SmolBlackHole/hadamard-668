@@ -5,7 +5,12 @@ import time
 
 import numpy as np
 
-from constructions import build_goethals_seidel, periodic_autocorrelation_energy
+from constructions import (
+    apply_sequence_flip,
+    autocorrelation_state,
+    build_goethals_seidel,
+    correlation_energy,
+)
 from gpu import check_orthogonality
 from .base import SearchStrategy
 
@@ -14,7 +19,7 @@ class DiffsetSearch(SearchStrategy):
     """Sucht vier zyklische Difference-Set-Indikatoren mit Vorzeichenflips.
 
     Zweck: Erzeugt Goethals-Seidel-Kandidaten im allgemeinen Vier-Sequenzen-Raum.
-    Mechanik: Startet mit quadratischen Resten und minimiert volle periodische Autokorrelationsenergie.
+    Mechanik: Startet mit quadratischen Resten und bewertet Einzelflips über exakte inkrementelle Korrelationsdeltas.
     Grundlage: Mitgliedschaft in vier Teilmengen von ``C_K`` wird als Vorzeichenfolge kodiert; komplementäre Differenzen liefern Goethals-Seidel-Kandidaten.
     Pipeline: Kann nur eine Pipeline eröffnen, weil keine ``refine``-Methode existiert.
     Grenzen: Die lokalen Flips erhalten weder Blockgrößen noch eine Difference-Set-Garantie.
@@ -40,21 +45,23 @@ class DiffsetSearch(SearchStrategy):
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
-        current = self._seed()
-        energy = best_energy = periodic_autocorrelation_energy(tuple(current))
-        best = [sequence.copy() for sequence in current]
+        current = np.stack(self._seed())
+        correlations = autocorrelation_state(current)
+        energy = best_energy = correlation_energy(correlations)
+        best = current.copy()
         for _ in range(steps):
             sequence, index = rng.integers(0, 4), rng.integers(0, self.K)
-            current[sequence][index] *= -1
-            candidate_energy = periodic_autocorrelation_energy(tuple(current))
+            candidate_energy = apply_sequence_flip(
+                current, correlations, int(sequence), int(index))
             if candidate_energy <= energy:
                 energy = candidate_energy
                 if energy < best_energy:
                     best_energy = energy
-                    best = [value.copy() for value in current]
+                    best = current.copy()
                     if energy == 0:
                         break
             else:
-                current[sequence][index] *= -1
+                apply_sequence_flip(
+                    current, correlations, int(sequence), int(index))
         matrix = build_goethals_seidel(*best)
         return matrix, check_orthogonality(matrix), time.perf_counter() - started

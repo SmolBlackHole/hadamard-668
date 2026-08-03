@@ -6,7 +6,14 @@ import time
 import numpy as np
 from tqdm import tqdm
 
-from constructions import autocorrelation_state, build_goethals_seidel, build_propus, symmetric_circulant
+from constructions import (
+    apply_symmetric_flip,
+    autocorrelation_state,
+    build_goethals_seidel,
+    build_propus,
+    correlation_energy,
+    symmetric_circulant,
+)
 from gpu import check_orthogonality
 from .base import SearchStrategy
 
@@ -15,7 +22,7 @@ class BaumertHallSearch(SearchStrategy):
     """Sucht Baumert-Hall-Arrays der Ordnung ``4t``.
 
     Zweck: Reduziert Baumert-Hall- und Propus-Kandidaten auf drei symmetrische zirkulante Sequenzen ``A``, ``B`` und ``C``.
-    Mechanik: Flippt Halbsequenzeintraege und minimiert die gewichtete periodische Autokorrelationsenergie von ``A, B, C``.
+    Mechanik: Flippt Halbsequenzeintraege und aktualisiert die gewichtete periodische Autokorrelation von ``A, B, C`` inkrementell.
     Grundlage: Die Nebenbedingung ``A A^T + 2 B B^T + C C^T = 4t I`` liefert mit der Baumert-Hall-Blockanordnung einen Hadamard-Kandidaten.
     Pipeline: Kann nur eine Pipeline eroeffnen, weil keine ``refine``-Methode existiert.
     Grenzen: Die Suche betrachtet ausschliesslich diese symmetrische Baumert-Hall-Teilfamilie; Energie null der Sequenzen wird abschliessend an der vollstaendigen Matrix geprueft.
@@ -52,51 +59,48 @@ class BaumertHallSearch(SearchStrategy):
         rng = np.random.default_rng(seed)
         half = self.HALF
 
-        cur = [rng.choice([-1, 1], size=half).astype(np.int8) for _ in range(3)]
-        best_half = [s.copy() for s in cur]
-        e = best_e = self._bh_energy(
-            *[symmetric_circulant(s) for s in cur])
+        halves = [rng.choice([-1, 1], size=half).astype(np.int8)
+                  for _ in range(3)]
+        sequences = np.stack(
+            [symmetric_circulant(value) for value in halves])
+        weights = np.array((1, 2, 1), dtype=np.int64)
+        correlations = autocorrelation_state(sequences, weights)
+        e = best_e = correlation_energy(correlations) // 2
+        best_sequences = sequences.copy()
         accepted = best_at = 0
 
         def _best():
-            seqs = [symmetric_circulant(s) for s in best_half]
             matrices = (
-                self._build(seqs[0], seqs[1], seqs[2]),
-                build_propus(seqs[0], seqs[1], seqs[2]),
+                self._build(*best_sequences),
+                build_propus(*best_sequences),
             )
             candidates = ((matrix, check_orthogonality(matrix))
                           for matrix in matrices)
             return min(candidates, key=lambda candidate: candidate[1]["energy"])
 
-        best_M, best_met = _best()
-        if best_met["energy"] == 0:
-            return best_M, best_met, 0.0
-
         print(f"  t={self.T}  vars={3*half}  energy_start={e}")
         pbar = tqdm(total=steps, desc="baumert_hall", unit="steps", ncols=100)
         for step in range(steps):
+            pbar.update(1)
             mi = rng.integers(0, 3)
             pi = rng.integers(0, half)
-            cur[mi][pi] *= -1
-            ne = self._bh_energy(
-                *[symmetric_circulant(s) for s in cur])
+            ne = apply_symmetric_flip(
+                sequences, correlations, int(mi), int(pi),
+                weight=int(weights[mi])) // 2
             if ne <= e:
                 e, accepted = ne, accepted + 1
                 if ne < best_e:
                     best_e = ne
-                    best_half = [s.copy() for s in cur]
+                    best_sequences = sequences.copy()
                     best_at = step
                     if ne == 0:
                         break
-                    if step % 100 == 0:
-                        best_M, best_met = _best()
-                        if best_met["energy"] == 0:
-                            break
             else:
-                cur[mi][pi] *= -1
+                apply_symmetric_flip(
+                    sequences, correlations, int(mi), int(pi),
+                    weight=int(weights[mi]))
             if step % 50 == 0:
                 pbar.set_postfix(e=e, best=best_e, acc=accepted)
-                pbar.update(50)
         pbar.set_postfix(e=e, best=best_e, acc=accepted)
         pbar.close()
 
