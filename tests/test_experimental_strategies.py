@@ -6,6 +6,7 @@ import pytest
 
 from constructions import periodic_autocorrelation_energy
 from gpu import check_orthogonality, xp
+from strategies.baumert import BaumertHallSearch
 from strategies.ca import CASearch
 from strategies.diffset import DiffsetSearch
 from strategies.genetic import GeneticSearch
@@ -111,3 +112,10 @@ def test_ca_runs_as_a_pipeline_refinement() -> None:
 
     _, metrics, _ = Pipeline([(Source(), 0), (CASearch(order=4), 2)]).search(0, 0)
     assert metrics["energy"] <= 48
+
+
+def test_baumert_hall_solves_order_four() -> None:
+    matrix, metrics, _ = BaumertHallSearch(
+        ORDER=4, T=1, HALF=1).search(steps=0, seed=0)
+    assert matrix.shape == (4, 4)
+    assert metrics["energy"] == 0

@@ -11,6 +11,8 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from output import save_run
 from strategies.annealing import AnnealingSearch
+from strategies.backtrack import BacktrackSearch
+from strategies.baumert import BaumertHallSearch
 from strategies.base import Pipeline, SearchStrategy
 from strategies.ca import CASearch
 from strategies.circulant import CirculantSearch
@@ -44,15 +46,29 @@ ALL: dict[str, SearchStrategy] = {
     "genetic": GeneticSearch(),
     "montecarlo": MonteCarloSearch(),
     "cellular": CASearch(),
+    "ca_spectral": CASearch(mode="spectral", kernel_size=5),
+    "baumert": BaumertHallSearch(),
 }
 
 
 def parse_strategy(specification: str) -> SearchStrategy:
-    """Parse one strategy or a pipeline such as ``circulant:100,annealing:50``."""
+    """Parse a single strategy, pipeline, or backtrack-wrapped strategy.
+
+    Syntax: s1:N,s2:M    → Pipeline([(s1, N), (s2, M)])
+            bt:circulant → BacktrackSearch(CirculantSearch())
+    """
+    # Backtrack wrapper
+    if specification.startswith("bt:"):
+        inner_spec = specification[3:]
+        inner = parse_strategy(inner_spec)
+        return BacktrackSearch(inner)
+
     if ":" not in specification:
         if specification not in ALL:
             raise ValueError(f"unknown strategy: {specification}")
         return ALL[specification]
+
+    # Pipeline
     stages = []
     for part in specification.split(","):
         name, steps_text = part.rsplit(":", 1)

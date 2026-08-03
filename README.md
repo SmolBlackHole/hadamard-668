@@ -43,7 +43,7 @@ python -m venv .venv
 .venv\Scripts\python -m pytest
 ```
 
-11 Tests gegen bekannte Hadamard-Matrizen (Sylvester Ordnung 4,8,16; Paley Ordnung 8,12,20; Sylvester Ordnung 1,2), Williamson-Hilfsfunktionen, symmetrische Zirkulante und die Such-Engine.
+Die Test-Suite prueft bekannte Hadamard-Matrizen, Konstruktionen, Strategie-Vertraege, Pipelines sowie Ergebnis-Manifeste.
 
 ## Verifier (4x4 Kontrolle)
 
@@ -88,6 +88,12 @@ beendet die Pipeline sofort. Die Schrittbudgets stehen deshalb in der
 Als Folgestufe eignen sich derzeit `annealing` (nur für Williamson-Matrizen),
 `repair`, `direct` und `cellular`. Die übrigen Strategien besitzen kein
 `refine()` und können nur die erste Phase bilden.
+
+`bt:<strategie>` umschliesst eine einzelne Strategie mit begrenzten,
+geseedeten Neustarts, zum Beispiel `--strategy bt:circulant`. Checkpoints
+werden unter `checkpoints/` abgelegt. `cellular` und `ca_spectral` sind
+derzeit Aliase fuer dieselbe spektrale Variante; `baumert` sucht in der Baumert-Hall-
+Teilfamilie mit drei symmetrischen zirkulanten Sequenzen.
 
 ## Strategien
 
