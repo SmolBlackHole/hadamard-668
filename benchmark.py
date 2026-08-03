@@ -114,8 +114,9 @@ def _benchmark_worker(strategy, steps: int, seed: int, results) -> None:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             started = time.perf_counter()
             _, metrics, _ = strategy.search(steps=steps, seed=seed)
-        results.put({"status": "ok", "backend": xp.__name__,
-                     "seconds": time.perf_counter() - started, "metrics": metrics})
+        results.put({"status": "ok", "backend": getattr(
+            strategy, "compute_backend", xp.__name__),
+            "seconds": time.perf_counter() - started, "metrics": metrics})
     except BaseException as error:
         results.put({"status": "error", "message": str(error)[:120]})
 
@@ -225,8 +226,9 @@ def _gpu_worker(name: str, steps: int) -> None:
     strategy = _gpu_strategy(name)
     started = time.perf_counter()
     _, metrics, _ = strategy.search(steps=steps, seed=SEED)
-    print(json.dumps({"strategy": name, "backend": xp.__name__,
-                      "seconds": round(time.perf_counter() - started, 3), "energy": metrics["energy"]}))
+    print(json.dumps({"strategy": name, "backend": getattr(
+        strategy, "compute_backend", xp.__name__),
+        "seconds": round(time.perf_counter() - started, 3), "energy": metrics["energy"]}))
 
 
 def gpu_compare(steps: int) -> None:

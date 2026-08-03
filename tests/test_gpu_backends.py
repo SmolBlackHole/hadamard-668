@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from gpu import gram_backend, gram_matrix, to_numpy, xp
 from strategies.ca import CASearch
 from strategies.direct import DirectSearch
 from strategies.ising import IsingSearch
@@ -34,7 +35,25 @@ def test_numpy_backend_can_be_forced_for_benchmarks() -> None:
     environment = os.environ | {"HADAMARD_BACKEND": "numpy"}
     result = subprocess.run(
         [sys.executable, "-c",
-            "import sys; sys.path.insert(0, 'src'); from gpu import xp; print(xp.__name__)"],
+            "import sys; sys.path.insert(0, 'src'); from gpu import gram_backend, xp; print(xp.__name__, gram_backend())"],
         cwd=root, env=environment, capture_output=True, text=True, check=True,
     )
-    assert result.stdout.strip() == "numpy"
+    assert result.stdout.strip() == "numpy numpy-float32-to-int32"
+
+
+def test_numpy_float32_gram_is_exact_at_target_order() -> None:
+    matrix = np.random.default_rng(42).choice(
+        [-1, 1], size=(668, 668)).astype(np.int8)
+    expected = matrix.astype(np.int64) @ matrix.astype(np.int64).T
+    np.fill_diagonal(expected, 0)
+    assert np.array_equal(gram_matrix(matrix, backend=np), expected)
+
+
+@pytest.mark.skipif(xp is np, reason="CuPy backend is not active")
+def test_cupy_float32_gram_is_exact_at_target_order() -> None:
+    matrix = np.random.default_rng(42).choice(
+        [-1, 1], size=(668, 668)).astype(np.int8)
+    expected = matrix.astype(np.int64) @ matrix.astype(np.int64).T
+    np.fill_diagonal(expected, 0)
+    assert gram_backend() == "cupy-float32-to-int32"
+    assert np.array_equal(to_numpy(gram_matrix(matrix)), expected)

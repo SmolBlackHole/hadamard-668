@@ -22,7 +22,16 @@ from constructions import (
     periodic_autocorrelation_energy,
     symmetric_circulant,
 )
-from gpu import check_orthogonality
+from gpu import (
+    apply_entry_flip,
+    check_orthogonality,
+    entry_flip_delta,
+    entry_flip_deltas,
+    gram_matrix,
+    metrics_from_gram,
+    to_numpy,
+    xp,
+)
 from output import save_run
 from strategies.annealing import AnnealingSearch
 from strategies.base import Pipeline, SearchStrategy
@@ -281,6 +290,128 @@ def test_metrics_match_independent_reference(matrix: np.ndarray) -> None:
     assert check_orthogonality(matrix) == reference_metrics(matrix)
 
 
+@settings(max_examples=30, deadline=None)
+@given(sign_matrices())
+def test_gram_primitives_match_independent_reference(matrix: np.ndarray) -> None:
+    gram = gram_matrix(matrix)
+    expected = matrix.astype(np.int64) @ matrix.astype(np.int64).T
+    np.fill_diagonal(expected, 0)
+    assert np.array_equal(to_numpy(gram), expected)
+    assert metrics_from_gram(gram) == reference_metrics(matrix)
+
+
+@settings(max_examples=20, deadline=None)
+@given(
+    sign_matrices(),
+    st.lists(st.tuples(st.integers(0, 100), st.integers(0, 100)),
+             min_size=0, max_size=10),
+)
+def test_incremental_entry_flips_match_full_recomputation(
+    original: np.ndarray,
+    raw_flips: list[tuple[int, int]],
+) -> None:
+    matrix = xp.asarray(original, dtype=xp.int8).copy()
+    initial_gram = gram_matrix(matrix)
+    gram = initial_gram.copy()
+    energy = metrics_from_gram(gram)["energy"]
+    flips = [(row % len(original), column % len(original))
+             for row, column in raw_flips]
+
+    for row, column in flips:
+        predicted = entry_flip_delta(matrix, gram, row, column)
+        assert apply_entry_flip(matrix, gram, row, column) == predicted
+        energy += predicted
+        expected_gram = gram_matrix(matrix)
+        assert np.array_equal(to_numpy(gram), to_numpy(expected_gram))
+        assert energy == metrics_from_gram(expected_gram)["energy"]
+
+    for row, column in reversed(flips):
+        apply_entry_flip(matrix, gram, row, column)
+    assert np.array_equal(to_numpy(matrix), original)
+    assert np.array_equal(to_numpy(gram), to_numpy(initial_gram))
+
+
+@settings(max_examples=20, deadline=None)
+@given(sign_matrices(), st.integers(0, 100))
+def test_batched_entry_flip_deltas_match_full_recomputation(
+    original: np.ndarray,
+    raw_row: int,
+) -> None:
+    row = raw_row % len(original)
+    matrix = xp.asarray(original, dtype=xp.int8)
+    gram = gram_matrix(matrix)
+    energy = reference_metrics(original)["energy"]
+    deltas = entry_flip_deltas(matrix, gram, row, np.arange(len(original)))
+    for column, delta in enumerate(deltas):
+        flipped = original.copy()
+        flipped[row, column] *= -1
+        assert int(delta) == reference_metrics(flipped)["energy"] - energy
+
+
+def test_repair_selects_columns_for_correlation_sign() -> None:
+    matrix = np.asarray([
+        [1, 1, 1, -1],
+        [1, 1, -1, 1],
+    ], dtype=np.int8)
+    rng = np.random.default_rng(0)
+    positive = RepairSearch._candidate_columns(matrix, 0, 1, 2, rng)
+    negative = RepairSearch._candidate_columns(matrix, 0, 1, -2, rng)
+    assert np.all(matrix[0, positive] == matrix[1, positive])
+    assert np.all(matrix[0, negative] != matrix[1, negative])
+
+
+def test_repair_evaluates_flips_in_both_violated_rows() -> None:
+    matrix = np.asarray([
+        [1, 1, 1, 1],
+        [1, 1, -1, -1],
+        [1, -1, 1, -1],
+        [-1, 1, 1, -1],
+    ], dtype=np.int8)
+    gram = gram_matrix(matrix, backend=np)
+    columns = np.array([0, 1], dtype=np.int64)
+    moves = RepairSearch._candidate_moves(matrix, gram, (0, 1), columns)
+    assert {row for _, row, _ in moves} == {0, 1}
+    assert len(moves) == 4
+
+
+def test_repair_violation_cache_tracks_exact_global_maximum() -> None:
+    matrix = np.random.default_rng(9).choice(
+        [-1, 1], size=(12, 12)).astype(np.int8)
+    gram = gram_matrix(matrix, backend=np)
+    row_argmax = np.argmax(np.abs(gram), axis=1)
+    row_max = np.abs(gram[np.arange(len(matrix)), row_argmax])
+    for row, column in np.random.default_rng(10).integers(0, 12, size=(20, 2)):
+        apply_entry_flip(matrix, gram, int(row), int(column))
+        RepairSearch._refresh_violations(
+            gram, int(row), row_argmax, row_max)
+        cached = RepairSearch._most_violated_pair(
+            gram, row_argmax, row_max)
+        assert abs(cached[2]) == int(np.abs(gram).max())
+
+
+def test_coupled_entry_flips_and_reverse_rollback_are_exact() -> None:
+    original = np.array([
+        [1, -1, 1, 1],
+        [-1, 1, 1, -1],
+        [1, 1, -1, 1],
+        [1, -1, 1, -1],
+    ], dtype=np.int8)
+    matrix = xp.asarray(original).copy()
+    initial_gram = gram_matrix(matrix)
+    gram = initial_gram.copy()
+    initial_energy = metrics_from_gram(gram)["energy"]
+
+    delta = apply_entry_flip(matrix, gram, 0, 2)
+    delta += apply_entry_flip(matrix, gram, 2, 0)
+    assert metrics_from_gram(gram)["energy"] == initial_energy + delta
+    assert np.array_equal(to_numpy(gram), to_numpy(gram_matrix(matrix)))
+
+    apply_entry_flip(matrix, gram, 2, 0)
+    apply_entry_flip(matrix, gram, 0, 2)
+    assert np.array_equal(to_numpy(matrix), original)
+    assert np.array_equal(to_numpy(gram), to_numpy(initial_gram))
+
+
 def test_refinement_preserves_input_when_no_steps_are_requested() -> None:
     candidate = sylvester(4)
     for strategy in (DirectSearch(order=4), RepairSearch(order=4)):
@@ -288,6 +419,14 @@ def test_refinement_preserves_input_when_no_steps_are_requested() -> None:
         assert np.array_equal(candidate, sylvester(4))
         assert np.array_equal(refined, candidate)
         assert metrics == check_orthogonality(candidate)
+
+
+@pytest.mark.parametrize("strategy", [RepairSearch(12), DirectSearch(12)])
+def test_incremental_full_matrix_search_returns_exact_metrics(strategy) -> None:
+    matrix, metrics, _ = strategy.search(steps=25, seed=4)
+    assert metrics == reference_metrics(matrix)
+    if isinstance(strategy, DirectSearch):
+        assert np.array_equal(matrix, matrix.T)
 
 
 def test_annealing_refinement_requires_williamson_matrix() -> None:
