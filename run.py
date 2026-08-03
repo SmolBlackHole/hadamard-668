@@ -15,22 +15,15 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 from output import save_run
 from gpu import check_orthogonality
 from strategies.annealing import AnnealingSearch
-from strategies.backtrack import BacktrackSearch
 from strategies.baumert import BaumertHallSearch
 from strategies.base import Pipeline, SearchStrategy
-from strategies.ca import CASearch
 from strategies.circulant import CirculantSearch
 from strategies.diffset import DiffsetSearch
-from strategies.direct import DirectSearch
 from strategies.genetic import GeneticSearch
-from strategies.gold import GoldSearch
 from strategies.ising import IsingSearch
 from strategies.montecarlo import MonteCarloSearch
 from strategies.repair import RepairSearch
-from strategies.rowwise import RowwiseSearch
-from strategies.sat import SatSearch
 from strategies.spectral import SpectralSearch
-from strategies.walsh import WalshSearch
 
 
 ALL: dict[str, SearchStrategy] = {
@@ -39,18 +32,11 @@ ALL: dict[str, SearchStrategy] = {
     "annealing": AnnealingSearch(),
     "annealing_w": AnnealingSearch(constructions="williamson"),
     "repair": RepairSearch(),
-    "direct": DirectSearch(),
-    "rowwise": RowwiseSearch(),
     "spectral": SpectralSearch(),
-    "walsh": WalshSearch(),
-    "gold": GoldSearch(),
-    "sat": SatSearch(),
     "ising": IsingSearch(),
     "diffset": DiffsetSearch(),
     "genetic": GeneticSearch(),
     "montecarlo": MonteCarloSearch(),
-    "cellular": CASearch(),
-    "ca_spectral": CASearch(mode="spectral", kernel_size=5),
     "baumert": BaumertHallSearch(),
 }
 
@@ -58,17 +44,10 @@ GPU_INTENSIVE_STRATEGIES = frozenset({"montecarlo"})
 
 
 def parse_strategy(specification: str) -> SearchStrategy:
-    """Parse a single strategy, pipeline, or backtrack-wrapped strategy.
+    """Parse a single strategy or a comma-separated pipeline.
 
     Syntax: s1:N,s2:M    → Pipeline([(s1, N), (s2, M)])
-            bt:circulant → BacktrackSearch(CirculantSearch())
     """
-    # Backtrack wrapper
-    if specification.startswith("bt:"):
-        inner_spec = specification[3:]
-        inner = parse_strategy(inner_spec)
-        return BacktrackSearch(inner)
-
     if ":" not in specification:
         if specification not in ALL:
             raise ValueError(f"unknown strategy: {specification}")
@@ -89,7 +68,7 @@ def method_family(strategy: SearchStrategy) -> str:
         return "hybrid"
     if strategy.name in {"circulant", "hybrid", "annealing", "annealing_w"}:
         return "williamson_propus"
-    if strategy.name in {"direct", "repair"}:
+    if strategy.name == "repair":
         return "local_search"
     return "other"
 
@@ -102,10 +81,9 @@ def derive_seeds(seed: int, runs: int) -> list[int]:
 
 
 def _strategy_names(specification: str) -> set[str]:
-    value = specification.removeprefix("bt:")
     return {
         part.rsplit(":", 1)[0] if ":" in part else part
-        for part in value.split(",")
+        for part in specification.split(",")
     }
 
 

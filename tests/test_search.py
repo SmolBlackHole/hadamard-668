@@ -16,7 +16,6 @@ from strategies.annealing import AnnealingSearch
 from strategies.base import Pipeline, SearchStrategy
 from strategies.circulant import CirculantSearch
 from strategies.repair import RepairSearch
-from strategies.rowwise import RowwiseSearch
 from verifier.known import get_known, paley, sylvester
 
 
@@ -96,22 +95,6 @@ def test_run_writes_each_parallel_seed_separately(tmp_path) -> None:
     assert all((directory / "run.json").is_file() for directory in outputs)
     assert "Run summary" in result.stdout
     assert "best seed=" in result.stdout
-
-
-@pytest.mark.parametrize("order", [4, 8, 12])
-def test_rowwise_solves_small_known_orders(order: int) -> None:
-    _, metrics, _ = RowwiseSearch(order).search(steps=1_000, seed=0)
-    assert metrics["energy"] == 0
-
-
-def test_rowwise_large_order_fills_rows_by_batch_residual() -> None:
-    strategy = RowwiseSearch(24, batch_size=8, local_flips=2)
-    matrix, metrics, _ = strategy.search(steps=48, seed=0)
-    all_ones_energy = check_orthogonality(
-        np.ones((24, 24), dtype=np.int8))["energy"]
-    assert strategy._attempts == 48
-    assert matrix.shape == (24, 24)
-    assert metrics["energy"] < all_ones_energy
 
 
 def test_circulant_search_solves_order_four() -> None:

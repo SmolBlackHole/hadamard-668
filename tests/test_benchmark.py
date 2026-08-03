@@ -6,25 +6,27 @@ import sys
 from pathlib import Path
 
 from benchmark import ORDERS, _cell, benchmark_groups, run_one, steps_for_order
-from strategies.walsh import WalshSearch
+from strategies.circulant import CirculantSearch
 
 
 def test_benchmark_worker_returns_a_completed_result() -> None:
-    result = run_one(lambda order: WalshSearch(order), 4, 1, 0, 5)
+    result = run_one(
+        lambda order: CirculantSearch(ORDER=order, K=order // 4, HALF=(order // 4 + 1) // 2),
+        4, 1, 0, 5)
     assert result["status"] == "ok"
     assert result["metrics"]["energy"] == 0
 
 
 def test_benchmark_worker_reports_a_timeout() -> None:
-    result = run_one(lambda order: WalshSearch(order), 668, 1, 0, 0.01)
+    result = run_one(lambda order: CirculantSearch(), 668, 1, 0, 0.01)
     assert result["status"] == "timeout"
 
 
-def test_benchmark_has_nine_strategies_for_every_order() -> None:
+def test_benchmark_has_eight_strategies_for_every_order() -> None:
     groups = benchmark_groups()
     assert len(groups) == 1
-    assert len(groups[0][1]) == 9
-    assert len(groups[0][1]) * len(ORDERS) == 54
+    assert len(groups[0][1]) == 8
+    assert len(groups[0][1]) * len(ORDERS) == 48
     assert [steps_for_order(order) for order in ORDERS] == [
         2_000, 2_000, 2_000, 2_000, 2_000, 5_000]
 
@@ -33,7 +35,7 @@ def test_full_benchmark_adds_experimental_strategies_and_pipelines() -> None:
     groups = benchmark_groups(include_all=True)
     assert [name for name, _ in groups] == [
         "Individual strategies", "Experimental strategies", "Pipelines"]
-    assert sum(len(strategies) for _, strategies in groups) > 9
+    assert sum(len(strategies) for _, strategies in groups) > 8
 
 
 def test_benchmark_help_works_without_pythonpath() -> None:

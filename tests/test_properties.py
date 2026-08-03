@@ -35,7 +35,6 @@ from gpu import (
 from output import save_run
 from strategies.annealing import AnnealingSearch
 from strategies.base import Pipeline, SearchStrategy
-from strategies.direct import DirectSearch
 from strategies.repair import RepairSearch
 from verifier.known import paley, sylvester
 from verifier.review import review_bundle
@@ -405,44 +404,17 @@ def test_repair_violation_cache_tracks_exact_global_maximum() -> None:
         assert abs(cached[2]) == int(np.abs(gram).max())
 
 
-def test_coupled_entry_flips_and_reverse_rollback_are_exact() -> None:
-    original = np.array([
-        [1, -1, 1, 1],
-        [-1, 1, 1, -1],
-        [1, 1, -1, 1],
-        [1, -1, 1, -1],
-    ], dtype=np.int8)
-    matrix = xp.asarray(original).copy()
-    initial_gram = gram_matrix(matrix)
-    gram = initial_gram.copy()
-    initial_energy = metrics_from_gram(gram)["energy"]
-
-    delta = apply_entry_flip(matrix, gram, 0, 2)
-    delta += apply_entry_flip(matrix, gram, 2, 0)
-    assert metrics_from_gram(gram)["energy"] == initial_energy + delta
-    assert np.array_equal(to_numpy(gram), to_numpy(gram_matrix(matrix)))
-
-    apply_entry_flip(matrix, gram, 2, 0)
-    apply_entry_flip(matrix, gram, 0, 2)
-    assert np.array_equal(to_numpy(matrix), original)
-    assert np.array_equal(to_numpy(gram), to_numpy(initial_gram))
-
-
 def test_refinement_preserves_input_when_no_steps_are_requested() -> None:
     candidate = sylvester(4)
-    for strategy in (DirectSearch(order=4), RepairSearch(order=4)):
-        refined, metrics, _ = strategy.refine(candidate, steps=0, seed=0)
-        assert np.array_equal(candidate, sylvester(4))
-        assert np.array_equal(refined, candidate)
-        assert metrics == check_orthogonality(candidate)
+    refined, metrics, _ = RepairSearch(order=4).refine(candidate, steps=0, seed=0)
+    assert np.array_equal(candidate, sylvester(4))
+    assert np.array_equal(refined, candidate)
+    assert metrics == check_orthogonality(candidate)
 
 
-@pytest.mark.parametrize("strategy", [RepairSearch(12), DirectSearch(12)])
-def test_incremental_full_matrix_search_returns_exact_metrics(strategy) -> None:
-    matrix, metrics, _ = strategy.search(steps=25, seed=4)
+def test_incremental_repair_search_returns_exact_metrics() -> None:
+    matrix, metrics, _ = RepairSearch(12).search(steps=25, seed=4)
     assert metrics == reference_metrics(matrix)
-    if isinstance(strategy, DirectSearch):
-        assert np.array_equal(matrix, matrix.T)
 
 
 def test_annealing_refinement_requires_williamson_matrix() -> None:

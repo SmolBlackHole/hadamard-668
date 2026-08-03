@@ -68,7 +68,7 @@ matrix, metrics, elapsed = CirculantSearch().search(steps=5000, seed=42)
 
 Jeder Lauf schreibt `candidate.csv` und `run.json` in ein neues Verzeichnis unter `runs/`.
 
-Parameter werden über `run.py` gesetzt, zum Beispiel `--strategy rowwise --steps 5000 --seed 42`.
+Parameter werden über `run.py` gesetzt, zum Beispiel `--strategy spectral --steps 5000 --seed 42`.
 
 ### Pipeline
 
@@ -87,17 +87,11 @@ Nullenergie beendet die Pipeline erst nach einer unabhängigen vollständigen
 Gram-Prüfung. Die Budgets stehen in der Strategieangabe; `--steps` wird bei
 einer Pipeline nicht verwendet.
 
-`annealing_w` akzeptiert ausschließlich Williamson-Matrizen. `repair` und
-`direct` können jede passende Vorzeichenmatrix verfeinern; `cellular` und
-`ca_spectral` akzeptieren nur exakt extrahierbare Goethals-Seidel-Matrizen.
-Insbesondere darf `hybrid` nicht vor `annealing_w` stehen, weil `hybrid` auch
+`annealing_w` akzeptiert ausschließlich Williamson-Matrizen. `repair` kann
+jede passende Vorzeichenmatrix verfeinern. Insbesondere darf `hybrid` nicht
+vor `annealing_w` stehen, weil `hybrid` auch
 Goethals-Seidel-Kandidaten liefern kann. Unzulässige Folgestufen werden beim
 Aufbau oder durch ihre Strukturprüfung abgelehnt.
-
-`bt:<strategie>` verteilt `--steps` exakt auf begrenzte, geseedete Restarts.
-Kann die innere Strategie `refine()`, wird der beste gespeicherte Checkpoint
-perturbiert und tatsächlich weiterverwendet. Andernfalls sind es klar
-unabhängige Restarts. Pro Seed bleiben höchstens fünf Checkpoints erhalten.
 
 ### Mehrere Seeds
 
@@ -121,7 +115,7 @@ dieselbe GPU konkurrieren.
 .venv\Scripts\python benchmark.py --all --timeout 60
 ```
 
-Der Standardbenchmark umfasst 54 geordnete Fälle: neun Kernstrategien für die
+Der Standardbenchmark umfasst 48 geordnete Fälle: acht Kernstrategien für die
 Ordnungen `4, 8, 12, 16, 20, 668`. `--all` ergänzt experimentelle Strategien
 und Pipelines. Jeder Fall läuft in einem eigenen Prozess und wird nach dem
 angegebenen Timeout beendet. `benchmark_results.md` enthält Wandzeit,
@@ -134,11 +128,10 @@ bei Mikrovergleichen separat aufgewärmt werden.
 | Gruppe | Strategien | Zustandsraum | Rechenort |
 | --- | --- | --- | --- |
 | Symmetrische Folgen | `circulant`, `annealing_w` | `4 × 84` unabhängige Vorzeichen | CPU/Numba und FFT |
-| Allgemeine Folgen | `diffset`, `genetic`, `montecarlo`, `spectral`, `ising`, `gold`, `walsh` | `4 × 167` | CPU; große Genetic-/Monte-Carlo-Batches auf GPU |
-| Zelluläre Regeln | `cellular`, `ca_spectral`, `ca_fft` | vier periodische 167er-Folgen | CPU-Faltung oder FFT |
+| Allgemeine Folgen | `diffset`, `genetic`, `montecarlo`, `spectral`, `ising` | `4 × 167` | CPU; große Genetic-/Monte-Carlo-Batches auf GPU |
 | Teilkonstruktion | `baumert` | drei symmetrische 167er-Folgen | CPU/Numba |
-| Vollmatrix | `repair`, `direct`, `rowwise` | `668 × 668` beziehungsweise Zeilenbatches | inkrementelle CPU-Deltas; finale Gram-Prüfung optional auf GPU |
-| Solver/Orchestrierung | `sat`, `bt:...`, Pipelines | kompakte Bool-Folgen oder vorhandene Kandidaten | CPU/Z3 beziehungsweise Kindprozesse |
+| Vollmatrix | `repair` | `668 × 668` | inkrementelle CPU-Deltas; finale Gram-Prüfung optional auf GPU |
+| Orchestrierung | Pipelines | vorhandene Kandidaten | CPU |
 
 ### Spectral / Douglas-Rachford
 
@@ -148,12 +141,6 @@ Leistungen `4K` beträgt. Danach folgt die Vorzeichenprojektion im echten
 Douglas-Rachford-Schritt. Dadurch entfallen SVD oder Polarzerlegung einer
 668×668-Matrix vollständig; nur der finale diskrete Kandidat wird als
 Goethals-Seidel-Matrix aufgebaut.
-
-### Direct Local Search
-
-Arbeitet direkt auf der 668×668-Matrix. Gekoppelte Eintragsflips aktualisieren
-die persistente Gram-Matrix in linearer Zeit und behalten den symmetrischen
-Matrixraum bei.
 
 ### Williamson-Konstruktion
 

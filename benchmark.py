@@ -21,18 +21,13 @@ from gpu import xp
 from strategies.annealing import AnnealingSearch
 from strategies.baumert import BaumertHallSearch
 from strategies.base import Pipeline
-from strategies.ca import CASearch
 from strategies.circulant import CirculantSearch
 from strategies.diffset import DiffsetSearch
-from strategies.direct import DirectSearch
 from strategies.genetic import GeneticSearch
-from strategies.gold import GoldSearch
 from strategies.ising import IsingSearch
 from strategies.montecarlo import MonteCarloSearch
 from strategies.repair import RepairSearch
-from strategies.rowwise import RowwiseSearch
 from strategies.spectral import SpectralSearch
-from strategies.walsh import WalshSearch
 
 
 ORDERS = (4, 8, 12, 16, 20, 668)
@@ -40,7 +35,7 @@ STEPS_SMALL = 2_000
 STEPS_BIG = 5_000
 SEED = 42
 TIMEOUT_SECONDS = 60
-GPU_COMPARE_STRATEGIES = ("repair", "direct", "ising", "spectral", "ca", "walsh")
+GPU_COMPARE_STRATEGIES = ("repair", "ising", "spectral")
 
 
 def _circulant(order: int) -> CirculantSearch:
@@ -77,7 +72,6 @@ def benchmark_groups(*, include_all: bool = False):
             ("BaumertHall", _baumert),
             ("Diffset", lambda order: DiffsetSearch(order=order)),
             ("MonteCarlo", lambda order: MonteCarloSearch(order=order)),
-            ("DirectSearch", lambda order: DirectSearch(order=order)),
             ("RepairSearch", lambda order: RepairSearch(order=order)),
             ("Ising", lambda order: IsingSearch(order=order)),
             ("Spectral", lambda order: SpectralSearch(ORDER=order, inner_steps=5)),
@@ -89,11 +83,7 @@ def benchmark_groups(*, include_all: bool = False):
         ("Experimental strategies", (
             ("Hybrid", lambda o: CirculantSearch(constructions="all", ORDER=o, K=o//4,
              HALF=(o//4+1)//2) if o <= 20 else CirculantSearch(constructions="all")),
-            ("Rowwise", lambda order: RowwiseSearch(order=order)),
-            ("Walsh", lambda order: WalshSearch(order=order)),
             ("Genetic", lambda order: GeneticSearch(order=order)),
-            ("Gold/LFSR", lambda order: GoldSearch(order=order)),
-            ("CA spectral", lambda order: CASearch(order=order, mode="spectral")),
         )),
         ("Pipelines", (
             ("Circulant->Annealing", lambda o: Pipeline(
@@ -207,7 +197,7 @@ def main(timeout_seconds: float = TIMEOUT_SECONDS, *, include_all: bool = False)
              "Cell format: `status; e=energy; rms=root-mean-square correlation; orth=orthogonal pairs; t=seconds`.", ""]
     for group, rows in rendered:
         lines.extend(_render_table(group, rows))
-    report = "\n".join(lines)
+    report = "\n".join(lines).rstrip()
     Path("benchmark_results.md").write_text(report + "\n", encoding="utf-8")
     print("\n" + report)
     print("Saved: benchmark_results.md")
@@ -215,9 +205,8 @@ def main(timeout_seconds: float = TIMEOUT_SECONDS, *, include_all: bool = False)
 
 def _gpu_strategy(name: str):
     factories = {
-        "repair": RepairSearch, "direct": DirectSearch, "ising": IsingSearch,
-        "spectral": lambda: SpectralSearch(inner_steps=1), "ca": CASearch,
-        "walsh": WalshSearch,
+        "repair": RepairSearch, "ising": IsingSearch,
+        "spectral": lambda: SpectralSearch(inner_steps=1),
     }
     return factories[name]()
 

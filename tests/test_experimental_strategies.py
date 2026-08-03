@@ -8,94 +8,20 @@ from constructions import (
     apply_sequence_flip,
     apply_symmetric_flip,
     autocorrelation_state,
-    build_goethals_seidel,
     correlation_energy,
     periodic_autocorrelation_energy,
     symmetric_circulant,
 )
 from gpu import check_orthogonality, to_numpy, xp
 from strategies.annealing import AnnealingSearch
-from strategies.backtrack import BacktrackSearch
 from strategies.baumert import BaumertHallSearch
-from strategies.ca import CASearch
 from strategies.circulant import CirculantSearch
 from strategies.diffset import DiffsetSearch
-from strategies.direct import DirectSearch
 from strategies.genetic import GeneticSearch
-from strategies.gold import GoldSearch
 from strategies.ising import IsingSearch
 from strategies.montecarlo import MonteCarloSearch
 from strategies.repair import RepairSearch
-from strategies.rowwise import RowwiseSearch
-from strategies.sat import SatSearch
 from strategies.spectral import SpectralSearch
-from strategies.walsh import WalshSearch, _fwht
-from strategies.base import Pipeline, SearchStrategy
-
-
-def _metrics(energy: int) -> dict[str, int]:
-    return {
-        "energy": energy,
-        "orthogonal_pairs": 0,
-        "max_abs_correlation": 1,
-    }
-
-
-class _RecordingSearch(SearchStrategy):
-    ORDER = 4
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, int, int]] = []
-
-    @property
-    def name(self) -> str:
-        return "recording"
-
-    def search(self, steps: int, seed: int):
-        self.calls.append(("search", steps, seed))
-        matrix = np.full((4, 4), 1 if len(self.calls) % 2 else -1, dtype=np.int8)
-        return matrix, _metrics(100 - len(self.calls)), 0.0
-
-
-class _RecordingRefiner(_RecordingSearch):
-    def refine(self, matrix: np.ndarray, steps: int, seed: int):
-        self.calls.append(("refine", steps, seed))
-        return matrix.copy(), _metrics(100 - len(self.calls)), 0.0
-
-
-def test_backtrack_splits_the_exact_step_budget(tmp_path) -> None:
-    inner = _RecordingSearch()
-    strategy = BacktrackSearch(
-        inner, max_backtracks=3, checkpoint_dir=str(tmp_path))
-
-    strategy.search(steps=10, seed=20)
-
-    assert inner.calls == [
-        ("search", 3, 20),
-        ("search", 3, 21),
-        ("search", 2, 22),
-        ("search", 2, 23),
-    ]
-    assert sum(steps for _, steps, _ in inner.calls) == 10
-
-
-def test_backtrack_refines_the_saved_checkpoint(tmp_path) -> None:
-    inner = _RecordingRefiner()
-    strategy = BacktrackSearch(
-        inner,
-        perturbation=0,
-        max_backtracks=2,
-        checkpoint_dir=str(tmp_path),
-    )
-
-    strategy.search(steps=8, seed=30)
-
-    assert inner.calls == [
-        ("search", 3, 30),
-        ("refine", 3, 31),
-        ("refine", 2, 32),
-    ]
-    assert len(list(tmp_path.glob("*.pkl"))) == 3
 
 
 def reference_periodic_energy(sequences: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]) -> int:
@@ -112,26 +38,6 @@ def test_periodic_autocorrelation_matches_reference() -> None:
     sequences = tuple(np.array([1, -1, 1], dtype=np.int8) for _ in range(4))
     assert periodic_autocorrelation_energy(
         sequences) == reference_periodic_energy(sequences)
-
-
-def test_walsh_builds_sylvester_order_four() -> None:
-    _, metrics, _ = WalshSearch(4).search(steps=1, seed=0)
-    assert metrics["energy"] == 0
-
-
-def test_gold_search_is_deterministic() -> None:
-    first, first_metrics, _ = GoldSearch(4).search(steps=1, seed=1)
-    second, second_metrics, _ = GoldSearch(4).search(steps=1, seed=2)
-    assert np.array_equal(first, second)
-    assert first_metrics == second_metrics
-    assert np.all(np.isin(first, (-1, 1)))
-
-
-@pytest.mark.parametrize("order", [4, 8, 12])
-def test_sat_search_solves_small_known_orders(order: int) -> None:
-    _, metrics, _ = SatSearch(order, timeout_seconds=5).search(
-        steps=1, seed=0)
-    assert metrics["energy"] == 0
 
 
 def test_ising_search_is_seeded() -> None:
@@ -199,101 +105,14 @@ def test_ising_gradient_matches_finite_differences() -> None:
     assert np.allclose(gradient, numerical, rtol=2e-3, atol=2e-2)
 
 
-def test_ca_identity_rule_preserves_sequences() -> None:
-    sequences = np.random.default_rng(3).choice(
-        (-1, 1), size=(4, 7)).astype(np.int8)
-    rule = np.array((0, 1, 0), dtype=np.float32)
-    assert np.array_equal(CASearch._apply_ca(sequences, rule), sequences)
-
-
-def test_ca_identity_spectral_filter_preserves_sequences() -> None:
-    sequences = np.random.default_rng(4).choice(
-        (-1, 1), size=(4, 7)).astype(np.int8)
-    weights = np.ones(7 // 2 + 1)
-    assert np.array_equal(
-        CASearch._apply_spectral(sequences, weights), sequences)
-
-
-def test_ca_rule_mutation_changes_one_weight() -> None:
-    rule = np.zeros(5)
-    mutated = CASearch._mutate_rule(rule, np.random.default_rng(0))
-    assert np.count_nonzero(mutated != rule) == 1
-    assert np.all(np.isin(mutated, (-1.0, 0.0, 1.0)))
-
-
-def test_ca_refinement_preserves_input_and_best_energy() -> None:
-    sequences = np.random.default_rng(5).choice(
-        (-1, 1), size=(4, 3)).astype(np.int8)
-    original = build_goethals_seidel(*sequences)
-    before = original.copy()
-    refined, metrics, _ = CASearch(order=12).refine(
-        original, steps=4, seed=0)
-    assert np.array_equal(original, before)
-    assert metrics == check_orthogonality(refined)
-    assert np.all(np.isin(refined, (-1, 1)))
-
-
-def test_ca_refinement_rejects_incompatible_matrix() -> None:
-    with pytest.raises(ValueError, match="Goethals-Seidel"):
-        CASearch(order=4).refine(
-            np.ones((4, 4), dtype=np.int8), steps=1, seed=0)
-
-
-def test_ca_runs_as_a_pipeline_refinement() -> None:
-    class Source(SearchStrategy):
-        ORDER = 12
-
-        @property
-        def name(self) -> str:
-            return "source"
-
-        def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
-            sequences = np.random.default_rng(6).choice(
-                (-1, 1), size=(4, 3)).astype(np.int8)
-            matrix = build_goethals_seidel(*sequences)
-            return matrix, check_orthogonality(matrix), 0.0
-
-    matrix, metrics, _ = Pipeline(
-        [(Source(), 0), (CASearch(order=12), 2)]).search(0, 0)
-    assert metrics == check_orthogonality(matrix)
-
-
-def test_walsh_transform_round_trip() -> None:
-    values = np.random.default_rng(7).normal(size=(4, 8)).astype(np.float32)
-    assert np.allclose(_fwht(_fwht(values)) / 8, values)
-
-
-def test_walsh_sequence_mutation_stays_compact_and_binary() -> None:
-    sequences = np.random.default_rng(8).choice(
-        (-1, 1), size=(4, 7)).astype(np.int8)
-    mutated = WalshSearch._mutate_sequences(
-        sequences, 8, np.random.default_rng(9))
-    assert mutated.shape == (4, 7)
-    assert mutated.dtype == np.int8
-    assert np.all(np.isin(mutated, (-1, 1)))
-
-
-def test_sat_uses_four_compact_sequences_as_base_variables() -> None:
-    strategy = SatSearch(28, timeout_seconds=1)
-    variables = strategy._variables()
-    assert len(variables) == 4
-    assert sum(map(len, variables)) == 28
-
-
 @pytest.mark.parametrize("strategy", [
     CirculantSearch(ORDER=4, K=1, HALF=1),
     AnnealingSearch(ORDER=4, K=1, HALF=1),
     RepairSearch(4),
-    DirectSearch(4),
     DiffsetSearch(4),
     GeneticSearch(4, population_size=4),
     SpectralSearch(ORDER=4, inner_steps=1),
     IsingSearch(4),
-    CASearch(4),
-    WalshSearch(4),
-    SatSearch(4, timeout_seconds=1),
-    GoldSearch(4),
-    RowwiseSearch(4),
     BaumertHallSearch(ORDER=4, T=1, HALF=1),
 ])
 def test_cpu_strategies_follow_result_contract(strategy) -> None:

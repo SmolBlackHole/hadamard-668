@@ -10,17 +10,13 @@ import numpy as np
 import pytest
 
 from gpu import gram_backend, gram_matrix, to_numpy, xp
-from strategies.ca import CASearch
-from strategies.direct import DirectSearch
 from strategies.ising import IsingSearch
 from strategies.repair import RepairSearch
 from strategies.spectral import SpectralSearch
-from strategies.walsh import WalshSearch
 
 
 @pytest.mark.parametrize("strategy", [
-    RepairSearch(4), DirectSearch(4), IsingSearch(4),
-    SpectralSearch(ORDER=4, inner_steps=1), CASearch(order=4), WalshSearch(4),
+    RepairSearch(4), IsingSearch(4), SpectralSearch(ORDER=4, inner_steps=1),
 ])
 def test_full_matrix_strategies_return_host_sign_matrices(strategy) -> None:
     matrix, metrics, _ = strategy.search(steps=1, seed=1)
