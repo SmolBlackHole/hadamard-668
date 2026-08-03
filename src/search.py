@@ -3,25 +3,26 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from tqdm import tqdm
 
-from verifier.verify import independent_audit, normalized_sha256
+from verifier.verify import independent_audit
 
 # --- gpu setup --------------------------------------------------------------
 _xp: Any = np
 try:
-    import os as _os
     import glob as _glob
     import site as _site
-    _nvidia = _os.path.join(_site.getsitepackages()[0], "nvidia")
-    for _dll in set(_os.path.dirname(p) for p in _glob.glob(_os.path.join(_nvidia, "**", "*.dll"), recursive=True)):
-        _os.environ["PATH"] = _dll + ";" + _os.environ.get("PATH", "")
-    _os.environ.setdefault("CUDA_PATH", _nvidia)
+    _nvidia = os.path.join(_site.getsitepackages()[0], "nvidia")
+    for _dll in set(os.path.dirname(p) for p in _glob.glob(os.path.join(_nvidia, "**", "*.dll"), recursive=True)):
+        os.environ["PATH"] = _dll + ";" + os.environ.get("PATH", "")
+    os.environ.setdefault("CUDA_PATH", _nvidia)
 
     import warnings
     with warnings.catch_warnings():
@@ -31,6 +32,14 @@ try:
     _xp = _cp
 except Exception:
     pass
+
+
+def _progress(total: int, desc: str) -> tqdm | AbstractContextManager:
+    """tqdm bar, or no-op in batch mode."""
+    if os.environ.get("BATCH"):
+        from contextlib import nullcontext
+        return nullcontext()
+    return tqdm(total=total, desc=desc, unit="steps", dynamic_ncols=True)
 
 
 # --- config -----------------------------------------------------------------
@@ -140,32 +149,29 @@ def direct_search(steps: int = STEPS, seed: int = SEED) -> tuple[np.ndarray, dic
     e = best_e = _gram_off_diagonal_energy(M)
     accepted = best_at = 0
 
-    pbar = tqdm(total=steps, desc="direct", unit="steps")
-    for step in range(steps):
-        i, j = rng.integers(0, ORDER), rng.integers(0, ORDER)
-        if i == j:
-            continue
-        M[i, j] *= -1
-        M[j, i] *= -1
-        ne = _gram_off_diagonal_energy(M)
-        if ne <= e:
-            e, accepted = ne, accepted + 1
-            if ne < best_e:
-                best_e, best, best_at = ne, M.copy(), step
-                if ne == 0:
-                    break
-        else:
+    with _progress(total=steps, desc="direct") as pbar:
+        for step in range(steps):
+            i, j = rng.integers(0, ORDER), rng.integers(0, ORDER)
+            if i == j:
+                continue
             M[i, j] *= -1
             M[j, i] *= -1
-        if step % 50 == 0:
-            pbar.set_postfix(e=e, best=best_e, acc=accepted)
-            pbar.update(50)
-    pbar.set_postfix(e=e, best=best_e, acc=accepted)
-    pbar.close()
+            ne = _gram_off_diagonal_energy(M)
+            if ne <= e:
+                e, accepted = ne, accepted + 1
+                if ne < best_e:
+                    best_e, best, best_at = ne, M.copy(), step
+                    if ne == 0:
+                        break
+            else:
+                M[i, j] *= -1
+                M[j, i] *= -1
+            if step % 50 == 0 and isinstance(pbar, tqdm):
+                pbar.set_postfix(e=e, best=best_e, acc=accepted)
+                pbar.update(50)
 
     elapsed = time.perf_counter() - t0
-    print(
-        f"  best_energy={best_e}  found@step={best_at}  accepted={accepted}  {elapsed:.1f}s")
+    print(f"  seed={seed}  best_energy={best_e}  found@step={best_at}  accepted={accepted}  {elapsed:.1f}s")
     return best, check_orthogonality(best), elapsed
 
 
@@ -215,31 +221,28 @@ def williamson_search(steps: int = STEPS, seed: int = SEED) -> tuple[np.ndarray,
         tuple(_symmetric_circulant(m) for m in current))
     accepted = best_at = 0
 
-    tqdm.write(f"  sub_order={K}  vars={4 * half}  energy_start={e}")
-    pbar = tqdm(total=steps, desc="williamson", unit="steps")
-    for step in range(steps):
-        mi, pi = rng.integers(0, 4), rng.integers(0, half)
-        current[mi][pi] *= -1
-        ne = _autocorrelation_energy(
-            tuple(_symmetric_circulant(m) for m in current))
-        if ne <= e:
-            e, accepted = ne, accepted + 1
-            if ne < best_e:
-                best_e, best_half, best_at = ne, [
-                    m.copy() for m in current], step
-                if ne == 0:
-                    break
-        else:
+    print(f"  sub_order={K}  vars={4 * half}  energy_start={e}")
+    with _progress(total=steps, desc="williamson") as pbar:
+        for step in range(steps):
+            mi, pi = rng.integers(0, 4), rng.integers(0, half)
             current[mi][pi] *= -1
-        if step % 50 == 0:
-            pbar.set_postfix(e=e, best=best_e, acc=accepted)
-            pbar.update(50)
-    pbar.set_postfix(e=e, best=best_e, acc=accepted)
-    pbar.close()
+            ne = _autocorrelation_energy(
+                tuple(_symmetric_circulant(m) for m in current))
+            if ne <= e:
+                e, accepted = ne, accepted + 1
+                if ne < best_e:
+                    best_e, best_half, best_at = ne, [
+                        m.copy() for m in current], step
+                    if ne == 0:
+                        break
+            else:
+                current[mi][pi] *= -1
+            if step % 50 == 0 and isinstance(pbar, tqdm):
+                pbar.set_postfix(e=e, best=best_e, acc=accepted)
+                pbar.update(50)
 
     elapsed = time.perf_counter() - t0
-    print(
-        f"  best_energy={best_e}  found@step={best_at}  accepted={accepted}  {elapsed:.1f}s")
+    print(f"  seed={seed}  best_energy={best_e}  found@step={best_at}  accepted={accepted}  {elapsed:.1f}s")
     full = [_symmetric_circulant(m) for m in best_half]
     M = _build_williamson(*full)
     return M, check_orthogonality(M), elapsed
@@ -259,7 +262,6 @@ def run(strategy: str = STRATEGY, steps: int = STEPS, seed: int = SEED) -> dict[
         matrix, metrics, elapsed = williamson_search(steps=steps, seed=seed)
     else:
         best_metrics: dict[str, int] = {"energy": 2**63}
-        matrix = None
         for _name, fn in [("direct", direct_search), ("williamson", williamson_search)]:
             m, met, e = fn(steps=steps, seed=seed)
             if met["energy"] < best_metrics["energy"]:
@@ -289,7 +291,3 @@ def run(strategy: str = STRATEGY, steps: int = STEPS, seed: int = SEED) -> dict[
         wall_seconds=elapsed,
     )
     return metrics
-
-
-if __name__ == "__main__":
-    run()
