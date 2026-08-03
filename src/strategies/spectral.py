@@ -5,7 +5,7 @@ import time
 import numpy as np
 from tqdm import tqdm
 
-from gpu import check_orthogonality
+from gpu import check_orthogonality, to_numpy, xp
 from .base import SearchStrategy
 
 
@@ -32,12 +32,12 @@ class SpectralSearch(SearchStrategy):
 
         Q = U V^T wobei U S V^T = M. Q^T Q = I.
         """
-        U, _, Vt = np.linalg.svd(M.astype(np.float64), full_matrices=False)
+        U, _, Vt = xp.linalg.svd(M.astype(xp.float64), full_matrices=False)
         return (U @ Vt) * np.sqrt(self.ORDER)
 
     def _project_sign(self, M: np.ndarray) -> np.ndarray:
         """Runde auf naechste ±1-Matrix."""
-        return np.sign(M).astype(np.int8)
+        return xp.sign(M).astype(xp.int8)
 
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         t0 = time.perf_counter()
@@ -45,9 +45,9 @@ class SpectralSearch(SearchStrategy):
         n = self.ORDER
 
         # Start: zufaellige ±1 Matrix
-        H = rng.choice([-1, 1], size=(n, n)).astype(np.int8).astype(np.float64)
+        H = xp.asarray(rng.choice([-1, 1], size=(n, n)), dtype=xp.float64)
         H[0] = 1.0  # normalisiert
-        best_H = H.astype(np.int8)
+        best_H = H.astype(xp.int8)
         best_met = {"energy": 2**63}
         best_at = 0
 
@@ -89,4 +89,4 @@ class SpectralSearch(SearchStrategy):
         elapsed = time.perf_counter() - t0
         print(
             f"  seed={seed}  best_energy={best_met['energy']}  found@step={best_at}  {elapsed:.1f}s")
-        return best_H.astype(np.int8), best_met, elapsed
+        return to_numpy(best_H.astype(xp.int8)), best_met, elapsed

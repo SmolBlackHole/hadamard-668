@@ -7,7 +7,7 @@ import time
 import numpy as np
 from tqdm import tqdm
 
-from gpu import check_orthogonality
+from gpu import check_orthogonality, to_numpy, xp
 from .base import SearchStrategy
 
 
@@ -29,21 +29,27 @@ class RepairSearch(SearchStrategy):
         return "repair"
 
     @staticmethod
-    def _gram_energy(matrix: np.ndarray) -> tuple[int, np.ndarray]:
-        values = matrix.astype(np.int64)
-        gram = values @ values.T
-        np.fill_diagonal(gram, 0)
-        return int(np.sum(gram * gram) // 2), gram
+    def _gram_energy(matrix):
+        g = xp.asarray(matrix, dtype=xp.int64)
+        g = g @ g.T
+        xp.fill_diagonal(g, 0)
+        result = xp.sum(g * g) // 2
+        energy = int(result.get()) if xp is not np else int(result)
+        return energy, g
 
     @staticmethod
-    def _most_violated_pair(gram: np.ndarray) -> tuple[int, int, int]:
-        index = int(np.argmax(np.abs(gram)))
+    def _most_violated_pair(gram) -> tuple[int, int, int]:
+        index_value = xp.argmax(xp.abs(gram))
+        index = int(index_value.get()) if xp is not np else int(index_value)
         row, other = divmod(index, gram.shape[0])
-        return row, other, int(gram[row, other])
+        value = gram[row, other]
+        dot_product = int(value.get()) if xp is not np else int(value)
+        return row, other, dot_product
 
     def _improve(self, matrix: np.ndarray, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
+        matrix = xp.asarray(matrix, dtype=xp.int8).copy()
         energy, gram = self._gram_energy(matrix)
         best, best_energy = matrix.copy(), energy
         accepted = best_at = 0
@@ -52,20 +58,22 @@ class RepairSearch(SearchStrategy):
                 row, other, dot_product = self._most_violated_pair(gram)
                 if dot_product == 0:
                     break
-                columns = rng.permutation(np.flatnonzero(
-                    matrix[row] == matrix[other]))[:3]
-                if not len(columns):
+                matching = xp.flatnonzero(matrix[row] == matrix[other])
+                if matching.size:
+                    chosen = rng.permutation(int(matching.size))[:3]
+                    columns = to_numpy(matching[chosen])
+                else:
                     columns = np.array([rng.integers(0, self.ORDER)])
                 for column in columns:
-                    candidate = matrix.copy()
-                    candidate[row, column] *= -1
-                    new_energy, new_gram = self._gram_energy(candidate)
+                    matrix[row, int(column)] *= -1
+                    new_energy, new_gram = self._gram_energy(matrix)
                     if new_energy < energy:
-                        matrix, energy, gram = candidate, new_energy, new_gram
+                        energy, gram = new_energy, new_gram
                         accepted += 1
                         if energy < best_energy:
                             best, best_energy, best_at = matrix.copy(), energy, step
                         break
+                    matrix[row, int(column)] *= -1
                 if step % 50 == 0:
                     bar.set_postfix(e=energy, best=best_energy, acc=accepted)
                     bar.update(50)
@@ -74,7 +82,7 @@ class RepairSearch(SearchStrategy):
         elapsed = time.perf_counter() - started
         print(
             f"  seed={seed} best_energy={best_energy} found@step={best_at} accepted={accepted} {elapsed:.1f}s")
-        return best, check_orthogonality(best), elapsed
+        return to_numpy(best), check_orthogonality(best), elapsed
 
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         rng = np.random.default_rng(seed)

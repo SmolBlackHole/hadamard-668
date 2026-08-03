@@ -12,6 +12,8 @@ xp: Any = np
 def _setup() -> None:
     """Use CuPy when its CUDA DLLs are available, otherwise keep NumPy."""
     global xp
+    if os.environ.get("HADAMARD_BACKEND", "auto").lower() == "numpy":
+        return
     try:
         import glob
         import site
@@ -36,6 +38,11 @@ def _setup() -> None:
 
 
 _setup()
+
+
+def to_numpy(values: Any) -> np.ndarray:
+    """Return a host array without copying when the NumPy backend is active."""
+    return values if xp is np else xp.asnumpy(values)
 
 
 def check_orthogonality(matrix: np.ndarray) -> dict[str, int]:

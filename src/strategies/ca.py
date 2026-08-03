@@ -7,7 +7,7 @@ import time
 import numpy as np
 from scipy.ndimage import convolve
 
-from gpu import check_orthogonality
+from gpu import check_orthogonality, to_numpy, xp
 from .base import SearchStrategy
 
 
@@ -24,7 +24,8 @@ class CASearch(SearchStrategy):
     def __init__(self, order: int = SearchStrategy.ORDER, ca_steps: int = 1,
                  rule_seed: int = 42, kernel_size: int = 5, mode: str = "spectral") -> None:
         if order < 1 or ca_steps < 1:
-            raise ValueError("cellular search requires a positive order and ca_steps")
+            raise ValueError(
+                "cellular search requires a positive order and ca_steps")
         if mode not in ("local", "spectral"):
             raise ValueError("mode must be 'local' or 'spectral'")
         if kernel_size % 2 == 0:
@@ -41,17 +42,17 @@ class CASearch(SearchStrategy):
 
     # ---- spectral mode ----
 
-    def _apply_spectral(self, matrix: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    def _apply_spectral(self, matrix, weights):
         """FFT → gewichten → IFFT → sign als globaler Filter.
 
         weights: (self.ORDER,) Array von Frequenz-Gewichten in [0, 1].
         Jede Frequenzkomponente wird mit ihrem Gewicht multipliziert.
         """
-        transformed = np.fft.fft2(matrix.astype(np.float64))
-        w = np.fft.fftshift(np.outer(weights, weights))
+        transformed = xp.fft.fft2(matrix.astype(xp.float64))
+        w = xp.fft.fftshift(xp.outer(weights, weights))
         transformed *= w
-        result = np.fft.ifft2(transformed).real
-        return np.sign(result).astype(np.int8)
+        result = xp.fft.ifft2(transformed).real
+        return xp.sign(result).astype(xp.int8)
 
     def _random_spectral_weights(self, rng: np.random.Generator) -> np.ndarray:
         """Zufaellige Frequenz-Gewichte mit festem erstem Eintrag."""
@@ -59,7 +60,7 @@ class CASearch(SearchStrategy):
         w[0] = 1.0
         return w
 
-    def _mutate_spectral_weights(self, w: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    def _mutate_spectral_weights(self, w, rng: np.random.Generator):
         """Flippe ein Frequenz-Gewicht."""
         new = w.copy()
         idx = rng.integers(1, self.ORDER)
@@ -99,13 +100,15 @@ class CASearch(SearchStrategy):
     def _optimize(self, matrix: np.ndarray, steps: int, seed: int) -> tuple[np.ndarray, dict, float]:
         started = time.perf_counter()
         rng = np.random.default_rng(seed + self.rule_seed)
-        current = matrix.copy()
+        device_mode = self.mode == "spectral"
+        current = xp.asarray(matrix, dtype=xp.int8).copy(
+        ) if device_mode else matrix.copy()
         best_metrics = check_orthogonality(current)
         best = current.copy()
         metrics = best_metrics
 
         if self.mode == "spectral":
-            param = self._random_spectral_weights(rng)
+            param = xp.asarray(self._random_spectral_weights(rng))
             mutate = self._mutate_spectral_weights
         else:
             param = self._random_rule(rng)
@@ -134,15 +137,18 @@ class CASearch(SearchStrategy):
                       f"acc={accepted}  T={T:.4f}", flush=True)
 
         elapsed = time.perf_counter() - started
-        print(f"  seed={seed}  best_energy={best_metrics['energy']}  accepted={accepted}  {elapsed:.1f}s")
-        return best, best_metrics, elapsed
+        print(
+            f"  seed={seed}  best_energy={best_metrics['energy']}  accepted={accepted}  {elapsed:.1f}s")
+        return to_numpy(best) if device_mode else best, best_metrics, elapsed
 
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         rng = np.random.default_rng(seed)
-        matrix = rng.choice((-1, 1), size=(self.ORDER, self.ORDER)).astype(np.int8)
+        matrix = rng.choice(
+            (-1, 1), size=(self.ORDER, self.ORDER)).astype(np.int8)
         return self._optimize(matrix, steps, seed)
 
     def refine(self, matrix: np.ndarray, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         if matrix.shape != (self.ORDER, self.ORDER) or not np.all(np.isin(matrix, (-1, 1))):
-            raise ValueError(f"cellular needs a {self.ORDER}x{self.ORDER} sign matrix")
+            raise ValueError(
+                f"cellular needs a {self.ORDER}x{self.ORDER} sign matrix")
         return self._optimize(matrix, steps, seed)

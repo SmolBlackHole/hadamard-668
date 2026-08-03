@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 
-from gpu import check_orthogonality
+from gpu import check_orthogonality, to_numpy, xp
 from .base import SearchStrategy
 
 
@@ -32,19 +32,19 @@ class IsingSearch(SearchStrategy):
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
-        state = rng.uniform(-1, 1, size=(self.ORDER, self.ORDER))
-        best = np.where(state >= 0, 1, -1).astype(np.int8)
+        state = xp.asarray(rng.uniform(-1, 1, size=(self.ORDER, self.ORDER)))
+        best = xp.where(state >= 0, 1, -1).astype(xp.int8)
         best_metrics = check_orthogonality(best)
         for step in range(max(1, steps)):
             beta = self.beta_end * (step + 1) / max(1, steps)
             gram = state @ state.T
-            np.fill_diagonal(gram, 0)
+            xp.fill_diagonal(gram, 0)
             gradient = (gram @ state) / self.ORDER
-            state = np.tanh(beta * (state - gradient))
-            candidate = np.where(state >= 0, 1, -1).astype(np.int8)
+            state = xp.tanh(beta * (state - gradient))
+            candidate = xp.where(state >= 0, 1, -1).astype(xp.int8)
             metrics = check_orthogonality(candidate)
             if metrics["energy"] < best_metrics["energy"]:
                 best, best_metrics = candidate, metrics
                 if metrics["energy"] == 0:
                     break
-        return best, best_metrics, time.perf_counter() - started
+        return to_numpy(best), best_metrics, time.perf_counter() - started

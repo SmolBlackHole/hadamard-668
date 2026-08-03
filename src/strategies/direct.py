@@ -7,7 +7,7 @@ import time
 import numpy as np
 from tqdm import tqdm
 
-from gpu import check_orthogonality
+from gpu import check_orthogonality, to_numpy, xp
 from .base import SearchStrategy
 
 
@@ -31,6 +31,7 @@ class DirectSearch(SearchStrategy):
     def _improve(self, matrix: np.ndarray, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
+        matrix = xp.asarray(matrix, dtype=xp.int8).copy()
         best = matrix.copy()
         energy = best_energy = check_orthogonality(matrix)["energy"]
         accepted = best_at = 0
@@ -58,7 +59,7 @@ class DirectSearch(SearchStrategy):
         elapsed = time.perf_counter() - started
         print(
             f"  seed={seed} best_energy={best_energy} found@step={best_at} accepted={accepted} {elapsed:.1f}s")
-        return best, check_orthogonality(best), elapsed
+        return to_numpy(best), check_orthogonality(best), elapsed
 
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         rng = np.random.default_rng(seed)
