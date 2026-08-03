@@ -72,38 +72,94 @@ Parameter werden über `run.py` gesetzt, zum Beispiel `--strategy rowwise --step
 
 ### Pipeline
 
-Mehrere Strategien lassen sich als Pipeline über eine kommaseparierte
-`name:steps`-Angabe verbinden:
+Mehrere Strategien lassen sich über eine kommaseparierte `name:steps`-Angabe
+verbinden. Der empfohlene Pfad bleibt vollständig im Williamson-Raum, bevor
+die Vollmatrix einmal lokal repariert wird:
 
 ```bash
-.venv\Scripts\python run.py --strategy "circulant:100000,annealing:30000,repair:5000" --seed 42
+.venv\Scripts\python run.py --strategy "circulant:100000,annealing_w:30000,repair:5000" --seed 42
 ```
 
-Die erste Phase startet mit `search(steps, seed)`. Jede weitere Phase erhält
-den besten Kandidaten der vorherigen Phase über `refine(matrix, steps, seed)`;
-der Seed erhöht sich pro Phase um eins. Eine exakte Lösung (`energy == 0`)
-beendet die Pipeline sofort. Die Schrittbudgets stehen deshalb in der
-`--strategy`-Angabe; `--steps` wird bei einer Pipeline nicht verwendet.
+Die erste Phase startet mit `search()`, jede weitere mit `refine()` auf dem
+vorherigen Kandidaten. Der Seed erhöht sich pro Phase um eins. Form, Datentyp
+und Vorzeichen der Matrix werden bei jeder Übergabe geprüft. Eine gemeldete
+Nullenergie beendet die Pipeline erst nach einer unabhängigen vollständigen
+Gram-Prüfung. Die Budgets stehen in der Strategieangabe; `--steps` wird bei
+einer Pipeline nicht verwendet.
 
-Als Folgestufe eignen sich derzeit `annealing` (nur für Williamson-Matrizen),
-`repair`, `direct` und `cellular`. Die übrigen Strategien besitzen kein
-`refine()` und können nur die erste Phase bilden.
+`annealing_w` akzeptiert ausschließlich Williamson-Matrizen. `repair` und
+`direct` können jede passende Vorzeichenmatrix verfeinern; `cellular` und
+`ca_spectral` akzeptieren nur exakt extrahierbare Goethals-Seidel-Matrizen.
+Insbesondere darf `hybrid` nicht vor `annealing_w` stehen, weil `hybrid` auch
+Goethals-Seidel-Kandidaten liefern kann. Unzulässige Folgestufen werden beim
+Aufbau oder durch ihre Strukturprüfung abgelehnt.
 
-`bt:<strategie>` umschliesst eine einzelne Strategie mit begrenzten,
-geseedeten Neustarts, zum Beispiel `--strategy bt:circulant`. Checkpoints
-werden unter `checkpoints/` abgelegt. `cellular` und `ca_spectral` sind
-derzeit Aliase fuer dieselbe spektrale Variante; `baumert` sucht in der Baumert-Hall-
-Teilfamilie mit drei symmetrischen zirkulanten Sequenzen.
+`bt:<strategie>` verteilt `--steps` exakt auf begrenzte, geseedete Restarts.
+Kann die innere Strategie `refine()`, wird der beste gespeicherte Checkpoint
+perturbiert und tatsächlich weiterverwendet. Andernfalls sind es klar
+unabhängige Restarts. Pro Seed bleiben höchstens fünf Checkpoints erhalten.
+
+### Mehrere Seeds
+
+Unabhängige Läufe können parallel gestartet werden:
+
+```bash
+.venv\Scripts\python run.py --strategy circulant --steps 200000 --seed 42 --runs 8 --workers 4
+```
+
+Die Seeds sind deterministisch `seed, seed+1, ...`. Jeder Lauf erhält ein
+eigenes Verzeichnis mit `candidate.csv` und `run.json`. Am Ende werden alle
+Energien zusammengefasst und der beste Lauf anhand einer vollständigen
+Gram-Metrik markiert. Für die CUDA-Batchstrategie `montecarlo` wird die
+Workerzahl automatisch auf eins begrenzt, damit nicht mehrere Prozesse um
+dieselbe GPU konkurrieren.
+
+## Benchmark
+
+```bash
+.venv\Scripts\python benchmark.py --timeout 60
+.venv\Scripts\python benchmark.py --all --timeout 60
+```
+
+Der Standardbenchmark umfasst 54 geordnete Fälle: neun Kernstrategien für die
+Ordnungen `4, 8, 12, 16, 20, 668`. `--all` ergänzt experimentelle Strategien
+und Pipelines. Jeder Fall läuft in einem eigenen Prozess und wird nach dem
+angegebenen Timeout beendet. `benchmark_results.md` enthält Wandzeit,
+Rohenergie, RMS-Korrelation und orthogonale Zeilenpaare. Prozessstart,
+Numba-Kompilierung und CUDA-Warm-up gehören zur gemessenen Wandzeit und müssen
+bei Mikrovergleichen separat aufgewärmt werden.
 
 ## Strategien
 
+| Gruppe | Strategien | Zustandsraum | Rechenort |
+| --- | --- | --- | --- |
+| Symmetrische Folgen | `circulant`, `annealing_w` | `4 × 84` unabhängige Vorzeichen | CPU/Numba und FFT |
+| Allgemeine Folgen | `diffset`, `genetic`, `montecarlo`, `spectral`, `ising`, `gold`, `walsh` | `4 × 167` | CPU; große Genetic-/Monte-Carlo-Batches auf GPU |
+| Zelluläre Regeln | `cellular`, `ca_spectral`, `ca_fft` | vier periodische 167er-Folgen | CPU-Faltung oder FFT |
+| Teilkonstruktion | `baumert` | drei symmetrische 167er-Folgen | CPU/Numba |
+| Vollmatrix | `repair`, `direct`, `rowwise` | `668 × 668` beziehungsweise Zeilenbatches | inkrementelle CPU-Deltas; finale Gram-Prüfung optional auf GPU |
+| Solver/Orchestrierung | `sat`, `bt:...`, Pipelines | kompakte Bool-Folgen oder vorhandene Kandidaten | CPU/Z3 beziehungsweise Kindprozesse |
+
+### Spectral / Douglas-Rachford
+
+`spectral` hält vier reelle Folgen der Länge 167. Die Orthogonalprojektion
+skaliert für jede Fourierfrequenz den Vierervektor so, dass die Summe seiner
+Leistungen `4K` beträgt. Danach folgt die Vorzeichenprojektion im echten
+Douglas-Rachford-Schritt. Dadurch entfallen SVD oder Polarzerlegung einer
+668×668-Matrix vollständig; nur der finale diskrete Kandidat wird als
+Goethals-Seidel-Matrix aufgebaut.
+
 ### Direct Local Search
 
-Arbeitet direkt auf der 668x668-Matrix. Flippt symmetrische Eintragspaare und akzeptiert Schritte, die die Energie nicht erhohen. 222.778 Zeilenpaare mussen orthogonal werden.
+Arbeitet direkt auf der 668×668-Matrix. Gekoppelte Eintragsflips aktualisieren
+die persistente Gram-Matrix in linearer Zeit und behalten den symmetrischen
+Matrixraum bei.
 
 ### Williamson-Konstruktion
 
-Nutzt 668 = 4 x 167. Baut die Matrix aus vier symmetrischen zirkulanten 167x167-Blocken. Reduziert die Variablen von 446.224 auf 4x84 = 336, mit 83 quadratischen Nebenbedingungen.
+Nutzt `668 = 4 × 167` und vier symmetrische zirkulante Blöcke. Dadurch sinkt
+der diskrete Suchraum von 446.224 Matrixeinträgen auf `4 × 84 = 336`
+unabhängige Vorzeichen.
 
 ## Lizenz
 

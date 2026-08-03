@@ -7,7 +7,6 @@ from pathlib import Path
 
 import numpy as np
 
-from gpu import check_orthogonality
 from .base import SearchStrategy
 
 
@@ -15,25 +14,25 @@ class BacktrackSearch(SearchStrategy):
     """Wiederholt eine Strategie in begrenzten Suchabschnitten.
 
     Zweck: Verteilt ein Budget auf mehrere deterministisch geseedete Neustarts.
-    Mechanik: Ruft ``inner.search`` bis zu ``max_backtracks + 1`` mal auf und speichert jeden neuen globalen Bestwert als Pickle-Checkpoint.
+    Mechanik: Teilt das Schrittbudget exakt auf und verfeinert, wenn möglich, perturbierte Bestwert-Checkpoints.
     Grundlage: Mehrere unabhängige Startwerte können unterschiedliche lokale Minima einer diskreten Energieheuristik erreichen.
     Pipeline: Ist selbst nur eine erste Pipeline-Stufe, weil keine ``refine``-Methode implementiert ist.
-    Grenzen: Checkpoint und perturbierte Matrix dienen derzeit nicht als Startzustand des nächsten ``inner.search``-Aufrufs; ``patience`` und ``min_improvement`` beeinflussen nur die Diagnoseausgabe, nicht die Restart-Steuerung.
+    Grenzen: Strategien ohne eigene ``refine``-Methode erhalten unabhängige Restarts statt Checkpoint-Zuständen.
     """
 
     def __init__(
         self,
         inner: SearchStrategy,
-        patience: int = 5000,
-        min_improvement: float = 0.01,
         perturbation: float = 0.05,
         max_backtracks: int = 10,
         checkpoint_dir: str = "checkpoints",
     ) -> None:
+        if not 0 <= perturbation <= 1:
+            raise ValueError("perturbation must be in [0, 1]")
+        if max_backtracks < 0:
+            raise ValueError("max_backtracks must be non-negative")
         self._inner = inner
         self.ORDER = inner.ORDER
-        self.patience = patience
-        self.min_improvement = min_improvement
         self.perturbation = perturbation
         self.max_backtracks = max_backtracks
         self.checkpoint_dir = Path(checkpoint_dir)
@@ -42,6 +41,18 @@ class BacktrackSearch(SearchStrategy):
     def name(self) -> str:
         return f"backtrack_{self._inner.name}"
 
+    def _step_budgets(self, steps: int) -> tuple[int, ...]:
+        if steps < 0:
+            raise ValueError("steps must be non-negative")
+        if steps == 0:
+            return (0,)
+        restart_count = min(self.max_backtracks + 1, steps)
+        chunk, remainder = divmod(steps, restart_count)
+        return tuple(chunk + (index < remainder) for index in range(restart_count))
+
+    def _can_refine(self) -> bool:
+        return type(self._inner).refine is not SearchStrategy.refine
+
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         t0 = time.perf_counter()
         rng = np.random.default_rng(seed)
@@ -49,42 +60,21 @@ class BacktrackSearch(SearchStrategy):
 
         best_matrix = np.empty((self.ORDER, self.ORDER), dtype=np.int8)
         best_metrics: dict[str, int] = {"energy": 2 ** 63}
-        total_accepted = 0
-
-        for restart in range(self.max_backtracks + 1):
-            chunk = steps // (self.max_backtracks + 1)
-            inner_steps = max(1000, chunk)
-
-            if restart == 0:
-                matrix, metrics, elapsed = self._inner.search(inner_steps, seed + restart)
+        for restart, inner_steps in enumerate(self._step_budgets(steps)):
+            checkpoint = self._load_checkpoint(seed) if restart else None
+            if checkpoint is not None and self._can_refine():
+                start = self._perturb(checkpoint, rng)
+                matrix, metrics, _ = self._inner.refine(
+                    start, inner_steps, seed + restart)
             else:
-                # Create a perturbed checkpoint candidate for diagnostics.
-                ckpt = self._load_checkpoint(seed)
-                if ckpt is not None:
-                    matrix = self._perturb(ckpt, rng)
-                else:
-                    matrix = rng.choice([-1, 1], size=(self.ORDER, self.ORDER)).astype(np.int8)
-                # The inner strategy currently starts independently.
-                matrix, metrics, elapsed = self._inner.search(inner_steps, seed + restart)
-
-            total_accepted += 1
+                matrix, metrics, _ = self._inner.search(
+                    inner_steps, seed + restart)
 
             if metrics["energy"] < best_metrics["energy"]:
-                best_matrix, best_metrics = matrix.copy(), metrics
+                best_matrix, best_metrics = matrix.copy(), metrics.copy()
                 self._save_checkpoint(best_matrix, seed, restart)
                 if metrics["energy"] == 0:
                     break
-
-            # Check if we improved enough since last checkpoint
-            if restart > 0 and restart < self.max_backtracks:
-                prev_energy = best_metrics.get("energy", 2 ** 63)
-                delta = prev_energy - metrics["energy"]
-                if delta <= 0 or delta / max(prev_energy, 1) < self.min_improvement:
-                    print(f"  plateau restart {restart}/{self.max_backtracks}  "
-                          f"energy={metrics['energy']}  best={best_metrics['energy']}  no improvement")
-                else:
-                    print(f"  restart {restart} improved: {prev_energy} -> {metrics['energy']}  "
-                          f"delta={delta}")
 
         elapsed = time.perf_counter() - t0
         return best_matrix, best_metrics, elapsed
@@ -94,12 +84,18 @@ class BacktrackSearch(SearchStrategy):
         with open(path, "wb") as f:
             pickle.dump({"matrix": matrix.tobytes(), "shape": matrix.shape, "dtype": str(matrix.dtype)}, f)
         # Keep only last 5 checkpoints
-        ckpts = sorted(self.checkpoint_dir.glob(f"ckpt_{self.name}_s{seed}_*.pkl"))
+        ckpts = sorted(
+            self.checkpoint_dir.glob(f"ckpt_{self.name}_s{seed}_*.pkl"),
+            key=lambda path: path.stat().st_mtime_ns,
+        )
         for old in ckpts[:-5]:
             old.unlink(missing_ok=True)
 
     def _load_checkpoint(self, seed: int) -> np.ndarray | None:
-        ckpts = sorted(self.checkpoint_dir.glob(f"ckpt_{self.name}_s{seed}_*.pkl"))
+        ckpts = sorted(
+            self.checkpoint_dir.glob(f"ckpt_{self.name}_s{seed}_*.pkl"),
+            key=lambda path: path.stat().st_mtime_ns,
+        )
         if not ckpts:
             return None
         with open(ckpts[-1], "rb") as f:

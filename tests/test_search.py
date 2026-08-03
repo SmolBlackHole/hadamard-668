@@ -11,8 +11,9 @@ import pytest
 
 from constructions import autocorrelation_energy, build_williamson, symmetric_circulant
 from gpu import check_orthogonality
+from run import derive_seeds, select_best_run, worker_count
 from strategies.annealing import AnnealingSearch
-from strategies.base import Pipeline
+from strategies.base import Pipeline, SearchStrategy
 from strategies.circulant import CirculantSearch
 from strategies.repair import RepairSearch
 from strategies.rowwise import RowwiseSearch
@@ -69,6 +70,34 @@ def test_run_help_works_without_pythonpath() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_run_writes_each_parallel_seed_separately(tmp_path) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "run.py",
+            "--strategy", "circulant",
+            "--steps", "0",
+            "--seed", "7",
+            "--runs", "2",
+            "--workers", "2",
+            "--runs-dir", str(tmp_path),
+        ],
+        cwd=Path(__file__).parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+    outputs = sorted(tmp_path.iterdir())
+    assert len(outputs) == 2
+    assert all((directory / "candidate.csv").is_file() for directory in outputs)
+    assert all((directory / "run.json").is_file() for directory in outputs)
+    assert "Run summary" in result.stdout
+    assert "best seed=" in result.stdout
+
+
 @pytest.mark.parametrize("order", [4, 8, 12])
 def test_rowwise_solves_small_known_orders(order: int) -> None:
     _, metrics, _ = RowwiseSearch(order).search(steps=1_000, seed=0)
@@ -99,6 +128,66 @@ def test_real_pipeline_runs_all_stages() -> None:
     ]
     _, metrics, _ = Pipeline(stages).search(steps=0, seed=0)
     assert metrics["energy"] >= 0
+
+
+def test_pipeline_short_circuits_only_after_exact_verification() -> None:
+    calls: list[int] = []
+
+    class Source(SearchStrategy):
+        ORDER = 4
+
+        @property
+        def name(self) -> str:
+            return "source"
+
+        def search(self, steps: int, seed: int):
+            return np.ones((4, 4), dtype=np.int8), {
+                "energy": 0,
+                "orthogonal_pairs": 6,
+                "max_abs_correlation": 0,
+            }, 0.0
+
+    class Sink(SearchStrategy):
+        ORDER = 4
+
+        @property
+        def name(self) -> str:
+            return "sink"
+
+        def search(self, steps: int, seed: int):
+            raise AssertionError("later stages use refine")
+
+        def refine(self, matrix: np.ndarray, steps: int, seed: int):
+            calls.append(seed)
+            candidate = sylvester(4)
+            return candidate, check_orthogonality(candidate), 0.0
+
+    _, metrics, _ = Pipeline([(Source(), 1), (Sink(), 1)]).search(0, 10)
+
+    assert calls == [11]
+    assert metrics["energy"] == 0
+
+
+def test_pipeline_rejects_non_refining_followup() -> None:
+    with pytest.raises(ValueError, match="cannot refine"):
+        Pipeline([
+            (CirculantSearch(ORDER=4, K=1, HALF=1), 1),
+            (CirculantSearch(ORDER=4, K=1, HALF=1), 1),
+        ])
+
+
+def test_parallel_run_helpers_are_deterministic_and_gpu_safe() -> None:
+    assert derive_seeds(40, 3) == [40, 41, 42]
+    assert worker_count("circulant", runs=3, workers=8) == 3
+    assert worker_count("circulant:10,repair:5", runs=3, workers=2) == 2
+    assert worker_count("montecarlo", runs=3, workers=3) == 1
+
+    matrix = sylvester(4)
+    results = [
+        (40, matrix, {"energy": 8}, 0.2),
+        (41, matrix, {"energy": 0}, 0.3),
+    ]
+    assert select_best_run(results)[0] == 41
 
 
 @pytest.mark.parametrize("matrix", [sylvester(4), paley(8), paley(12)])

@@ -96,13 +96,13 @@ def benchmark_groups(*, include_all: bool = False):
             ("CA spectral", lambda order: CASearch(order=order, mode="spectral")),
         )),
         ("Pipelines", (
-            ("Circulant→Annealing", lambda o: Pipeline(
+            ("Circulant->Annealing", lambda o: Pipeline(
                 [(_circulant(o), _half_steps(o)), (_annealing(o), _half_steps(o))])),
-            ("Circulant→Repair", lambda o: Pipeline(
+            ("Circulant->Repair", lambda o: Pipeline(
                 [(_circulant(o), _half_steps(o)), (RepairSearch(order=o), _half_steps(o))])),
-            ("Annealing→Repair", lambda o: Pipeline(
+            ("Annealing->Repair", lambda o: Pipeline(
                 [(_annealing(o), _half_steps(o)), (RepairSearch(order=o), _half_steps(o))])),
-            ("Circulant→Annealing→Repair", lambda o: Pipeline([(_circulant(o), _half_steps(
+            ("Circulant->Annealing->Repair", lambda o: Pipeline([(_circulant(o), _half_steps(
                 o)//2), (_annealing(o), _half_steps(o)//2), (RepairSearch(order=o), _half_steps(o))])),
         )),
     )

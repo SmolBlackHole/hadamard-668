@@ -5,6 +5,8 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
+from gpu import check_orthogonality
+
 
 class SearchStrategy(ABC):
     """Gemeinsamer Vertrag für Kandidatensuchen.
@@ -53,17 +55,26 @@ class Pipeline(SearchStrategy):
     """Führt Suchstrategien mit einem gemeinsamen Kandidaten nacheinander aus.
 
     Zweck: Kombiniert Grobsuche und nachfolgende Verfeinerung zu einem Lauf.
-    Mechanik: Die erste Stufe ruft ``search`` auf, jede weitere ``refine``.
+    Mechanik: Die erste Stufe ruft ``search`` auf, jede weitere ``refine``; Form, Typ und Vorzeichen werden an jeder Übergabe geprüft.
     Grundlage: Alle Stufen vergleichen denselben Metrikvertrag mit Energie null als exaktem Ziel.
     Pipeline: Nur die erste Stufe darf keine ``refine``-Implementierung besitzen.
-    Grenzen: Nicht verfeinerbare spätere Stufen lösen ``NotImplementedError`` aus.
+    Grenzen: Nicht verfeinerbare spätere Stufen und abweichende Matrixordnungen werden bereits beim Aufbau abgelehnt.
     """
 
     def __init__(self, stages: list[tuple[SearchStrategy, int]]) -> None:
         if not stages:
             raise ValueError("a pipeline needs at least one stage")
+        if any(stage_steps < 0 for _, stage_steps in stages):
+            raise ValueError("pipeline step budgets must be non-negative")
+        order = stages[0][0].ORDER
+        if any(strategy.ORDER != order for strategy, _ in stages):
+            raise ValueError("all pipeline stages must use the same order")
+        for strategy, _ in stages[1:]:
+            if type(strategy).refine is SearchStrategy.refine:
+                raise ValueError(
+                    f"pipeline stage {strategy.name} cannot refine a candidate")
         self._stages = stages
-        self.ORDER = stages[0][0].ORDER
+        self.ORDER = order
 
     @property
     def name(self) -> str:
@@ -81,7 +92,28 @@ class Pipeline(SearchStrategy):
             else:
                 matrix, metrics, elapsed = strategy.refine(
                     matrix, stage_steps, seed + index)
+            self._validate_result(matrix, metrics, strategy)
             elapsed_total += elapsed
             if metrics["energy"] == 0:
-                break
+                metrics = check_orthogonality(matrix)
+                if metrics["energy"] == 0:
+                    break
         return matrix, metrics, elapsed_total
+
+    def _validate_result(
+        self,
+        matrix: np.ndarray,
+        metrics: dict[str, int],
+        strategy: SearchStrategy,
+    ) -> None:
+        if not isinstance(matrix, np.ndarray):
+            raise TypeError(f"pipeline stage {strategy.name} returned a non-host matrix")
+        if matrix.shape != (self.ORDER, self.ORDER):
+            raise ValueError(
+                f"pipeline stage {strategy.name} returned shape {matrix.shape}")
+        if matrix.dtype != np.int8 or not np.all(np.isin(matrix, (-1, 1))):
+            raise ValueError(
+                f"pipeline stage {strategy.name} must return an int8 sign matrix")
+        if not isinstance(metrics.get("energy"), int):
+            raise TypeError(
+                f"pipeline stage {strategy.name} returned invalid metrics")

@@ -14,18 +14,88 @@ from constructions import (
     symmetric_circulant,
 )
 from gpu import check_orthogonality, to_numpy, xp
+from strategies.annealing import AnnealingSearch
+from strategies.backtrack import BacktrackSearch
 from strategies.baumert import BaumertHallSearch
 from strategies.ca import CASearch
+from strategies.circulant import CirculantSearch
 from strategies.diffset import DiffsetSearch
+from strategies.direct import DirectSearch
 from strategies.genetic import GeneticSearch
 from strategies.gold import GoldSearch
 from strategies.ising import IsingSearch
 from strategies.montecarlo import MonteCarloSearch
+from strategies.repair import RepairSearch
 from strategies.rowwise import RowwiseSearch
 from strategies.sat import SatSearch
 from strategies.spectral import SpectralSearch
 from strategies.walsh import WalshSearch, _fwht
 from strategies.base import Pipeline, SearchStrategy
+
+
+def _metrics(energy: int) -> dict[str, int]:
+    return {
+        "energy": energy,
+        "orthogonal_pairs": 0,
+        "max_abs_correlation": 1,
+    }
+
+
+class _RecordingSearch(SearchStrategy):
+    ORDER = 4
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int, int]] = []
+
+    @property
+    def name(self) -> str:
+        return "recording"
+
+    def search(self, steps: int, seed: int):
+        self.calls.append(("search", steps, seed))
+        matrix = np.full((4, 4), 1 if len(self.calls) % 2 else -1, dtype=np.int8)
+        return matrix, _metrics(100 - len(self.calls)), 0.0
+
+
+class _RecordingRefiner(_RecordingSearch):
+    def refine(self, matrix: np.ndarray, steps: int, seed: int):
+        self.calls.append(("refine", steps, seed))
+        return matrix.copy(), _metrics(100 - len(self.calls)), 0.0
+
+
+def test_backtrack_splits_the_exact_step_budget(tmp_path) -> None:
+    inner = _RecordingSearch()
+    strategy = BacktrackSearch(
+        inner, max_backtracks=3, checkpoint_dir=str(tmp_path))
+
+    strategy.search(steps=10, seed=20)
+
+    assert inner.calls == [
+        ("search", 3, 20),
+        ("search", 3, 21),
+        ("search", 2, 22),
+        ("search", 2, 23),
+    ]
+    assert sum(steps for _, steps, _ in inner.calls) == 10
+
+
+def test_backtrack_refines_the_saved_checkpoint(tmp_path) -> None:
+    inner = _RecordingRefiner()
+    strategy = BacktrackSearch(
+        inner,
+        perturbation=0,
+        max_backtracks=2,
+        checkpoint_dir=str(tmp_path),
+    )
+
+    strategy.search(steps=8, seed=30)
+
+    assert inner.calls == [
+        ("search", 3, 30),
+        ("refine", 3, 31),
+        ("refine", 2, 32),
+    ]
+    assert len(list(tmp_path.glob("*.pkl"))) == 3
 
 
 def reference_periodic_energy(sequences: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]) -> int:
@@ -78,7 +148,14 @@ def test_cyclic_strategies_solve_order_four(strategy) -> None:
 
 @pytest.mark.skipif(xp.__name__ != "cupy", reason="requires active CuPy backend")
 def test_montecarlo_search_uses_gpu() -> None:
-    _, metrics, _ = MonteCarloSearch(4, batch_size=4).search(steps=2, seed=0)
+    matrix, metrics, elapsed = MonteCarloSearch(
+        4, batch_size=4).search(steps=2, seed=0)
+    assert isinstance(matrix, np.ndarray)
+    assert matrix.shape == (4, 4)
+    assert matrix.dtype == np.int8
+    assert np.all(np.isin(matrix, (-1, 1)))
+    assert all(isinstance(value, int) for value in metrics.values())
+    assert isinstance(elapsed, float)
     assert metrics["energy"] == 0
 
 
@@ -204,6 +281,12 @@ def test_sat_uses_four_compact_sequences_as_base_variables() -> None:
 
 
 @pytest.mark.parametrize("strategy", [
+    CirculantSearch(ORDER=4, K=1, HALF=1),
+    AnnealingSearch(ORDER=4, K=1, HALF=1),
+    RepairSearch(4),
+    DirectSearch(4),
+    DiffsetSearch(4),
+    GeneticSearch(4, population_size=4),
     SpectralSearch(ORDER=4, inner_steps=1),
     IsingSearch(4),
     CASearch(4),
@@ -211,8 +294,9 @@ def test_sat_uses_four_compact_sequences_as_base_variables() -> None:
     SatSearch(4, timeout_seconds=1),
     GoldSearch(4),
     RowwiseSearch(4),
+    BaumertHallSearch(ORDER=4, T=1, HALF=1),
 ])
-def test_phase6_strategies_follow_result_contract(strategy) -> None:
+def test_cpu_strategies_follow_result_contract(strategy) -> None:
     matrix, metrics, elapsed = strategy.search(steps=1, seed=1)
     assert isinstance(matrix, np.ndarray)
     assert matrix.shape == (4, 4)
