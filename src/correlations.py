@@ -166,6 +166,29 @@ def nonperiodic_correlation_energy(correlations: np.ndarray) -> int:
     return int(np.dot(values, values))
 
 
+def nonperiodic_batch_energy(
+    population,
+    *,
+    lengths: tuple[int, ...] | np.ndarray,
+    weights: tuple[int, ...] | np.ndarray,
+    module=np,
+):
+    """Return weighted NPAF energies for a ``population x sequence x value`` batch."""
+    values = module.asarray(population)
+    if values.ndim != 3:
+        raise ValueError("population must have shape (batch, sequences, values)")
+    actual_lengths = module.asarray(lengths)
+    actual_weights = module.asarray(weights)
+    if values.shape[1] != len(actual_lengths) or values.shape[1] != len(actual_weights):
+        raise ValueError("lengths and weights must match the sequence axis")
+    fft_size = 2 * values.shape[2] - 1
+    spectrum = module.fft.fft(values, n=fft_size, axis=2)
+    correlations = module.fft.ifft(
+        module.abs(spectrum) ** 2, axis=2).real
+    total = module.sum(actual_weights[None, :, None] * correlations, axis=1)
+    return module.sum(total[:, 1:values.shape[2]] ** 2, axis=1)
+
+
 def apply_nonperiodic_flip(
     sequences: np.ndarray,
     correlations: np.ndarray,

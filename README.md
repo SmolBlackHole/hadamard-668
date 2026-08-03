@@ -130,19 +130,16 @@ Numba-Kompilierung und CUDA-Warm-up und dient nur der Timeout-Diagnose.
 
 | Gruppe | Strategien | Zustandsraum | Rechenort |
 | --- | --- | --- | --- |
-| Symmetrische Folgen | `circulant`, `annealing` | `4 × 84` unabhängige Vorzeichen | CPU/Numba und FFT |
-| Allgemeine Folgen | `diffset`, `genetic`, `montecarlo`, `spectral`, `ising` | `4 × 167` | CPU; große Genetic-/Monte-Carlo-Batches auf GPU |
+| Turyn-Solver | `turyn_greedy`, `turyn_annealing`, `turyn_pocs`, `turyn_steepest`, `genetic`, `montecarlo`, `spectral`, `ising` | 223 Turyn-Bits | CPU; Monte-Carlo-Batches auf GPU |
 | Vollmatrix | `repair` | `668 × 668` | inkrementelle CPU-Deltas; finale Gram-Prüfung optional auf GPU |
 | Orchestrierung | Pipelines | vorhandene Kandidaten | CPU |
 
 ### Spectral / Douglas-Rachford
 
-`spectral` hält vier reelle Folgen der Länge 167. Die Orthogonalprojektion
-skaliert für jede Fourierfrequenz den Vierervektor so, dass die Summe seiner
-Leistungen `4K` beträgt. Danach folgt die Vorzeichenprojektion im echten
-Douglas-Rachford-Schritt. Dadurch entfallen SVD oder Polarzerlegung einer
-668×668-Matrix vollständig; nur der finale diskrete Kandidat wird als
-Goethals-Seidel-Matrix aufgebaut.
+`spectral` hält vier zero-padded TT(56)-Folgen. Die Fourier-Projektion hält
+ihre gewichtete nichtperiodische Leistung konstant; danach folgt die
+Vorzeichenprojektion im Douglas-Rachford-Schritt. Vollmatrix-SVDs sind nicht
+beteiligt; nur der finale Kandidat wird zur Goethals-Seidel-Matrix aufgebaut.
 
 ### Historische symmetrische Goethals-Seidel-Konstruktion
 

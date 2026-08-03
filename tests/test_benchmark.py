@@ -25,11 +25,11 @@ def test_benchmark_worker_reports_a_timeout() -> None:
     assert result["status"] == "timeout"
 
 
-def test_benchmark_has_eight_strategies_for_every_order() -> None:
+def test_benchmark_has_seven_strategies_for_every_order() -> None:
     groups = benchmark_groups()
     assert len(groups) == 1
-    assert len(groups[0][1]) == 8
-    assert len(groups[0][1]) * len(ORDERS) == 48
+    assert len(groups[0][1]) == 7
+    assert len(groups[0][1]) * len(ORDERS) == 42
     assert [steps_for_order(order) for order in ORDERS] == [
         2_000, 2_000, 2_000, 2_000, 2_000, 5_000]
 
@@ -38,7 +38,7 @@ def test_full_benchmark_adds_experimental_strategies_and_pipelines() -> None:
     groups = benchmark_groups(include_all=True)
     assert [name for name, _ in groups] == [
         "Individual strategies", "Experimental strategies", "Pipelines"]
-    assert sum(len(strategies) for _, strategies in groups) > 8
+    assert sum(len(strategies) for _, strategies in groups) > 7
 
 
 def test_benchmark_help_works_without_pythonpath() -> None:

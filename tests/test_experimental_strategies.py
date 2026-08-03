@@ -9,7 +9,6 @@ from fourier import project_power_complementarity
 from gpu import check_orthogonality, to_numpy, xp
 from strategies.circulant import TurynGreedySearch
 from strategies.annealing import TurynAnnealingSearch
-from strategies.diffset import DiffsetSearch
 from strategies.genetic import GeneticSearch
 from strategies.ising import IsingSearch
 from strategies.montecarlo import MonteCarloSearch
@@ -24,15 +23,15 @@ def test_periodic_autocorrelation_of_singletons_is_zero() -> None:
 
 
 def test_ising_search_is_seeded() -> None:
-    first, _, _ = IsingSearch(4).search(steps=3, seed=4)
-    second, _, _ = IsingSearch(4).search(steps=3, seed=4)
+    first, _, _ = IsingSearch(92).search(steps=3, seed=4)
+    second, _, _ = IsingSearch(92).search(steps=3, seed=4)
     assert np.array_equal(first, second)
 
 
-@pytest.mark.parametrize("strategy", [DiffsetSearch(4), GeneticSearch(4, population_size=4)])
-def test_cyclic_strategies_solve_order_four(strategy) -> None:
-    _, metrics, _ = strategy.search(steps=2, seed=0)
-    assert metrics["energy"] == 0
+def test_genetic_search_returns_a_turyn_candidate() -> None:
+    matrix, metrics, _ = GeneticSearch(92, population_size=4).search(steps=2, seed=0)
+    assert matrix.shape == (92, 92)
+    assert metrics == check_orthogonality(matrix)
 
 
 def test_shared_power_projection_satisfies_power_condition() -> None:
@@ -65,7 +64,7 @@ def test_turyn_strategies_follow_result_contract(strategy) -> None:
 @pytest.mark.skipif(xp.__name__ != "cupy", reason="requires active CuPy backend")
 def test_montecarlo_search_uses_gpu() -> None:
     matrix, metrics, _ = MonteCarloSearch(
-        4, batch_size=4).search(steps=2, seed=0)
-    assert matrix.shape == (4, 4)
-    assert metrics["energy"] == 0
+        92, batch_size=4).search(steps=2, seed=0)
+    assert matrix.shape == (92, 92)
+    assert metrics == check_orthogonality(matrix)
     assert isinstance(to_numpy(matrix), np.ndarray)

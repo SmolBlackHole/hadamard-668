@@ -16,12 +16,12 @@ from strategies.spectral import SpectralSearch
 
 
 @pytest.mark.parametrize("strategy", [
-    RepairSearch(4), IsingSearch(4), SpectralSearch(ORDER=4, inner_steps=1),
+    RepairSearch(4), IsingSearch(92), SpectralSearch(ORDER=92, inner_steps=1),
 ])
 def test_full_matrix_strategies_return_host_sign_matrices(strategy) -> None:
     matrix, metrics, _ = strategy.search(steps=1, seed=1)
     assert isinstance(matrix, np.ndarray)
-    assert matrix.shape == (4, 4)
+    assert matrix.shape == (strategy.ORDER, strategy.ORDER)
     assert matrix.dtype == np.int8
     assert np.all(np.isin(matrix, (-1, 1)))
     assert isinstance(metrics["energy"], int)

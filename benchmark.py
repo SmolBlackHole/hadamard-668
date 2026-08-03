@@ -13,7 +13,6 @@ from strategies.repair import RepairSearch
 from strategies.montecarlo import MonteCarloSearch
 from strategies.ising import IsingSearch
 from strategies.genetic import GeneticSearch
-from strategies.diffset import DiffsetSearch
 from strategies.circulant import TurynGreedySearch
 from strategies.base import Pipeline
 from strategies.annealing import TurynAnnealingSearch
@@ -79,7 +78,6 @@ def benchmark_groups(*, include_all: bool = False):
             ("TurynAnnealing", _turyn_annealing),
             ("TurynPOCS", _turyn_pocs),
             ("TurynSteepest", _turyn_steepest),
-            ("Diffset", lambda order: DiffsetSearch(order=order)),
             ("MonteCarlo", lambda order: MonteCarloSearch(order=order)),
             ("RepairSearch", lambda order: RepairSearch(order=order)),
             ("Spectral", lambda order: SpectralSearch(ORDER=order, inner_steps=5)),
@@ -88,8 +86,10 @@ def benchmark_groups(*, include_all: bool = False):
     if not include_all:
         return core
     experimental = (
-        ("Experimental strategies",
-         (("Genetic", lambda order: GeneticSearch(order=order)),)),
+        ("Experimental strategies", (
+            ("Genetic", lambda order: GeneticSearch(order=order)),
+            ("Ising", lambda order: IsingSearch(order=order)),
+        )),
         ("Pipelines", (
             ("TurynGreedy->Repair", lambda o: Pipeline(
                 [(_turyn_greedy(o), _half_steps(o)), (RepairSearch(order=o), _half_steps(o))])),
@@ -183,7 +183,10 @@ def main(timeout_seconds: float = TIMEOUT_SECONDS, *, include_all: bool = False)
                     steps = steps_for_order(order)
                     progress.set_postfix_str(
                         f"{group}: {name}, n={order}, steps={steps}")
-                    turyn_strategy = name.startswith("Turyn")
+                    turyn_strategy = name.startswith("Turyn") or name in {
+                        "MonteCarlo", "Ising", "Spectral", "Genetic",
+                        "MonteCarlo", "Ising", "Spectral", "Genetic",
+                    }
                     result = ({"status": "na"} if turyn_strategy and (
                         order != 4 * (3 * ((order // 4 + 1) // 3) - 1)
                         or ((order // 4 + 1) // 3) < 2

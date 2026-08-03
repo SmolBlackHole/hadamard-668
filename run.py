@@ -13,7 +13,6 @@ from strategies.repair import RepairSearch
 from strategies.montecarlo import MonteCarloSearch
 from strategies.ising import IsingSearch
 from strategies.genetic import GeneticSearch
-from strategies.diffset import DiffsetSearch
 from strategies.circulant import TurynGreedySearch
 from strategies.base import Pipeline, SearchStrategy
 from strategies.annealing import TurynAnnealingSearch
@@ -35,7 +34,6 @@ ALL: dict[str, SearchStrategy] = {
     "repair": RepairSearch(),
     "spectral": SpectralSearch(),
     "ising": IsingSearch(),
-    "diffset": DiffsetSearch(),
     "genetic": GeneticSearch(),
     "montecarlo": MonteCarloSearch(),
 }
@@ -120,7 +118,7 @@ def select_best_run(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hadamard-668 search")
-    parser.add_argument("--strategy", default="circulant",
+    parser.add_argument("--strategy", default="turyn_pocs",
                         help="turyn_greedy | turyn_annealing | ... | s1:N,s2:M")
     parser.add_argument("--steps", type=int, default=200_000)
     parser.add_argument("--seed", type=int, default=42)
