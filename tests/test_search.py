@@ -90,7 +90,7 @@ def test_williamson_search_order4():
     saved = s.ORDER, s.K, s.HALF
     s.ORDER, s.K, s.HALF = 4, 1, 1
     try:
-        _, met = williamson_search(steps=100, seed=0)
+        _, met, _elapsed = williamson_search(steps=100, seed=0)
         assert met["energy"] == 0, f"energy={met['energy']}"
         assert met["orthogonal_pairs"] == 6
         print("  test_williamson_search_order4  PASS")

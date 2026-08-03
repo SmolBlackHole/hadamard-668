@@ -1,6 +1,9 @@
 """Hadamard-668 search: Williamson construction + direct local search."""
 from __future__ import annotations
 
+import hashlib
+import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -76,18 +79,61 @@ def check_orthogonality(matrix: np.ndarray) -> dict[str, int]:
 # --- output -----------------------------------------------------------------
 
 
-def save(matrix: np.ndarray, directory: Path) -> None:
+def save_run(
+    matrix: np.ndarray,
+    metrics: dict[str, int],
+    directory: Path,
+    *,
+    method_family: str,
+    search_scope: str,
+    seed: int,
+    steps: int,
+    wall_seconds: float,
+) -> str:
+    """Write candidate.csv + run.json. Returns canonical SHA-256."""
     directory.mkdir(parents=True, exist_ok=True)
+
     lines = [",".join(str(int(v)) for v in row) for row in matrix]
-    (directory / "candidate.csv").write_text("\n".join(lines) + "\n")
-    sha = normalized_sha256([[int(v) for v in row] for row in matrix])
-    print(f"  saved -> {directory}/candidate.csv  sha256={sha}")
+    csv_text = "\n".join(lines) + "\n"
+    (directory / "candidate.csv").write_text(csv_text)
+
+    raw_sha256 = hashlib.sha256(
+        (directory / "candidate.csv").read_bytes()).hexdigest()
+
+    run_data = {
+        "schema_version": "h668-run-v1",
+        "result_type": "exact_solution" if metrics["energy"] == 0 else "checkpoint",
+        "method_family": method_family,
+        "search_scope": search_scope,
+        "coverage_kind": "heuristic",
+        "seed_derivation": f"fixed-seed-{seed}",
+        "seeds": [str(seed)],
+        "evaluations": steps,
+        "wall_seconds": round(wall_seconds, 3),
+        "hardware_summary": "cpu+gpu" if _xp is not np else "cpu",
+        "model_summary": None,
+        "code_url": None,
+        "code_commit": None,
+        "parent_candidate_sha256": None,
+        "candidate_sha256": raw_sha256,
+        "metrics": {
+            "off_diagonal_energy": metrics["energy"],
+            "orthogonal_row_pairs": metrics["orthogonal_pairs"],
+            "max_absolute_off_diagonal": metrics["max_abs_correlation"],
+        },
+        "publication_consent": True,
+    }
+    (directory / "run.json").write_text(json.dumps(run_data,
+                                                   indent=2) + "\n", encoding="utf-8")
+    print(f"  saved -> {directory}/  sha256={raw_sha256}")
+    return raw_sha256
 
 
 # --- direct search ----------------------------------------------------------
 
 
-def direct_search(steps: int = STEPS, seed: int = SEED) -> tuple[np.ndarray, dict[str, int]]:
+def direct_search(steps: int = STEPS, seed: int = SEED) -> tuple[np.ndarray, dict[str, int], float]:
+    t0 = time.perf_counter()
     rng = np.random.default_rng(seed)
     M = rng.choice([-1, 1], size=(ORDER, ORDER)).astype(np.int8)
     best = M.copy()
@@ -117,8 +163,10 @@ def direct_search(steps: int = STEPS, seed: int = SEED) -> tuple[np.ndarray, dic
     pbar.set_postfix(e=e, best=best_e, acc=accepted)
     pbar.close()
 
-    print(f"  best_energy={best_e}  found@step={best_at}  accepted={accepted}")
-    return best, check_orthogonality(best)
+    elapsed = time.perf_counter() - t0
+    print(
+        f"  best_energy={best_e}  found@step={best_at}  accepted={accepted}  {elapsed:.1f}s")
+    return best, check_orthogonality(best), elapsed
 
 
 # --- Williamson construction ------------------------------------------------
@@ -156,7 +204,8 @@ def _build_williamson(a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarray
     ]).astype(np.int8)
 
 
-def williamson_search(steps: int = STEPS, seed: int = SEED) -> tuple[np.ndarray, dict[str, int]]:
+def williamson_search(steps: int = STEPS, seed: int = SEED) -> tuple[np.ndarray, dict[str, int], float]:
+    t0 = time.perf_counter()
     rng = np.random.default_rng(seed)
     half = HALF
     current = [rng.choice([-1, 1], size=half).astype(np.int8)
@@ -188,10 +237,12 @@ def williamson_search(steps: int = STEPS, seed: int = SEED) -> tuple[np.ndarray,
     pbar.set_postfix(e=e, best=best_e, acc=accepted)
     pbar.close()
 
-    print(f"  best_energy={best_e}  found@step={best_at}  accepted={accepted}")
+    elapsed = time.perf_counter() - t0
+    print(
+        f"  best_energy={best_e}  found@step={best_at}  accepted={accepted}  {elapsed:.1f}s")
     full = [_symmetric_circulant(m) for m in best_half]
     M = _build_williamson(*full)
-    return M, check_orthogonality(M)
+    return M, check_orthogonality(M), elapsed
 
 
 # --- runner -----------------------------------------------------------------
@@ -199,18 +250,21 @@ def williamson_search(steps: int = STEPS, seed: int = SEED) -> tuple[np.ndarray,
 
 def run(strategy: str = STRATEGY, steps: int = STEPS, seed: int = SEED) -> dict[str, int]:
     out = Path("output")
+    method = strategy
+    elapsed = 0.0
 
     if strategy == "direct":
-        matrix, metrics = direct_search(steps=steps, seed=seed)
+        matrix, metrics, elapsed = direct_search(steps=steps, seed=seed)
     elif strategy == "williamson":
-        matrix, metrics = williamson_search(steps=steps, seed=seed)
+        matrix, metrics, elapsed = williamson_search(steps=steps, seed=seed)
     else:
         best_metrics: dict[str, int] = {"energy": 2**63}
         matrix = None
         for _name, fn in [("direct", direct_search), ("williamson", williamson_search)]:
-            m, met = fn(steps=steps, seed=seed)
+            m, met, e = fn(steps=steps, seed=seed)
             if met["energy"] < best_metrics["energy"]:
-                matrix, best_metrics = m, met
+                matrix, best_metrics, elapsed = m, met, e
+                method = _name
             if met["energy"] == 0:
                 break
         metrics = best_metrics
@@ -223,7 +277,17 @@ def run(strategy: str = STRATEGY, steps: int = STEPS, seed: int = SEED) -> dict[
 
     if exact and matrix is not None:
         independent_audit([[int(v) for v in row] for row in matrix])
-        save(matrix, out)
+
+    mf = {"direct": "local_search",
+          "williamson": "williamson_propus"}.get(method, "other")
+    save_run(
+        matrix, metrics, out,
+        method_family=mf,
+        search_scope=f"{method} search, {steps} iterations",
+        seed=seed,
+        steps=steps,
+        wall_seconds=elapsed,
+    )
     return metrics
 
 

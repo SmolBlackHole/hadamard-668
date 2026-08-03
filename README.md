@@ -48,8 +48,8 @@ PYTHONPATH="src" .venv\Scripts\python tests/test_search.py
 ## Verifier (4x4 Kontrolle)
 
 ```bash
-PYTHONPATH="src" .venv\Scripts\python src/verifier/verify.py tests/fixtures/h4/candidate.csv --order 4 --audit --require-filename candidate.csv
-PYTHONPATH="src" .venv\Scripts\python src/verifier/review.py tests/fixtures/h4 --order 4
+.venv\Scripts\python -m verifier.verify tests/fixtures/h4/candidate.csv --order 4 --audit --require-filename candidate.csv
+.venv\Scripts\python -m verifier.review tests/fixtures/h4 --order 4
 ```
 
 ## Suche starten
