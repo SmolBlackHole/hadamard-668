@@ -26,6 +26,7 @@ def test_full_matrix_strategies_return_host_sign_matrices(strategy) -> None:
     matrix, metrics, _ = strategy.search(steps=1, seed=1)
     assert isinstance(matrix, np.ndarray)
     assert matrix.shape == (4, 4)
+    assert matrix.dtype == np.int8
     assert np.all(np.isin(matrix, (-1, 1)))
     assert isinstance(metrics["energy"], int)
 

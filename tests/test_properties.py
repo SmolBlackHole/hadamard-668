@@ -164,6 +164,17 @@ def test_compact_energy_matches_valid_block_constructions(
 
 
 @settings(max_examples=30, deadline=None)
+@given(four_sign_sequences())
+def test_general_goethals_seidel_energy_matches_compact_energy(
+    sequences: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    order = 4 * len(sequences[0])
+    compact = periodic_autocorrelation_energy(sequences)
+    matrix = build_goethals_seidel(*sequences)
+    assert check_orthogonality(matrix)["energy"] == order * compact // 2
+
+
+@settings(max_examples=30, deadline=None)
 @given(
     four_sign_sequences(),
     st.lists(st.tuples(st.integers(0, 3), st.integers(0, 100)),
@@ -270,16 +281,21 @@ def test_autocorrelation_energy_falls_back_to_numpy(monkeypatch) -> None:
 
 
 def test_goethals_seidel_slicing_matches_permutation_matrix_reference() -> None:
-    sequences = tuple(np.array([1, -1, 1], dtype=np.int8)
-                      for _ in range(4))
+    sequences = (
+        np.array([1, -1, 1], dtype=np.int8),
+        np.array([-1, -1, 1], dtype=np.int8),
+        np.array([1, 1, -1], dtype=np.int8),
+        np.array([-1, 1, 1], dtype=np.int8),
+    )
     A, B, C, D = (circulant(sequence) for sequence in sequences)
     reverse = np.fliplr(np.eye(3, dtype=np.int8))
     BR, CR, DR = B @ reverse, C @ reverse, D @ reverse
+    BtR, CtR, DtR = B.T @ reverse, C.T @ reverse, D.T @ reverse
     expected = np.block([
         [A, BR, CR, DR],
-        [-BR, A, -DR.T, CR.T],
-        [-CR, DR.T, A, -BR.T],
-        [-DR, -CR.T, BR.T, A],
+        [-BR, A, -DtR, CtR],
+        [-CR, DtR, A, -BtR],
+        [-DR, -CtR, BtR, A],
     ]).astype(np.int8)
     assert np.array_equal(build_goethals_seidel(*sequences), expected)
 

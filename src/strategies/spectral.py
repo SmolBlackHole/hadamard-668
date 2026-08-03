@@ -1,92 +1,93 @@
-"""Spektrale Projektion zwischen orthogonalen und Vorzeichenmatrizen."""
+"""Douglas-Rachford-Projektion im Fourier-Raum von vier zyklischen Folgen."""
 from __future__ import annotations
+
 import time
 
 import numpy as np
 from tqdm import tqdm
 
-from gpu import check_orthogonality, to_numpy, xp
+from constructions import build_goethals_seidel, periodic_autocorrelation_energy
+from gpu import check_orthogonality
 from .base import SearchStrategy
 
 
 class SpectralSearch(SearchStrategy):
-    """Projiziert alternierend zwischen orthogonalen und Vorzeichenmatrizen.
+    """Projiziert vier Folgen zwischen Fourier- und Vorzeichenbedingung.
 
-    Zweck: Erprobt eine Douglas-Rachford-artige Spektralheuristik im vollen Matrixraum.
-    Mechanik: Erzeugt per SVD eine skalierte orthogonale Projektion, reflektiert und rundet auf Vorzeichen.
-    Grundlage: Gesucht ist der Schnitt von ``{Q | Q Qᵀ = nI}`` und ``{H | Hᵢⱼ ∈ {-1, 1}}``.
+    Zweck: Sucht komplementäre Vier-Folgen-Kandidaten ohne kubische Matrixfaktorisierung.
+    Mechanik: Wendet Douglas-Rachford auf die spektrale Leistungssphäre und den reellen Vorzeichenraum an.
+    Grundlage: Pro Frequenz muss ``|Â|² + |B̂|² + |Ĉ|² + |D̂|² = 4K`` gelten.
     Pipeline: Kann nur eine Pipeline eröffnen, weil keine ``refine``-Methode existiert.
-    Grenzen: Die diskrete Sign-Projektion macht den Ablauf heuristisch und garantiert keine Konvergenz.
+    Grenzen: Die abschließende Vorzeichenprojektion bleibt heuristisch und garantiert keine diskrete Lösung.
     """
 
     def __init__(self, inner_steps: int = 50, *, ORDER: int = 668) -> None:
+        if ORDER < 4 or ORDER % 4:
+            raise ValueError("spectral search requires an order divisible by four")
+        if inner_steps < 1:
+            raise ValueError("inner_steps must be positive")
         self.inner_steps = inner_steps
         self.ORDER = ORDER
+        self.K = ORDER // 4
 
     @property
     def name(self) -> str:
         return "spectral"
 
-    def _project_orthogonal(self, M: np.ndarray) -> np.ndarray:
-        """Projiziere M auf die naechste orthogonale Matrix (via SVD).
+    @staticmethod
+    def _project_fourier(state: np.ndarray) -> np.ndarray:
+        """Project each Fourier four-vector onto norm ``sqrt(4K)``."""
+        if state.ndim != 2 or state.shape[0] != 4:
+            raise ValueError("spectral state must have shape (4, K)")
+        size = state.shape[1]
+        spectrum = np.fft.fft(state, axis=1)
+        norms = np.sqrt(np.sum(np.abs(spectrum) ** 2, axis=0))
+        target = np.sqrt(4.0 * size)
+        nonzero = norms > 1e-12
+        spectrum[:, nonzero] *= target / norms[nonzero]
+        spectrum[:, ~nonzero] = 0.0
+        spectrum[0, ~nonzero] = target
+        return np.fft.ifft(spectrum, axis=1).real.astype(np.float32)
 
-        Q = U V^T wobei U S V^T = M. Q^T Q = I.
-        """
-        U, _, Vt = xp.linalg.svd(M.astype(xp.float64), full_matrices=False)
-        return (U @ Vt) * np.sqrt(self.ORDER)
+    @staticmethod
+    def _project_sign(state: np.ndarray) -> np.ndarray:
+        return np.where(state >= 0, 1.0, -1.0).astype(np.float32)
 
-    def _project_sign(self, M: np.ndarray) -> np.ndarray:
-        """Runde auf naechste ±1-Matrix."""
-        return xp.sign(M).astype(xp.int8)
+    @classmethod
+    def _douglas_rachford_step(cls, state: np.ndarray) -> np.ndarray:
+        orthogonal = cls._project_fourier(state)
+        reflected_orthogonal = 2.0 * orthogonal - state
+        signed = cls._project_sign(reflected_orthogonal)
+        reflected_sign = 2.0 * signed - reflected_orthogonal
+        return (0.5 * (state + reflected_sign)).astype(np.float32)
 
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
-        t0 = time.perf_counter()
+        started = time.perf_counter()
         rng = np.random.default_rng(seed)
-        n = self.ORDER
-
-        # Start: zufaellige ±1 Matrix
-        H = xp.asarray(rng.choice([-1, 1], size=(n, n)), dtype=xp.float64)
-        H[0] = 1.0  # normalisiert
-        best_H = H.astype(xp.int8)
-        best_met = {"energy": 2**63}
+        state = rng.normal(size=(4, self.K)).astype(np.float32)
+        best = self._project_sign(state).astype(np.int8)
+        best_energy = periodic_autocorrelation_energy(tuple(best))
         best_at = 0
 
-        total = n * (n - 1) // 2
+        with tqdm(total=steps, desc="spectral", unit="steps") as progress:
+            for step in range(steps):
+                for _ in range(self.inner_steps):
+                    state = self._douglas_rachford_step(state)
+                candidate = self._project_sign(
+                    self._project_fourier(state)).astype(np.int8)
+                energy = periodic_autocorrelation_energy(tuple(candidate))
+                if energy < best_energy:
+                    best, best_energy, best_at = candidate, energy, step
+                    if energy == 0:
+                        progress.update(1)
+                        break
+                progress.update(1)
+                if step % 50 == 0:
+                    progress.set_postfix(best=best_energy)
 
-        pbar = tqdm(total=steps, desc="spectral", unit="steps")
-        for step in range(steps):
-            # Douglas-Rachford: z = H, dann inner loop
-            z = H.copy()
-            for _ in range(self.inner_steps):
-                # Projektion auf orthogonalen Raum
-                q = self._project_orthogonal(z)
-                # Reflexion
-                z = 2 * q - z
-                # Projektion auf ±1
-                p = self._project_sign(z)
-                # Reflexion
-                z = 2 * p - z
-
-            # Naechste Iteration startet von der Sign-Projektion
-            H_next = self._project_sign(z)
-            met = check_orthogonality(H_next)
-
-            if met["energy"] < best_met["energy"]:
-                best_met = met
-                best_H = H_next.copy()
-                best_at = step
-                if met["energy"] == 0:
-                    break
-
-            H = H_next
-
-            if step % 5 == 0:
-                pbar.set_postfix(e=met["energy"], best=best_met["energy"],
-                                 orth=f"{best_met.get('orthogonal_pairs', 0)/total*100:.0f}%")
-                pbar.update(5)
-
-        pbar.close()
-        elapsed = time.perf_counter() - t0
+        matrix = build_goethals_seidel(*best)
+        metrics = check_orthogonality(matrix)
+        elapsed = time.perf_counter() - started
         print(
-            f"  seed={seed}  best_energy={best_met['energy']}  found@step={best_at}  {elapsed:.1f}s")
-        return to_numpy(best_H.astype(xp.int8)), best_met, elapsed
+            f"  seed={seed} best_energy={best_energy} found@step={best_at} {elapsed:.1f}s")
+        return matrix, metrics, elapsed

@@ -75,6 +75,16 @@ def test_rowwise_solves_small_known_orders(order: int) -> None:
     assert metrics["energy"] == 0
 
 
+def test_rowwise_large_order_fills_rows_by_batch_residual() -> None:
+    strategy = RowwiseSearch(24, batch_size=8, local_flips=2)
+    matrix, metrics, _ = strategy.search(steps=48, seed=0)
+    all_ones_energy = check_orthogonality(
+        np.ones((24, 24), dtype=np.int8))["energy"]
+    assert strategy._attempts == 48
+    assert matrix.shape == (24, 24)
+    assert metrics["energy"] < all_ones_energy
+
+
 def test_circulant_search_solves_order_four() -> None:
     _, metrics, _ = CirculantSearch(
         ORDER=4, K=1, HALF=1).search(steps=100, seed=0)

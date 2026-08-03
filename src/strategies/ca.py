@@ -1,36 +1,44 @@
-"""Zellularautomat mit lokalen oder spektralen Update-Regeln."""
+"""Zellularautomat auf vier zyklischen Folgen mit lokalen oder spektralen Regeln."""
 from __future__ import annotations
 
 import math
 import time
 
 import numpy as np
-from scipy.ndimage import convolve
+from scipy.ndimage import convolve1d
 
-from gpu import check_orthogonality, to_numpy, xp
+from constructions import build_goethals_seidel, periodic_autocorrelation_energy
+from gpu import check_orthogonality
 from .base import SearchStrategy
 
 
 class CASearch(SearchStrategy):
-    """Optimiert Update-Regeln eines zellulaeren Kandidatenmodells.
+    """Optimiert vier periodische Folgen mit zellulären Update-Regeln.
 
-    Zweck: Sucht Vorzeichenmatrizen ueber lokale Faltungsregeln oder globale Frequenzfilter.
-    Mechanik: Mutiert einen Kernel beziehungsweise Frequenzgewichte, entwickelt die Matrix und akzeptiert Energieverbesserungen oder temperaturabhaengige Verschlechterungen.
-    Grundlage: Bewertet wird die Off-Diagonal-Energie von ``H H^T - n I``; der Spektralmodus ist ein FFT-Filter mit anschliessender Vorzeichenprojektion.
-    Pipeline: ``refine`` kann jede gueltige Vorzeichenmatrix derselben Ordnung weiterverarbeiten.
-    Grenzen: Weder Faltung noch FFT-Filter sind eine Orthogonalitaetsprojektion oder ein Existenzbeweis; der Default-Modus ist ``spectral``.
+    Zweck: Erprobt lokale Faltungsregeln und globale Frequenzfilter im kompakten Goethals-Seidel-Raum.
+    Mechanik: Mutiert eine periodische 1D-Regel oder RFFT-Gewichte und akzeptiert Kandidaten per Autokorrelationsenergie.
+    Grundlage: Komplementäre Folgen haben für jeden Nichtnull-Shift eine verschwindende summierte Autokorrelation.
+    Pipeline: ``refine`` akzeptiert ausschließlich exakt extrahierbare Goethals-Seidel-Matrizen.
+    Grenzen: Die Regeln sind heuristische Mutationen und keine Projektion auf die Hadamard-Bedingung.
     """
 
-    def __init__(self, order: int = SearchStrategy.ORDER, ca_steps: int = 1,
-                 rule_seed: int = 42, kernel_size: int = 5, mode: str = "spectral") -> None:
-        if order < 1 or ca_steps < 1:
+    def __init__(
+        self,
+        order: int = SearchStrategy.ORDER,
+        ca_steps: int = 1,
+        rule_seed: int = 42,
+        kernel_size: int = 5,
+        mode: str = "spectral",
+    ) -> None:
+        if order < 4 or order % 4 or ca_steps < 1:
             raise ValueError(
-                "cellular search requires a positive order and ca_steps")
+                "cellular search requires an order divisible by four and positive ca_steps")
         if mode not in ("local", "spectral"):
             raise ValueError("mode must be 'local' or 'spectral'")
         if kernel_size % 2 == 0:
             raise ValueError("kernel_size must be odd")
         self.ORDER = order
+        self.K = order // 4
         self.ca_steps = ca_steps
         self.rule_seed = rule_seed
         self.kernel_size = kernel_size
@@ -40,115 +48,122 @@ class CASearch(SearchStrategy):
     def name(self) -> str:
         return f"ca_{self.mode}"
 
-    # ---- spectral mode ----
-
-    def _apply_spectral(self, matrix, weights):
-        """FFT → gewichten → IFFT → sign als globaler Filter.
-
-        weights: (self.ORDER,) Array von Frequenz-Gewichten in [0, 1].
-        Jede Frequenzkomponente wird mit ihrem Gewicht multipliziert.
-        """
-        transformed = xp.fft.fft2(matrix.astype(xp.float64))
-        w = xp.fft.fftshift(xp.outer(weights, weights))
-        transformed *= w
-        result = xp.fft.ifft2(transformed).real
-        return xp.sign(result).astype(xp.int8)
+    @staticmethod
+    def _apply_spectral(sequences: np.ndarray, weights: np.ndarray) -> np.ndarray:
+        spectrum = np.fft.rfft(sequences.astype(np.float32), axis=1)
+        filtered = np.fft.irfft(
+            spectrum * weights[None, :], n=sequences.shape[1], axis=1)
+        return np.where(filtered >= 0, 1, -1).astype(np.int8)
 
     def _random_spectral_weights(self, rng: np.random.Generator) -> np.ndarray:
-        """Zufaellige Frequenz-Gewichte mit festem erstem Eintrag."""
-        w = rng.uniform(0.3, 1.0, size=self.ORDER)
-        w[0] = 1.0
-        return w
-
-    def _mutate_spectral_weights(self, w, rng: np.random.Generator):
-        """Flippe ein Frequenz-Gewicht."""
-        new = w.copy()
-        idx = rng.integers(1, self.ORDER)
-        new[idx] = rng.uniform(0.1, 1.0)
-        return new
-
-    # ---- local mode (5x5) ----
+        weights = rng.uniform(0.3, 1.0, size=self.K // 2 + 1)
+        weights[0] = 1.0
+        return weights
 
     @staticmethod
-    def _apply_ca(matrix: np.ndarray, rule: np.ndarray) -> np.ndarray:
-        values = convolve(matrix.astype(np.float64), rule, mode="wrap")
-        return np.where(values > 0, 1, -1).astype(np.int8)
+    def _mutate_spectral_weights(
+        weights: np.ndarray,
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        candidate = weights.copy()
+        index = 0 if len(candidate) == 1 else int(rng.integers(1, len(candidate)))
+        candidate[index] = rng.uniform(0.1, 1.0)
+        return candidate
+
+    @staticmethod
+    def _apply_ca(sequences: np.ndarray, rule: np.ndarray) -> np.ndarray:
+        values = convolve1d(
+            sequences.astype(np.float32), rule, axis=1, mode="wrap")
+        return np.where(values >= 0, 1, -1).astype(np.int8)
 
     def _random_rule(self, rng: np.random.Generator) -> np.ndarray:
-        return rng.choice((-1.0, 0.0, 1.0), size=(self.kernel_size, self.kernel_size))
+        return rng.choice(
+            (-1.0, 0.0, 1.0), size=self.kernel_size).astype(np.float32)
 
     @staticmethod
     def _mutate_rule(rule: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-        k = rule.shape[0]
         candidate = rule.copy()
-        r, c = rng.integers(0, k), rng.integers(0, k)
-        choices = np.array((-1.0, 0.0, 1.0))
-        candidate[r, c] = rng.choice(choices[choices != candidate[r, c]])
+        index = int(rng.integers(0, len(candidate)))
+        choices = np.array((-1.0, 0.0, 1.0), dtype=np.float32)
+        candidate[index] = rng.choice(choices[choices != candidate[index]])
         return candidate
 
-    # ---- shared optimisation ----
-
-    def _evolve(self, matrix: np.ndarray, param: np.ndarray) -> np.ndarray:
-        candidate = matrix
+    def _evolve(self, sequences: np.ndarray, parameter: np.ndarray) -> np.ndarray:
+        candidate = sequences
         for _ in range(self.ca_steps):
-            if self.mode == "spectral":
-                candidate = self._apply_spectral(candidate, param)
-            else:
-                candidate = self._apply_ca(candidate, param)
+            candidate = (
+                self._apply_spectral(candidate, parameter)
+                if self.mode == "spectral"
+                else self._apply_ca(candidate, parameter)
+            )
         return candidate
 
-    def _optimize(self, matrix: np.ndarray, steps: int, seed: int) -> tuple[np.ndarray, dict, float]:
+    def _optimize(
+        self,
+        sequences: np.ndarray,
+        steps: int,
+        seed: int,
+    ) -> tuple[np.ndarray, dict[str, int], float]:
         started = time.perf_counter()
         rng = np.random.default_rng(seed + self.rule_seed)
-        device_mode = self.mode == "spectral"
-        current = xp.asarray(matrix, dtype=xp.int8).copy(
-        ) if device_mode else matrix.copy()
-        best_metrics = check_orthogonality(current)
+        current = np.asarray(sequences, dtype=np.int8).copy()
+        energy = best_energy = periodic_autocorrelation_energy(tuple(current))
         best = current.copy()
-        metrics = best_metrics
 
         if self.mode == "spectral":
-            param = xp.asarray(self._random_spectral_weights(rng))
+            parameter = self._random_spectral_weights(rng)
             mutate = self._mutate_spectral_weights
         else:
-            param = self._random_rule(rng)
+            parameter = self._random_rule(rng)
             mutate = self._mutate_rule
 
-        energy_scale = max(metrics["energy"], 1)
+        energy_scale = max(energy, 1)
         accepted = 0
-
         for step in range(steps):
-            candidate_param = mutate(param, rng)
-            candidate = self._evolve(current, candidate_param)
-            candidate_metrics = check_orthogonality(candidate)
-            delta = candidate_metrics["energy"] - metrics["energy"]
-            T = 1.0 * 0.001 ** (step / max(steps - 1, 1))
-
-            if delta <= 0 or rng.random() < math.exp(-delta / (T * energy_scale)):
-                current, metrics, param = candidate, candidate_metrics, candidate_param
+            candidate_parameter = mutate(parameter, rng)
+            candidate = self._evolve(current, candidate_parameter)
+            candidate_energy = periodic_autocorrelation_energy(tuple(candidate))
+            delta = candidate_energy - energy
+            temperature = 0.001 ** (step / max(steps - 1, 1))
+            if delta <= 0 or rng.random() < math.exp(
+                -delta / (temperature * energy_scale)
+            ):
+                current, energy = candidate, candidate_energy
+                parameter = candidate_parameter
                 accepted += 1
-                if candidate_metrics["energy"] < best_metrics["energy"]:
-                    best, best_metrics = candidate.copy(), candidate_metrics
-                    if best_metrics["energy"] == 0:
+                if energy < best_energy:
+                    best, best_energy = current.copy(), energy
+                    if energy == 0:
                         break
 
-            if step % 200 == 0 and step > 0:
-                print(f"  [{step:>6d}/{steps}]  energy={metrics['energy']}  best={best_metrics['energy']}  "
-                      f"acc={accepted}  T={T:.4f}", flush=True)
-
+        matrix = build_goethals_seidel(*best)
+        metrics = check_orthogonality(matrix)
         elapsed = time.perf_counter() - started
         print(
-            f"  seed={seed}  best_energy={best_metrics['energy']}  accepted={accepted}  {elapsed:.1f}s")
-        return to_numpy(best) if device_mode else best, best_metrics, elapsed
+            f"  seed={seed} best_energy={best_energy} accepted={accepted} {elapsed:.1f}s")
+        return matrix, metrics, elapsed
 
-    def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
-        rng = np.random.default_rng(seed)
-        matrix = rng.choice(
-            (-1, 1), size=(self.ORDER, self.ORDER)).astype(np.int8)
-        return self._optimize(matrix, steps, seed)
-
-    def refine(self, matrix: np.ndarray, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
-        if matrix.shape != (self.ORDER, self.ORDER) or not np.all(np.isin(matrix, (-1, 1))):
+    def _extract_sequences(self, matrix: np.ndarray) -> np.ndarray:
+        if matrix.shape != (self.ORDER, self.ORDER) or not np.all(
+            np.isin(matrix, (-1, 1))
+        ):
             raise ValueError(
                 f"cellular needs a {self.ORDER}x{self.ORDER} sign matrix")
-        return self._optimize(matrix, steps, seed)
+        first_row = matrix[0]
+        sequences = np.stack((
+            first_row[:self.K],
+            first_row[self.K:2 * self.K][::-1],
+            first_row[2 * self.K:3 * self.K][::-1],
+            first_row[3 * self.K:][::-1],
+        )).astype(np.int8)
+        if not np.array_equal(build_goethals_seidel(*sequences), matrix):
+            raise ValueError("cellular refinement needs a Goethals-Seidel matrix")
+        return sequences
+
+    def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
+        sequences = np.random.default_rng(seed).choice(
+            (-1, 1), size=(4, self.K)).astype(np.int8)
+        return self._optimize(sequences, steps, seed)
+
+    def refine(self, matrix: np.ndarray, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
+        return self._optimize(self._extract_sequences(matrix), steps, seed)

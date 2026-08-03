@@ -1,11 +1,12 @@
-"""Walsh-Mischheuristik mit Padding auf die nächste Zweierpotenz."""
+"""Walsh-Mischheuristik auf vier gepaddeten zyklischen Folgen."""
 from __future__ import annotations
 
 import time
 
 import numpy as np
 
-from gpu import check_orthogonality, to_numpy, xp
+from constructions import build_goethals_seidel, periodic_autocorrelation_energy
+from gpu import check_orthogonality
 from .base import SearchStrategy
 
 
@@ -25,48 +26,64 @@ def _fwht(values: np.ndarray) -> np.ndarray:
 
 
 class WalshSearch(SearchStrategy):
-    """Mischt Kandidaten über eine gepaddete Fast-Walsh-Hadamard-Transformation.
+    """Mutiert vier Folgen global im gepaddeten Walsh-Raum.
 
-    Zweck: Liefert eine Spektralheuristik und für Zweierpotenzordnungen die Sylvester-Konstruktion.
-    Mechanik: Transformiert, rundet im Walsh-Raum zurück und akzeptiert nur bessere Vorzeichenmatrizen.
-    Grundlage: Die Fast-Walsh-Hadamard-Transformation ist exakt für Längen ``2^m``; bei 668 ist das 1024-Padding nur eine Heuristik.
+    Zweck: Nutzt globale Walsh-Koeffizientenmutationen im kompakten Goethals-Seidel-Suchraum.
+    Mechanik: Füllt jede Folge auf die nächste Zweierpotenz auf, flippt einen Koeffizienten und projiziert nach der Rücktransformation auf Vorzeichen.
+    Grundlage: Zweifache FWHT ergibt bis auf den Längenfaktor die Ausgangsfolge; für Zweierpotenzordnungen bleibt die Sylvester-Konstruktion exakt.
     Pipeline: Kann nur eine Pipeline eröffnen, weil keine ``refine``-Methode existiert.
-    Grenzen: Das Padding auf 1024 ist bei Ordnung 668 keine äquivalente Hadamard-Bedingung.
+    Grenzen: Das Padding von 167 auf 256 ist eine Suchheuristik und keine äquivalente Hadamard-Bedingung.
     """
 
     def __init__(self, order: int = SearchStrategy.ORDER) -> None:
         if order < 1:
             raise ValueError("walsh search requires a positive order")
+        if _next_power_of_two(order) != order and order % 4:
+            raise ValueError(
+                "non-power-of-two Walsh search requires an order divisible by four")
         self.ORDER = order
+        self.K = order // 4 if order % 4 == 0 else 0
 
     @property
     def name(self) -> str:
         return "walsh"
 
+    @staticmethod
+    def _mutate_sequences(
+        sequences: np.ndarray,
+        size: int,
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        padded = np.zeros((4, size), dtype=np.float32)
+        padded[:, :sequences.shape[1]] = sequences
+        transformed = _fwht(padded)
+        sequence = int(rng.integers(0, 4))
+        frequency = int(rng.integers(0, size))
+        transformed[sequence, frequency] *= -1
+        restored = _fwht(transformed)[:, :sequences.shape[1]] / size
+        return np.where(restored >= 0, 1, -1).astype(np.int8)
+
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         started = time.perf_counter()
-        size = _next_power_of_two(self.ORDER)
-        if size == self.ORDER:
-            matrix = _fwht(xp.eye(size, dtype=xp.float64))
-            matrix = xp.where(matrix >= 0, 1, -1).astype(xp.int8)
-            return to_numpy(matrix), check_orthogonality(matrix), time.perf_counter() - started
+        if _next_power_of_two(self.ORDER) == self.ORDER:
+            matrix = _fwht(np.eye(self.ORDER, dtype=np.float32))
+            matrix = np.where(matrix >= 0, 1, -1).astype(np.int8)
+            return matrix, check_orthogonality(matrix), time.perf_counter() - started
+
         rng = np.random.default_rng(seed)
-        matrix = xp.asarray(rng.choice(
-            (-1, 1), size=(self.ORDER, self.ORDER)), dtype=xp.int8)
-        best = matrix.copy()
-        metrics = best_metrics = check_orthogonality(matrix)
+        size = _next_power_of_two(self.K)
+        current = rng.choice((-1, 1), size=(4, self.K)).astype(np.int8)
+        energy = best_energy = periodic_autocorrelation_energy(tuple(current))
+        best = current.copy()
         for _ in range(steps):
-            padded = xp.zeros((self.ORDER, size), dtype=xp.float64)
-            padded[:, :self.ORDER] = matrix
-            mixed = _fwht(padded) / np.sqrt(size)
-            candidate = xp.where(_fwht(xp.sign(mixed))[
-                                 :, :self.ORDER] >= 0, 1, -1).astype(xp.int8)
-            candidate_metrics = check_orthogonality(candidate)
-            if candidate_metrics["energy"] <= metrics["energy"]:
-                matrix, metrics = candidate, candidate_metrics
-                if metrics["energy"] == 0:
-                    break
-            if metrics["energy"] < best_metrics["energy"]:
-                best = matrix.copy()
-                best_metrics = metrics
-        return to_numpy(best), best_metrics, time.perf_counter() - started
+            candidate = self._mutate_sequences(current, size, rng)
+            candidate_energy = periodic_autocorrelation_energy(tuple(candidate))
+            if candidate_energy <= energy:
+                current, energy = candidate, candidate_energy
+                if energy < best_energy:
+                    best, best_energy = current.copy(), energy
+                    if energy == 0:
+                        break
+
+        matrix = build_goethals_seidel(*best)
+        return matrix, check_orthogonality(matrix), time.perf_counter() - started

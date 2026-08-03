@@ -191,4 +191,5 @@ def build_propus(a: np.ndarray, b: np.ndarray, d: np.ndarray) -> np.ndarray:
 def build_goethals_seidel(a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarray) -> np.ndarray:
     A, B, C, D = (circulant(sequence) for sequence in (a, b, c, d))
     BR, CR, DR = B[:, ::-1], C[:, ::-1], D[:, ::-1]
-    return np.block([[A, BR, CR, DR], [-BR, A, -DR.T, CR.T], [-CR, DR.T, A, -BR.T], [-DR, -CR.T, BR.T, A]]).astype(np.int8)
+    BtR, CtR, DtR = B.T[:, ::-1], C.T[:, ::-1], D.T[:, ::-1]
+    return np.block([[A, BR, CR, DR], [-BR, A, -DtR, CtR], [-CR, DtR, A, -BtR], [-DR, -CtR, BtR, A]]).astype(np.int8)

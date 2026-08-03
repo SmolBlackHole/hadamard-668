@@ -8,6 +8,7 @@ from constructions import (
     apply_sequence_flip,
     apply_symmetric_flip,
     autocorrelation_state,
+    build_goethals_seidel,
     correlation_energy,
     periodic_autocorrelation_energy,
     symmetric_circulant,
@@ -20,10 +21,11 @@ from strategies.genetic import GeneticSearch
 from strategies.gold import GoldSearch
 from strategies.ising import IsingSearch
 from strategies.montecarlo import MonteCarloSearch
+from strategies.rowwise import RowwiseSearch
 from strategies.sat import SatSearch
-from strategies.walsh import WalshSearch
+from strategies.spectral import SpectralSearch
+from strategies.walsh import WalshSearch, _fwht
 from strategies.base import Pipeline, SearchStrategy
-from verifier.known import sylvester
 
 
 def reference_periodic_energy(sequences: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]) -> int:
@@ -55,8 +57,10 @@ def test_gold_search_is_deterministic() -> None:
     assert np.all(np.isin(first, (-1, 1)))
 
 
-def test_sat_search_solves_order_four() -> None:
-    _, metrics, _ = SatSearch(4).search(steps=16, seed=0)
+@pytest.mark.parametrize("order", [4, 8, 12])
+def test_sat_search_solves_small_known_orders(order: int) -> None:
+    _, metrics, _ = SatSearch(order, timeout_seconds=5).search(
+        steps=1, seed=0)
     assert metrics["energy"] == 0
 
 
@@ -78,47 +82,144 @@ def test_montecarlo_search_uses_gpu() -> None:
     assert metrics["energy"] == 0
 
 
-def test_ca_identity_rule_preserves_hadamard() -> None:
-    matrix = sylvester(4)
-    rule = np.zeros((3, 3))
-    rule[1, 1] = 1
-    assert np.array_equal(CASearch._apply_ca(matrix, rule), matrix)
+def test_spectral_fourier_projection_satisfies_power_condition() -> None:
+    state = np.random.default_rng(0).normal(size=(4, 7)).astype(np.float32)
+    projected = SpectralSearch._project_fourier(state)
+    power = np.sum(np.abs(np.fft.fft(projected, axis=1)) ** 2, axis=0)
+    assert np.allclose(power, 28.0, atol=1e-5)
+    assert np.isrealobj(projected)
+
+
+def test_spectral_zero_projection_is_deterministic() -> None:
+    state = np.zeros((4, 7), dtype=np.float32)
+    first = SpectralSearch._project_fourier(state)
+    second = SpectralSearch._project_fourier(state)
+    assert np.array_equal(first, second)
+    assert np.all(np.isfinite(first))
+
+
+def test_spectral_douglas_rachford_step_uses_averaged_reflections() -> None:
+    state = np.random.default_rng(1).normal(size=(4, 5)).astype(np.float32)
+    orthogonal = SpectralSearch._project_fourier(state)
+    reflected_orthogonal = 2 * orthogonal - state
+    signed = SpectralSearch._project_sign(reflected_orthogonal)
+    expected = 0.5 * (state + 2 * signed - reflected_orthogonal)
+    assert np.allclose(
+        SpectralSearch._douglas_rachford_step(state), expected)
+
+
+def test_ising_gradient_matches_finite_differences() -> None:
+    state = np.random.default_rng(2).normal(size=(4, 5)).astype(np.float32)
+    energy, gradient = IsingSearch._energy_gradient(state)
+    epsilon = 1e-3
+    numerical = np.empty_like(state)
+    for sequence in range(4):
+        for index in range(5):
+            shifted = state.copy()
+            shifted[sequence, index] += epsilon
+            shifted_energy, _ = IsingSearch._energy_gradient(shifted)
+            numerical[sequence, index] = (shifted_energy - energy) / epsilon
+    assert np.allclose(gradient, numerical, rtol=2e-3, atol=2e-2)
+
+
+def test_ca_identity_rule_preserves_sequences() -> None:
+    sequences = np.random.default_rng(3).choice(
+        (-1, 1), size=(4, 7)).astype(np.int8)
+    rule = np.array((0, 1, 0), dtype=np.float32)
+    assert np.array_equal(CASearch._apply_ca(sequences, rule), sequences)
+
+
+def test_ca_identity_spectral_filter_preserves_sequences() -> None:
+    sequences = np.random.default_rng(4).choice(
+        (-1, 1), size=(4, 7)).astype(np.int8)
+    weights = np.ones(7 // 2 + 1)
+    assert np.array_equal(
+        CASearch._apply_spectral(sequences, weights), sequences)
 
 
 def test_ca_rule_mutation_changes_one_weight() -> None:
-    rule = np.zeros((3, 3))
+    rule = np.zeros(5)
     mutated = CASearch._mutate_rule(rule, np.random.default_rng(0))
     assert np.count_nonzero(mutated != rule) == 1
     assert np.all(np.isin(mutated, (-1.0, 0.0, 1.0)))
 
 
 def test_ca_refinement_preserves_input_and_best_energy() -> None:
-    original = sylvester(4)
-    broken = original.copy()
-    broken[1, 1] *= -1
-    before = broken.copy()
-    initial_energy = check_orthogonality(broken)["energy"]
-    refined, metrics, _ = CASearch(order=4).refine(broken, steps=4, seed=0)
-    assert np.array_equal(broken, before)
-    assert metrics["energy"] <= initial_energy
+    sequences = np.random.default_rng(5).choice(
+        (-1, 1), size=(4, 3)).astype(np.int8)
+    original = build_goethals_seidel(*sequences)
+    before = original.copy()
+    refined, metrics, _ = CASearch(order=12).refine(
+        original, steps=4, seed=0)
+    assert np.array_equal(original, before)
+    assert metrics == check_orthogonality(refined)
     assert np.all(np.isin(refined, (-1, 1)))
+
+
+def test_ca_refinement_rejects_incompatible_matrix() -> None:
+    with pytest.raises(ValueError, match="Goethals-Seidel"):
+        CASearch(order=4).refine(
+            np.ones((4, 4), dtype=np.int8), steps=1, seed=0)
 
 
 def test_ca_runs_as_a_pipeline_refinement() -> None:
     class Source(SearchStrategy):
-        ORDER = 4
+        ORDER = 12
 
         @property
         def name(self) -> str:
             return "source"
 
         def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
-            matrix = sylvester(4)
-            matrix[1, 1] *= -1
+            sequences = np.random.default_rng(6).choice(
+                (-1, 1), size=(4, 3)).astype(np.int8)
+            matrix = build_goethals_seidel(*sequences)
             return matrix, check_orthogonality(matrix), 0.0
 
-    _, metrics, _ = Pipeline([(Source(), 0), (CASearch(order=4), 2)]).search(0, 0)
-    assert metrics["energy"] <= 48
+    matrix, metrics, _ = Pipeline(
+        [(Source(), 0), (CASearch(order=12), 2)]).search(0, 0)
+    assert metrics == check_orthogonality(matrix)
+
+
+def test_walsh_transform_round_trip() -> None:
+    values = np.random.default_rng(7).normal(size=(4, 8)).astype(np.float32)
+    assert np.allclose(_fwht(_fwht(values)) / 8, values)
+
+
+def test_walsh_sequence_mutation_stays_compact_and_binary() -> None:
+    sequences = np.random.default_rng(8).choice(
+        (-1, 1), size=(4, 7)).astype(np.int8)
+    mutated = WalshSearch._mutate_sequences(
+        sequences, 8, np.random.default_rng(9))
+    assert mutated.shape == (4, 7)
+    assert mutated.dtype == np.int8
+    assert np.all(np.isin(mutated, (-1, 1)))
+
+
+def test_sat_uses_four_compact_sequences_as_base_variables() -> None:
+    strategy = SatSearch(28, timeout_seconds=1)
+    variables = strategy._variables()
+    assert len(variables) == 4
+    assert sum(map(len, variables)) == 28
+
+
+@pytest.mark.parametrize("strategy", [
+    SpectralSearch(ORDER=4, inner_steps=1),
+    IsingSearch(4),
+    CASearch(4),
+    WalshSearch(4),
+    SatSearch(4, timeout_seconds=1),
+    GoldSearch(4),
+    RowwiseSearch(4),
+])
+def test_phase6_strategies_follow_result_contract(strategy) -> None:
+    matrix, metrics, elapsed = strategy.search(steps=1, seed=1)
+    assert isinstance(matrix, np.ndarray)
+    assert matrix.shape == (4, 4)
+    assert matrix.dtype == np.int8
+    assert np.all(np.isin(matrix, (-1, 1)))
+    assert all(isinstance(value, int) for value in metrics.values())
+    assert isinstance(elapsed, float)
 
 
 def test_baumert_hall_solves_order_four() -> None:
