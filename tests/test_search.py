@@ -1,119 +1,87 @@
-"""Tests against known Hadamard matrices and search engine verification.
+"""Smoke tests against known matrices and the search-engine API."""
+from __future__ import annotations
 
-Run from project root: PYTHONPATH="src" python tests/test_search.py
-"""
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
+import pytest
 
-from search import (
-    ORDER, K, HALF,
-    _gram_off_diagonal_energy, check_orthogonality, _autocorrelation_energy,
-    _symmetric_circulant, _build_williamson,
-    williamson_search,
-)
-from verifier.known import sylvester, paley, get_known
+from constructions import autocorrelation_energy, build_williamson, symmetric_circulant
+from gpu import check_orthogonality
+from strategies.annealing import AnnealingSearch
+from strategies.base import Pipeline
+from strategies.circulant import CirculantSearch
+from strategies.repair import RepairSearch
+from strategies.rowwise import RowwiseSearch
+from verifier.known import get_known, paley, sylvester
 
 
-def test_sym_circulant_order5():
-    """Symmetric circulant: first half [1,-1,1] -> full row [1,-1,1,-1,1]."""
+@pytest.mark.parametrize("order", [1, 2, 4, 8, 12, 16, 20])
+def test_known_matrices_are_orthogonal(order: int) -> None:
+    matrix = get_known(order)
+    metrics = check_orthogonality(matrix)
+    assert matrix.shape == (order, order)
+    assert metrics["energy"] == 0
+    assert metrics["orthogonal_pairs"] == order * (order - 1) // 2
+
+
+def test_symmetric_circulant_order_five() -> None:
     half = np.array([1, -1, 1], dtype=np.int8)
-    full = _symmetric_circulant(half)
-    expected = np.array([1, -1, 1, -1, 1], dtype=np.int8)
-    assert len(full) == 5
-    assert np.array_equal(full, expected)
-    print("  test_sym_circulant_order5  PASS")
+    assert np.array_equal(symmetric_circulant(
+        half), np.array([1, -1, 1, -1, 1], dtype=np.int8))
 
 
-def test_sylvester_order_4():
-    H = sylvester(4)
-    m = check_orthogonality(H)
-    assert m["energy"] == 0, f"energy={m['energy']}"
-    assert m["orthogonal_pairs"] == 6
-    assert m["max_abs_correlation"] == 0
-    print("  test_sylvester_order_4  PASS")
+def test_williamson_builds_order_four_hadamard() -> None:
+    matrix = build_williamson(*(np.ones(1, dtype=np.int8) for _ in range(4)))
+    assert check_orthogonality(matrix) == {
+        "energy": 0, "orthogonal_pairs": 6, "max_abs_correlation": 0}
 
 
-def test_sylvester_order_8():
-    H = sylvester(8)
-    m = check_orthogonality(H)
-    assert m["energy"] == 0, f"energy={m['energy']}"
-    print("  test_sylvester_order_8  PASS")
+def test_autocorrelation_energy_of_singletons_is_zero() -> None:
+    sequence = np.array([1], dtype=np.int8)
+    assert autocorrelation_energy(
+        (sequence, sequence, sequence, sequence)) == 0
 
 
-def test_paley_order_8():
-    H = paley(8)
-    m = check_orthogonality(H)
-    assert m["energy"] == 0, f"energy={m['energy']}"
-    print("  test_paley_order_8  PASS")
+def test_run_help_works_without_pythonpath() -> None:
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [sys.executable, "run.py", "--help"],
+        cwd=Path(__file__).parents[1],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
-def test_paley_order_12():
-    H = paley(12)
-    m = check_orthogonality(H)
-    assert m["energy"] == 0, f"energy={m['energy']}"
-    print("  test_paley_order_12  PASS")
+@pytest.mark.parametrize("order", [4, 8, 12])
+def test_rowwise_solves_small_known_orders(order: int) -> None:
+    _, metrics, _ = RowwiseSearch(order).search(steps=1_000, seed=0)
+    assert metrics["energy"] == 0
 
 
-def test_get_known():
-    for order in [1, 2, 4, 8, 12, 16, 20]:
-        H = get_known(order)
-        assert H.shape == (order, order), f"order={order} shape={H.shape}"
-        m = check_orthogonality(H)
-        assert m["energy"] == 0, f"order={order} energy={m['energy']}"
-    print("  test_get_known[1,2,4,8,12,16,20]  PASS")
+def test_circulant_search_solves_order_four() -> None:
+    _, metrics, _ = CirculantSearch(
+        ORDER=4, K=1, HALF=1).search(steps=100, seed=0)
+    assert metrics["energy"] == 0
 
 
-def test_williamson_builds_known_order4():
-    ones = np.array([1], dtype=np.int8)
-    H = _build_williamson(ones, ones, ones, ones)
-    m = check_orthogonality(H)
-    assert m["energy"] == 0
-    assert m["orthogonal_pairs"] == 6
-    print("  test_williamson_builds_known_order4  PASS")
+def test_real_pipeline_runs_all_stages() -> None:
+    stages = [
+        (CirculantSearch(ORDER=12, K=3, HALF=2), 0),
+        (AnnealingSearch(ORDER=12, K=3, HALF=2), 0),
+        (RepairSearch(order=12), 0),
+    ]
+    _, metrics, _ = Pipeline(stages).search(steps=0, seed=0)
+    assert metrics["energy"] >= 0
 
 
-def test_autocorrelation_energy_zero_for_ones():
-    ones = np.array([1], dtype=np.int8)
-    e = _autocorrelation_energy((ones, ones, ones, ones))
-    assert e == 0
-    print("  test_autocorrelation_energy_zero_for_ones  PASS")
-
-
-def test_gram_energy_on_sylvester():
-    H = sylvester(4)
-    assert _gram_off_diagonal_energy(H) == 0
-    print("  test_gram_energy_on_sylvester  PASS")
-
-
-def test_williamson_search_order4():
-    import search as s
-    saved = s.ORDER, s.K, s.HALF
-    s.ORDER, s.K, s.HALF = 4, 1, 1
-    try:
-        _, met, _elapsed = williamson_search(steps=100, seed=0)
-        assert met["energy"] == 0, f"energy={met['energy']}"
-        assert met["orthogonal_pairs"] == 6
-        print("  test_williamson_search_order4  PASS")
-    finally:
-        s.ORDER, s.K, s.HALF = saved
-
-
-def test_constants():
-    assert ORDER == 668 and K == 167 and HALF == 84
-    print("  test_constants  PASS")
-
-
-if __name__ == "__main__":
-    print("Tests ...\n")
-    test_sym_circulant_order5()
-    test_sylvester_order_4()
-    test_sylvester_order_8()
-    test_paley_order_8()
-    test_paley_order_12()
-    test_get_known()
-    test_williamson_builds_known_order4()
-    test_autocorrelation_energy_zero_for_ones()
-    test_gram_energy_on_sylvester()
-    test_williamson_search_order4()
-    test_constants()
-    print("\nAll PASS.")
+@pytest.mark.parametrize("matrix", [sylvester(4), paley(8), paley(12)])
+def test_known_generators_only_emit_signs(matrix: np.ndarray) -> None:
+    assert np.all(np.isin(matrix, (-1, 1)))

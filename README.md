@@ -10,7 +10,7 @@ Ordnung 668 = 4 x 167 ist die **kleinste ungeloeste Ordnung** der Hadamard-Vermu
 
 ```txt
 ├── src/
-│   ├── search.py              # Such-Engine (direkt + Williamson)
+│   ├── strategies/            # ABC-basierte Suchstrategien
 │   └── verifier/              # Pruf-Toolchain
 │       ├── verify.py          # Matrix-Prufung
 │       ├── review.py          # Bundle-Review
@@ -40,7 +40,7 @@ python -m venv .venv
 ```bash
 .venv\Scripts\python -m pytest tests/ -v
 # oder ohne pytest:
-PYTHONPATH="src" .venv\Scripts\python tests/test_search.py
+.venv\Scripts\python -m pytest
 ```
 
 11 Tests gegen bekannte Hadamard-Matrizen (Sylvester Ordnung 4,8,16; Paley Ordnung 8,12,20; Sylvester Ordnung 1,2), Williamson-Hilfsfunktionen, symmetrische Zirkulante und die Such-Engine.
@@ -55,24 +55,39 @@ PYTHONPATH="src" .venv\Scripts\python tests/test_search.py
 ## Suche starten
 
 ```bash
-PYTHONPATH="src" .venv\Scripts\python src/search.py
+.venv\Scripts\python run.py --strategy circulant --steps 200000 --seed 42
 ```
 
 Oder importieren:
 
 ```python
-from search import run, direct_search, williamson_search
+from strategies.circulant import CirculantSearch
 
-run(strategy="both", steps=5000, seed=42)
+matrix, metrics, elapsed = CirculantSearch().search(steps=5000, seed=42)
 ```
 
-Ergebnis einer exakten Losung landet in `output/candidate.csv`.
+Jeder Lauf schreibt `candidate.csv` und `run.json` in ein neues Verzeichnis unter `runs/`.
 
-Parameter (oben in `src/search.py` anderbar):
+Parameter werden über `run.py` gesetzt, zum Beispiel `--strategy rowwise --steps 5000 --seed 42`.
 
-- `STEPS` — Anzahl Suchschritte
-- `SEED` — Zufallsseed
-- `STRATEGY` — `"direct"`, `"williamson"` oder `"both"`
+### Pipeline
+
+Mehrere Strategien lassen sich als Pipeline über eine kommaseparierte
+`name:steps`-Angabe verbinden:
+
+```bash
+.venv\Scripts\python run.py --strategy "circulant:100000,annealing:30000,repair:5000" --seed 42
+```
+
+Die erste Phase startet mit `search(steps, seed)`. Jede weitere Phase erhält
+den besten Kandidaten der vorherigen Phase über `refine(matrix, steps, seed)`;
+der Seed erhöht sich pro Phase um eins. Eine exakte Lösung (`energy == 0`)
+beendet die Pipeline sofort. Die Schrittbudgets stehen deshalb in der
+`--strategy`-Angabe; `--steps` wird bei einer Pipeline nicht verwendet.
+
+Als Folgestufe eignen sich derzeit `annealing` (nur für Williamson-Matrizen),
+`repair`, `direct` und `cellular`. Die übrigen Strategien besitzen kein
+`refine()` und können nur die erste Phase bilden.
 
 ## Strategien
 
