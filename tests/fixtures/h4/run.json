@@ -1,0 +1,23 @@
+{
+  "schema_version": "h668-run-v1",
+  "result_type": "exact_solution",
+  "method_family": "other",
+  "search_scope": "Known order-4 verifier fixture.",
+  "coverage_kind": "certified",
+  "seed_derivation": null,
+  "seeds": [],
+  "evaluations": 0,
+  "wall_seconds": 0,
+  "hardware_summary": null,
+  "model_summary": null,
+  "code_url": null,
+  "code_commit": null,
+  "parent_candidate_sha256": null,
+  "candidate_sha256": "a28c0a1e413af63ebfb79bb5e5b5e65835531a87ee7a9cb1eee8f8d2d6531239",
+  "metrics": {
+    "off_diagonal_energy": 0,
+    "orthogonal_row_pairs": 6,
+    "max_absolute_off_diagonal": 0
+  },
+  "publication_consent": true
+}

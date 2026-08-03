@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+h4-fixture/
+output/
+*.zip
