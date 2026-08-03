@@ -5,7 +5,8 @@ import time
 
 import numpy as np
 
-from constructions import build_goethals_seidel, periodic_autocorrelation_energy
+from builders import build_goethals_seidel
+from correlations import periodic_autocorrelation_energy
 from gpu import check_orthogonality
 from .base import SearchStrategy
 

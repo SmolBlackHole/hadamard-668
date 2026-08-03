@@ -5,10 +5,10 @@ import time
 
 import numpy as np
 
-from constructions import (
+from builders import build_goethals_seidel
+from correlations import (
     apply_sequence_flip,
     autocorrelation_state,
-    build_goethals_seidel,
     correlation_energy,
 )
 from gpu import check_orthogonality

@@ -1,4 +1,4 @@
-"""Shared algebraic building blocks for circulant Hadamard constructions."""
+"""Periodic correlation state and exact local flip deltas."""
 from __future__ import annotations
 
 import numpy as np
@@ -11,7 +11,7 @@ else:
     NUMBA_AVAILABLE = True
 
 
-def symmetric_circulant(half: np.ndarray) -> np.ndarray:
+def expand_symmetric_sequence(half: np.ndarray) -> np.ndarray:
     """Expand the independent half of an odd-length symmetric sequence."""
     return np.concatenate((half, half[:0:-1])).astype(np.int8)
 
@@ -42,12 +42,12 @@ def _apply_sequence_flip_numpy(
     size = sequences.shape[1]
     old_value = int(sequences[sequence_index, value_index])
     for displacement in range(1, size):
-        forward = int(
-            sequences[sequence_index, (value_index + displacement) % size])
+        forward = int(sequences[sequence_index,
+                      (value_index + displacement) % size])
         backward = int(
             sequences[sequence_index, (value_index - displacement) % size])
-        correlations[displacement] -= (
-            2 * weight * old_value * (forward + backward))
+        correlations[displacement] -= 2 * weight * \
+            old_value * (forward + backward)
     sequences[sequence_index, value_index] = -old_value
 
 
@@ -79,12 +79,12 @@ if NUMBA_AVAILABLE:
         size = sequences.shape[1]
         old_value = sequences[sequence_index, value_index]
         for displacement in range(1, size):
-            forward = sequences[
-                sequence_index, (value_index + displacement) % size]
-            backward = sequences[
-                sequence_index, (value_index - displacement) % size]
-            correlations[displacement] -= (
-                2 * weight * old_value * (forward + backward))
+            forward = sequences[sequence_index,
+                                (value_index + displacement) % size]
+            backward = sequences[sequence_index,
+                                 (value_index - displacement) % size]
+            correlations[displacement] -= 2 * weight * \
+                old_value * (forward + backward)
         sequences[sequence_index, value_index] = -old_value
 
 
@@ -114,6 +114,13 @@ def correlation_energy(correlations: np.ndarray) -> int:
     """Return squared periodic-correlation energy without the zero shift."""
     values = np.asarray(correlations, dtype=np.int64)[1:]
     return int(np.dot(values, values))
+
+
+def periodic_autocorrelation_energy(
+    sequences: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> int:
+    """Return full nonzero-shift periodic correlation energy."""
+    return correlation_energy(autocorrelation_state(sequences))
 
 
 def apply_sequence_flip(
@@ -155,41 +162,9 @@ def apply_symmetric_flip(
         raise ValueError("symmetric flips require odd-length sequences")
     if not 0 <= half_index < half:
         raise IndexError("half_index is out of range")
-    apply_sequence_flip(
-        sequences, correlations, sequence_index, half_index, weight=weight)
+    apply_sequence_flip(sequences, correlations,
+                        sequence_index, half_index, weight=weight)
     if half_index:
         apply_sequence_flip(
-            sequences, correlations, sequence_index, size - half_index,
-            weight=weight)
+            sequences, correlations, sequence_index, size - half_index, weight=weight)
     return correlation_energy(correlations)
-
-
-def autocorrelation_energy(sequences: tuple[np.ndarray, ...]) -> int:
-    correlations = autocorrelation_state(sequences)
-    independent = correlations[1:(len(correlations) + 1) // 2]
-    return int(np.dot(independent, independent))
-
-
-def periodic_autocorrelation_energy(sequences: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]) -> int:
-    return correlation_energy(autocorrelation_state(sequences))
-
-
-def circulant(values: np.ndarray) -> np.ndarray:
-    return np.array([np.roll(values, index) for index in range(len(values))], dtype=np.int8)
-
-
-def build_williamson(a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarray) -> np.ndarray:
-    A, B, C, D = (circulant(sequence) for sequence in (a, b, c, d))
-    return np.block([[A, B, C, D], [-B, A, -D, C], [-C, D, A, -B], [-D, -C, B, A]]).astype(np.int8)
-
-
-def build_propus(a: np.ndarray, b: np.ndarray, d: np.ndarray) -> np.ndarray:
-    A, B, D = (circulant(sequence) for sequence in (a, b, d))
-    return np.block([[A, B, B, D], [B, D, -A, -B], [B, -A, -D, B], [D, -B, B, -A]]).astype(np.int8)
-
-
-def build_goethals_seidel(a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarray) -> np.ndarray:
-    A, B, C, D = (circulant(sequence) for sequence in (a, b, c, d))
-    BR, CR, DR = B[:, ::-1], C[:, ::-1], D[:, ::-1]
-    BtR, CtR, DtR = B.T[:, ::-1], C.T[:, ::-1], D.T[:, ::-1]
-    return np.block([[A, BR, CR, DR], [-BR, A, -DtR, CtR], [-CR, DtR, A, -BtR], [-DR, -CtR, BtR, A]]).astype(np.int8)

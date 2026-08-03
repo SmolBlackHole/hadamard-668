@@ -8,23 +8,20 @@ import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
 
-import constructions
-from constructions import (
+import correlations
+from builders import build_goethals_seidel, build_propus
+from correlations import (
     apply_sequence_flip,
     apply_symmetric_flip,
-    autocorrelation_energy,
     autocorrelation_state,
-    build_goethals_seidel,
-    build_propus,
-    build_williamson,
-    circulant,
     correlation_energy,
+    expand_symmetric_sequence,
     periodic_autocorrelation_energy,
-    symmetric_circulant,
 )
 from gpu import (
     apply_entry_flip,
     check_orthogonality,
+    correlation_histogram,
     entry_flip_delta,
     entry_flip_deltas,
     gram_matrix,
@@ -33,7 +30,6 @@ from gpu import (
     xp,
 )
 from output import save_run
-from strategies.annealing import AnnealingSearch
 from strategies.base import Pipeline, SearchStrategy
 from strategies.repair import RepairSearch
 from verifier.known import paley, sylvester
@@ -93,16 +89,6 @@ def reference_metrics(matrix: np.ndarray) -> dict[str, int]:
     }
 
 
-def reference_autocorrelation_energy(sequences: tuple[np.ndarray, ...]) -> int:
-    size = len(sequences[0])
-    total = np.zeros(size, dtype=np.int64)
-    for displacement in range(size):
-        total[displacement] = sum(
-            int(np.dot(sequence, np.roll(sequence, -displacement)))
-            for sequence in sequences)
-    return int(np.sum(total[1:(size + 1) // 2] ** 2))
-
-
 def reference_correlations(
     sequences: tuple[np.ndarray, ...] | np.ndarray,
     weights: tuple[int, ...] | None = None,
@@ -121,31 +107,25 @@ def reference_correlations(
 
 @settings(max_examples=50, deadline=None)
 @given(sign_sequences())
-def test_symmetric_circulant_properties(half: np.ndarray) -> None:
-    sequence = symmetric_circulant(half)
+def test_expand_symmetric_sequence_properties(half: np.ndarray) -> None:
+    sequence = expand_symmetric_sequence(half)
     assert len(sequence) == 2 * len(half) - 1
     assert np.array_equal(sequence[:len(half)], half)
-    matrix = circulant(sequence)
-    assert matrix.shape == (len(sequence), len(sequence))
-    assert np.array_equal(matrix[0], sequence)
-    assert np.array_equal(matrix, matrix.T)
+    assert np.array_equal(sequence[1:], sequence[:0:-1])
 
 
 @settings(max_examples=30, deadline=None)
 @given(four_sign_sequences())
 def test_construction_properties(sequences: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]) -> None:
     order = len(sequences[0])
-    for build in (build_williamson, build_goethals_seidel):
-        matrix = build(*sequences)
-        assert matrix.shape == (4 * order, 4 * order)
-        assert matrix.dtype == np.int8
-        assert np.all(np.isin(matrix, (-1, 1)))
+    matrix = build_goethals_seidel(*sequences)
+    assert matrix.shape == (4 * order, 4 * order)
+    assert matrix.dtype == np.int8
+    assert np.all(np.isin(matrix, (-1, 1)))
     propus = build_propus(sequences[0], sequences[1], sequences[3])
     assert propus.shape == (4 * order, 4 * order)
     assert propus.dtype == np.int8
     assert np.all(np.isin(propus, (-1, 1)))
-    assert autocorrelation_energy(
-        sequences) == reference_autocorrelation_energy(sequences)
 
 
 @settings(max_examples=30, deadline=None)
@@ -153,12 +133,11 @@ def test_construction_properties(sequences: tuple[np.ndarray, np.ndarray, np.nda
 def test_compact_energy_matches_valid_block_constructions(
     halves: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
-    a, b, c, d = (symmetric_circulant(half) for half in halves)
+    a, b, c, d = (expand_symmetric_sequence(half) for half in halves)
     order = 4 * len(a)
-    four_energy = autocorrelation_energy((a, b, c, d))
-    assert check_orthogonality(build_williamson(a, b, c, d))["energy"] == order * four_energy
+    four_energy = correlation_energy(autocorrelation_state((a, b, c, d))) // 2
     assert check_orthogonality(build_goethals_seidel(a, b, c, d))["energy"] == order * four_energy
-    propus_energy = autocorrelation_energy((a, b, b, d))
+    propus_energy = correlation_energy(autocorrelation_state((a, b, b, d))) // 2
     assert check_orthogonality(build_propus(a, b, d))["energy"] == order * propus_energy
 
 
@@ -211,7 +190,7 @@ def test_incremental_symmetric_flips_preserve_circulant_symmetry(
     halves: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
     raw_flips: list[tuple[int, int]],
 ) -> None:
-    sequences = np.stack([symmetric_circulant(half) for half in halves])
+    sequences = np.stack([expand_symmetric_sequence(half) for half in halves])
     initial = sequences.copy()
     correlations = autocorrelation_state(sequences)
     half_size = len(halves[0])
@@ -222,7 +201,7 @@ def test_incremental_symmetric_flips_preserve_circulant_symmetry(
             sequences, correlations, sequence_index, half_index)
         assert np.array_equal(correlations, reference_correlations(sequences))
         assert energy == correlation_energy(correlations)
-        assert all(np.array_equal(circulant(sequence), circulant(sequence).T)
+        assert all(np.array_equal(sequence[1:], sequence[:0:-1])
                    for sequence in sequences)
     for sequence_index, half_index in reversed(flips):
         apply_symmetric_flip(
@@ -261,22 +240,20 @@ def test_symmetric_flip_handles_first_inner_and_last_half_index(
     half_index: int,
 ) -> None:
     half = np.array((1, -1, 1, -1), dtype=np.int8)
-    sequences = np.stack([symmetric_circulant(half) for _ in range(4)])
+    sequences = np.stack([expand_symmetric_sequence(half) for _ in range(4)])
     correlations = autocorrelation_state(sequences)
     apply_symmetric_flip(sequences, correlations, 0, half_index)
     assert np.array_equal(correlations, reference_correlations(sequences))
-    assert np.array_equal(circulant(sequences[0]), circulant(sequences[0]).T)
+    assert np.array_equal(sequences[0, 1:], sequences[0, :0:-1])
 
 
-def test_autocorrelation_energy_falls_back_to_numpy(monkeypatch) -> None:
+def test_correlation_state_falls_back_to_numpy(monkeypatch) -> None:
     sequences = tuple(np.array([1, -1, 1], dtype=np.int8) for _ in range(4))
-    monkeypatch.setattr(constructions, "NUMBA_AVAILABLE", False)
-    assert constructions.autocorrelation_energy(
-        sequences) == reference_autocorrelation_energy(sequences)
+    monkeypatch.setattr(correlations, "NUMBA_AVAILABLE", False)
     matrix = np.stack(sequences)
-    correlations = constructions.autocorrelation_state(matrix)
-    constructions.apply_sequence_flip(matrix, correlations, 2, 1)
-    assert np.array_equal(correlations, reference_correlations(matrix))
+    state = correlations.autocorrelation_state(matrix)
+    correlations.apply_sequence_flip(matrix, state, 2, 1)
+    assert np.array_equal(state, reference_correlations(matrix))
 
 
 def test_goethals_seidel_slicing_matches_permutation_matrix_reference() -> None:
@@ -286,7 +263,10 @@ def test_goethals_seidel_slicing_matches_permutation_matrix_reference() -> None:
         np.array([1, 1, -1], dtype=np.int8),
         np.array([-1, 1, 1], dtype=np.int8),
     )
-    A, B, C, D = (circulant(sequence) for sequence in sequences)
+    A, B, C, D = (
+        np.array([np.roll(sequence, index) for index in range(len(sequence))], dtype=np.int8)
+        for sequence in sequences
+    )
     reverse = np.fliplr(np.eye(3, dtype=np.int8))
     BR, CR, DR = B @ reverse, C @ reverse, D @ reverse
     BtR, CtR, DtR = B.T @ reverse, C.T @ reverse, D.T @ reverse
@@ -313,6 +293,15 @@ def test_gram_primitives_match_independent_reference(matrix: np.ndarray) -> None
     np.fill_diagonal(expected, 0)
     assert np.array_equal(to_numpy(gram), expected)
     assert metrics_from_gram(gram) == reference_metrics(matrix)
+
+
+def test_correlation_histogram_counts_unordered_pairs() -> None:
+    gram = np.array([
+        [0, -2, 4],
+        [-2, 0, 2],
+        [4, 2, 0],
+    ], dtype=np.int32)
+    assert correlation_histogram(gram) == {"2": 2, "4": 1}
 
 
 @settings(max_examples=20, deadline=None)
@@ -417,17 +406,6 @@ def test_incremental_repair_search_returns_exact_metrics() -> None:
     assert metrics == reference_metrics(matrix)
 
 
-def test_annealing_refinement_requires_williamson_matrix() -> None:
-    strategy = AnnealingSearch(ORDER=4, K=1, HALF=1)
-    williamson = build_williamson(
-        *(np.ones(1, dtype=np.int8) for _ in range(4)))
-    refined, metrics, _ = strategy.refine(williamson, steps=0, seed=0)
-    assert np.array_equal(refined, williamson)
-    assert metrics["energy"] == 0
-    with pytest.raises(ValueError, match="Williamson"):
-        strategy.refine(np.ones((4, 4), dtype=np.int8), steps=0, seed=0)
-
-
 def test_pipeline_passes_matrix_and_incremented_seed() -> None:
     class Source(SearchStrategy):
         ORDER = 2
@@ -469,7 +447,7 @@ def test_output_manifest_and_review(matrix: np.ndarray, tmp_path) -> None:
         matrix,
         check_orthogonality(matrix),
         tmp_path,
-        method_family="williamson_propus",
+        method_family="gs_sds",
         search_scope="property-test",
         seed=0,
         steps=1,
@@ -485,7 +463,7 @@ def test_output_manifest_and_review(matrix: np.ndarray, tmp_path) -> None:
 
 def test_manifest_rejects_unknown_method_family(tmp_path) -> None:
     matrix = sylvester(4)
-    save_run(matrix, check_orthogonality(matrix), tmp_path, method_family="williamson_propus",
+    save_run(matrix, check_orthogonality(matrix), tmp_path, method_family="gs_sds",
              search_scope="test", seed=0, steps=1, wall_seconds=0.0, hardware_summary="test")
     manifest_path = tmp_path / "run.json"
     data = json.loads(manifest_path.read_text(encoding="utf-8"))

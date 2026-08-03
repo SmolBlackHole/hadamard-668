@@ -41,13 +41,11 @@ REQUIRED_KEYS = {
 }
 METHOD_FAMILIES = {
     "gs_sds",
-    "williamson_propus",
     "sat_cp_pb",
     "alternative_algebraic",
     "local_search",
     "evolutionary_gpu",
     "literature_transfer",
-    "hybrid",
     "other",
 }
 METRIC_KEYS = {

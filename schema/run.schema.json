@@ -38,13 +38,11 @@
     "method_family": {
       "enum": [
         "gs_sds",
-        "williamson_propus",
         "sat_cp_pb",
         "alternative_algebraic",
         "local_search",
         "evolutionary_gpu",
         "literature_transfer",
-        "hybrid",
         "other"
       ]
     },

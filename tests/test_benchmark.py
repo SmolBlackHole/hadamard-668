@@ -1,10 +1,12 @@
 """Contracts for isolated benchmark execution."""
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
 
+import benchmark
 from benchmark import ORDERS, _cell, benchmark_groups, run_one, steps_for_order
 from strategies.circulant import CirculantSearch
 
@@ -15,6 +17,8 @@ def test_benchmark_worker_returns_a_completed_result() -> None:
         4, 1, 0, 5)
     assert result["status"] == "ok"
     assert result["metrics"]["energy"] == 0
+    assert result["algorithm_seconds"] >= 0
+    assert result["wall_seconds"] >= result["algorithm_seconds"]
 
 
 def test_benchmark_worker_reports_a_timeout() -> None:
@@ -58,9 +62,38 @@ def test_baumert_inapplicable_orders_render_as_na() -> None:
 def test_benchmark_cell_has_unambiguous_metrics() -> None:
     result = {
         "status": "ok",
-        "seconds": 1.25,
+        "algorithm_seconds": 1.25,
         "metrics": {"energy": 16, "orthogonal_pairs": 3},
     }
     cell = _cell(result, 4)
-    assert cell == "OK; e=16; rms=1.63; orth=3/6; t=1.2s"
+    assert cell == "OK; e=16; rms=1.63; orth=3/6; algo=1.2s"
     assert " | " not in cell
+
+
+def test_benchmark_writes_one_json_record_per_case(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(benchmark, "ORDERS", (4, 8))
+    monkeypatch.setattr(
+        benchmark,
+        "benchmark_groups",
+        lambda **_kwargs: (("Test", (("BaumertHall", lambda _order: None),)),),
+    )
+    monkeypatch.setattr(
+        benchmark,
+        "run_one",
+        lambda *_args: {"status": "ok", "backend": "numpy",
+                        "algorithm_seconds": 0.1, "wall_seconds": 0.2,
+                        "correlation_histogram": {"0": 6},
+                        "metrics": {"energy": 0, "orthogonal_pairs": 6,
+                                    "max_abs_correlation": 0}},
+    )
+
+    benchmark.main(timeout_seconds=1, include_all=True)
+
+    report = json.loads((tmp_path / "benchmark_results.json").read_text())
+    assert report["include_all"]
+    assert len(report["cases"]) == 2
+    assert report["cases"][0]["metrics"]["energy"] == 0
+    assert report["cases"][0]["algorithm_seconds"] == 0.1
+    assert report["cases"][0]["correlation_histogram"] == {"0": 6}
+    assert report["cases"][1]["status"] == "na"

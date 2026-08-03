@@ -4,14 +4,15 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from constructions import (
+from correlations import (
     apply_sequence_flip,
     apply_symmetric_flip,
     autocorrelation_state,
     correlation_energy,
     periodic_autocorrelation_energy,
-    symmetric_circulant,
+    expand_symmetric_sequence,
 )
+from fourier import half_sequence_gradient, project_power_complementarity
 from gpu import check_orthogonality, to_numpy, xp
 from strategies.annealing import AnnealingSearch
 from strategies.baumert import BaumertHallSearch
@@ -20,6 +21,7 @@ from strategies.diffset import DiffsetSearch
 from strategies.genetic import GeneticSearch
 from strategies.ising import IsingSearch
 from strategies.montecarlo import MonteCarloSearch
+from strategies.pocs import PocsSearch
 from strategies.repair import RepairSearch
 from strategies.spectral import SpectralSearch
 
@@ -73,6 +75,37 @@ def test_spectral_fourier_projection_satisfies_power_condition() -> None:
     assert np.isrealobj(projected)
 
 
+def test_shared_power_projection_satisfies_power_condition() -> None:
+    state = np.random.default_rng(10).normal(size=(4, 7)).astype(np.float64)
+    projected = project_power_complementarity(state)
+    power = np.sum(np.abs(np.fft.fft(projected, axis=1)) ** 2, axis=0)
+    assert np.allclose(power, 28.0, atol=1e-5)
+
+
+def test_pocs_projection_returns_binary_full_sequences() -> None:
+    halves = [np.array((1, -1, 1, -1), dtype=np.int8) for _ in range(4)]
+    projected = PocsSearch._project_seed(halves, steps=1)
+    assert len(projected) == 4
+    assert all(sequence.shape == (7,) for sequence in projected)
+    assert all(np.all(np.isin(sequence, (-1, 1))) for sequence in projected)
+
+
+def test_half_sequence_gradient_is_finite() -> None:
+    halves = [np.random.default_rng(seed).choice(
+        (-1, 1), size=4).astype(np.int8) for seed in range(4)]
+    gradient = half_sequence_gradient(halves)
+    assert gradient.shape == (4, 4)
+    assert np.all(np.isfinite(gradient))
+
+
+def test_pocs_search_solves_order_four() -> None:
+    matrix, metrics, _ = PocsSearch(
+        ORDER=4, K=1, HALF=1).search(1, 0)
+    assert matrix.shape == (4, 4)
+    assert metrics == check_orthogonality(matrix)
+    assert metrics["energy"] == 0
+
+
 def test_spectral_zero_projection_is_deterministic() -> None:
     state = np.zeros((4, 7), dtype=np.float32)
     first = SpectralSearch._project_fourier(state)
@@ -113,6 +146,7 @@ def test_ising_gradient_matches_finite_differences() -> None:
     GeneticSearch(4, population_size=4),
     SpectralSearch(ORDER=4, inner_steps=1),
     IsingSearch(4),
+    PocsSearch(ORDER=4, K=1, HALF=1),
     BaumertHallSearch(ORDER=4, T=1, HALF=1),
 ])
 def test_cpu_strategies_follow_result_contract(strategy) -> None:
@@ -137,11 +171,17 @@ def test_baumert_hall_rejects_even_sequence_order() -> None:
         BaumertHallSearch(ORDER=8, T=2, HALF=1)
 
 
+@pytest.mark.parametrize("strategy", [CirculantSearch, AnnealingSearch])
+def test_symmetric_searches_reject_even_sequence_lengths(strategy) -> None:
+    with pytest.raises(ValueError, match="odd K"):
+        strategy(ORDER=8, K=2, HALF=1)
+
+
 def test_baumert_hall_weighted_energy_matches_built_matrix() -> None:
     strategy = BaumertHallSearch(ORDER=12, T=3, HALF=2)
-    a = symmetric_circulant(np.array((1, -1), dtype=np.int8))
-    b = symmetric_circulant(np.array((1, 1), dtype=np.int8))
-    c = symmetric_circulant(np.array((-1, 1), dtype=np.int8))
+    a = expand_symmetric_sequence(np.array((1, -1), dtype=np.int8))
+    b = expand_symmetric_sequence(np.array((1, 1), dtype=np.int8))
+    c = expand_symmetric_sequence(np.array((-1, 1), dtype=np.int8))
     proxy = strategy._bh_energy(a, b, c)
     assert check_orthogonality(strategy._build(a, b, c))["energy"] == 12 * proxy
 
@@ -150,7 +190,7 @@ def test_baumert_incremental_weighted_deltas_match_reference() -> None:
     strategy = BaumertHallSearch(ORDER=28, T=7, HALF=4)
     rng = np.random.default_rng(4)
     sequences = np.stack([
-        symmetric_circulant(rng.choice([-1, 1], size=4).astype(np.int8))
+        expand_symmetric_sequence(rng.choice([-1, 1], size=4).astype(np.int8))
         for _ in range(3)
     ])
     weights = np.array((1, 2, 1), dtype=np.int64)

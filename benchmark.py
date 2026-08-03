@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from gpu import xp
+from gpu import correlation_histogram, gram_matrix, xp
 from strategies.annealing import AnnealingSearch
 from strategies.baumert import BaumertHallSearch
 from strategies.base import Pipeline
@@ -80,20 +80,12 @@ def benchmark_groups(*, include_all: bool = False):
     if not include_all:
         return core
     experimental = (
-        ("Experimental strategies", (
-            ("Hybrid", lambda o: CirculantSearch(constructions="all", ORDER=o, K=o//4,
-             HALF=(o//4+1)//2) if o <= 20 else CirculantSearch(constructions="all")),
-            ("Genetic", lambda order: GeneticSearch(order=order)),
-        )),
+        ("Experimental strategies", (("Genetic", lambda order: GeneticSearch(order=order)),)),
         ("Pipelines", (
-            ("Circulant->Annealing", lambda o: Pipeline(
-                [(_circulant(o), _half_steps(o)), (_annealing(o), _half_steps(o))])),
             ("Circulant->Repair", lambda o: Pipeline(
                 [(_circulant(o), _half_steps(o)), (RepairSearch(order=o), _half_steps(o))])),
             ("Annealing->Repair", lambda o: Pipeline(
                 [(_annealing(o), _half_steps(o)), (RepairSearch(order=o), _half_steps(o))])),
-            ("Circulant->Annealing->Repair", lambda o: Pipeline([(_circulant(o), _half_steps(
-                o)//2), (_annealing(o), _half_steps(o)//2), (RepairSearch(order=o), _half_steps(o))])),
         )),
     )
     return core + experimental
@@ -102,11 +94,13 @@ def benchmark_groups(*, include_all: bool = False):
 def _benchmark_worker(strategy, steps: int, seed: int, results) -> None:
     try:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            started = time.perf_counter()
-            _, metrics, _ = strategy.search(steps=steps, seed=seed)
+            matrix, metrics, algorithm_seconds = strategy.search(
+                steps=steps, seed=seed)
         results.put({"status": "ok", "backend": getattr(
             strategy, "compute_backend", xp.__name__),
-            "seconds": time.perf_counter() - started, "metrics": metrics})
+            "algorithm_seconds": algorithm_seconds,
+            "metrics": metrics,
+            "correlation_histogram": correlation_histogram(gram_matrix(matrix))})
     except BaseException as error:
         results.put({"status": "error", "message": str(error)[:120]})
 
@@ -127,14 +121,15 @@ def run_one(factory, order: int, steps: int, seed: int, timeout_seconds: float =
     if process.is_alive():
         process.terminate()
         process.join()
-        return {"status": "timeout", "seconds": wall}
+        return {"status": "timeout", "wall_seconds": wall}
     try:
         payload = results.get(timeout=1)
     except Empty:
         return {"status": "error", "message": f"worker exit={process.exitcode}"}
     if payload["status"] == "error":
+        payload["wall_seconds"] = wall
         return payload
-    payload["seconds"] = wall
+    payload["wall_seconds"] = wall
     return payload
 
 
@@ -147,11 +142,11 @@ def _cell(result: dict, order: int) -> str:
         return "ERROR"
     metrics = result["metrics"]
     if metrics["energy"] == 0:
-        return f"YES {result['seconds']:.1f}s"
+        return f"YES; algo={result['algorithm_seconds']:.1f}s"
     total = order * (order - 1) // 2
     rms = (metrics["energy"] / total) ** 0.5
     return (f"OK; e={metrics['energy']}; rms={rms:.2f}; "
-            f"orth={metrics['orthogonal_pairs']}/{total}; t={result['seconds']:.1f}s")
+            f"orth={metrics['orthogonal_pairs']}/{total}; algo={result['algorithm_seconds']:.1f}s")
 
 
 def _render_table(title: str, rows: list[tuple[str, list[str]]]) -> list[str]:
@@ -167,6 +162,7 @@ def main(timeout_seconds: float = TIMEOUT_SECONDS, *, include_all: bool = False)
     total_cases = sum(len(strategies) * len(ORDERS)
                       for _, strategies in groups)
     rendered: list[tuple[str, list[tuple[str, list[str]]]]] = []
+    case_results: list[dict[str, object]] = []
     print(
         f"Hadamard benchmark: {total_cases} cases | seed={SEED} | timeout={timeout_seconds:g}s")
     with tqdm(total=total_cases, desc="Benchmark", unit="case", dynamic_ncols=True) as progress:
@@ -178,8 +174,22 @@ def main(timeout_seconds: float = TIMEOUT_SECONDS, *, include_all: bool = False)
                     steps = steps_for_order(order)
                     progress.set_postfix_str(
                         f"{group}: {name}, n={order}, steps={steps}")
-                    result = ({"status": "na"} if name == "BaumertHall" and (order // 4) % 2 == 0
-                              else run_one(factory, order, steps, SEED, timeout_seconds))
+                    incompatible_symmetric_order = (
+                        name in {"Circulant", "Annealing"}
+                        and (order // 4) % 2 == 0
+                    )
+                    result = ({"status": "na"} if (
+                        incompatible_symmetric_order
+                        or name == "BaumertHall" and (order // 4) % 2 == 0
+                    ) else run_one(factory, order, steps, SEED, timeout_seconds))
+                    case_results.append({
+                        "group": group,
+                        "strategy": name,
+                        "order": order,
+                        "steps": steps,
+                        "seed": SEED,
+                        **result,
+                    })
                     cells.append(_cell(result, order))
                     if result["status"] == "timeout":
                         tqdm.write(f"TIMEOUT  {group} | {name} | n={order}")
@@ -194,13 +204,20 @@ def main(timeout_seconds: float = TIMEOUT_SECONDS, *, include_all: bool = False)
     lines = ["# Hadamard Benchmark", "", f"Backend: {xp.__name__}", f"Seed: {SEED}",
              f"Step budgets: {budgets}",
              f"Timeout per case: {timeout_seconds:g} seconds", "",
-             "Cell format: `status; e=energy; rms=root-mean-square correlation; orth=orthogonal pairs; t=seconds`.", ""]
+             "Cell format: `status; e=energy; rms=root-mean-square correlation; orth=orthogonal pairs; algo=search seconds`.", ""]
     for group, rows in rendered:
         lines.extend(_render_table(group, rows))
     report = "\n".join(lines).rstrip()
     Path("benchmark_results.md").write_text(report + "\n", encoding="utf-8")
+    Path("benchmark_results.json").write_text(json.dumps({
+        "backend": xp.__name__,
+        "seed": SEED,
+        "timeout_seconds": timeout_seconds,
+        "include_all": include_all,
+        "cases": case_results,
+    }, indent=2) + "\n", encoding="utf-8")
     print("\n" + report)
-    print("Saved: benchmark_results.md")
+    print("Saved: benchmark_results.md and benchmark_results.json")
 
 
 def _gpu_strategy(name: str):

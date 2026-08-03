@@ -28,9 +28,7 @@ from strategies.spectral import SpectralSearch
 
 ALL: dict[str, SearchStrategy] = {
     "circulant": CirculantSearch(),
-    "hybrid": CirculantSearch(constructions="all"),
     "annealing": AnnealingSearch(),
-    "annealing_w": AnnealingSearch(constructions="williamson"),
     "repair": RepairSearch(),
     "spectral": SpectralSearch(),
     "ising": IsingSearch(),
@@ -65,9 +63,9 @@ def parse_strategy(specification: str) -> SearchStrategy:
 
 def method_family(strategy: SearchStrategy) -> str:
     if isinstance(strategy, Pipeline):
-        return "hybrid"
-    if strategy.name in {"circulant", "hybrid", "annealing", "annealing_w"}:
-        return "williamson_propus"
+        return "other"
+    if strategy.name in {"circulant", "annealing"}:
+        return "gs_sds"
     if strategy.name == "repair":
         return "local_search"
     return "other"
@@ -121,7 +119,7 @@ def select_best_run(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hadamard-668 search")
     parser.add_argument("--strategy", default="circulant",
-                        help="circulant | hybrid | annealing | ... | s1:N,s2:M")
+                        help="circulant | annealing | ... | s1:N,s2:M")
     parser.add_argument("--steps", type=int, default=200_000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--runs", type=int, default=1)

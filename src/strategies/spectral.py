@@ -6,7 +6,9 @@ import time
 import numpy as np
 from tqdm import tqdm
 
-from constructions import build_goethals_seidel, periodic_autocorrelation_energy
+from builders import build_goethals_seidel
+from correlations import periodic_autocorrelation_energy
+from fourier import project_power_complementarity
 from gpu import check_orthogonality
 from .base import SearchStrategy
 
@@ -37,17 +39,7 @@ class SpectralSearch(SearchStrategy):
     @staticmethod
     def _project_fourier(state: np.ndarray) -> np.ndarray:
         """Project each Fourier four-vector onto norm ``sqrt(4K)``."""
-        if state.ndim != 2 or state.shape[0] != 4:
-            raise ValueError("spectral state must have shape (4, K)")
-        size = state.shape[1]
-        spectrum = np.fft.fft(state, axis=1)
-        norms = np.sqrt(np.sum(np.abs(spectrum) ** 2, axis=0))
-        target = np.sqrt(4.0 * size)
-        nonzero = norms > 1e-12
-        spectrum[:, nonzero] *= target / norms[nonzero]
-        spectrum[:, ~nonzero] = 0.0
-        spectrum[0, ~nonzero] = target
-        return np.fft.ifft(spectrum, axis=1).real.astype(np.float32)
+        return project_power_complementarity(state)
 
     @staticmethod
     def _project_sign(state: np.ndarray) -> np.ndarray:

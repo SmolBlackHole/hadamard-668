@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 
-from constructions import build_goethals_seidel
+from builders import build_goethals_seidel
 from gpu import check_orthogonality, to_numpy, xp
 from .base import SearchStrategy
 

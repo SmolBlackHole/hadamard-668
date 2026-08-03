@@ -4,14 +4,12 @@
 import hashlib
 
 LANES = (
-    ["gs_sds"] * 18
-    + ["williamson_propus"] * 8
+    ["gs_sds"] * 26
     + ["sat_cp_pb"] * 8
     + ["alternative_algebraic"] * 6
     + ["literature_transfer"] * 6
     + ["local_search"] * 6
     + ["evolutionary_gpu"] * 4
-    + ["hybrid"] * 4
 )
 
 

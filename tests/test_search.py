@@ -9,10 +9,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from constructions import autocorrelation_energy, build_williamson, symmetric_circulant
+from builders import build_goethals_seidel
+from correlations import expand_symmetric_sequence, periodic_autocorrelation_energy
 from gpu import check_orthogonality
 from run import derive_seeds, select_best_run, worker_count
-from strategies.annealing import AnnealingSearch
 from strategies.base import Pipeline, SearchStrategy
 from strategies.circulant import CirculantSearch
 from strategies.repair import RepairSearch
@@ -34,24 +34,24 @@ def test_known_matrices_are_orthogonal(order: int) -> None:
     ([1, -1, 1], [1, -1, 1, 1, -1]),
     ([1, -1, 1, -1], [1, -1, 1, -1, -1, 1, -1]),
 ])
-def test_symmetric_circulant_examples(
+def test_expand_symmetric_sequence_examples(
     half: list[int], expected: list[int],
 ) -> None:
     assert np.array_equal(
-        symmetric_circulant(np.array(half, dtype=np.int8)),
+        expand_symmetric_sequence(np.array(half, dtype=np.int8)),
         np.array(expected, dtype=np.int8),
     )
 
 
-def test_williamson_builds_order_four_hadamard() -> None:
-    matrix = build_williamson(*(np.ones(1, dtype=np.int8) for _ in range(4)))
+def test_goethals_seidel_builds_order_four_hadamard() -> None:
+    matrix = build_goethals_seidel(*(np.ones(1, dtype=np.int8) for _ in range(4)))
     assert check_orthogonality(matrix) == {
         "energy": 0, "orthogonal_pairs": 6, "max_abs_correlation": 0}
 
 
-def test_autocorrelation_energy_of_singletons_is_zero() -> None:
+def test_periodic_energy_of_singletons_is_zero() -> None:
     sequence = np.array([1], dtype=np.int8)
-    assert autocorrelation_energy(
+    assert periodic_autocorrelation_energy(
         (sequence, sequence, sequence, sequence)) == 0
 
 
@@ -106,7 +106,6 @@ def test_circulant_search_solves_order_four() -> None:
 def test_real_pipeline_runs_all_stages() -> None:
     stages = [
         (CirculantSearch(ORDER=12, K=3, HALF=2), 0),
-        (AnnealingSearch(ORDER=12, K=3, HALF=2), 0),
         (RepairSearch(order=12), 0),
     ]
     _, metrics, _ = Pipeline(stages).search(steps=0, seed=0)

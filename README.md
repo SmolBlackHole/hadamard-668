@@ -11,6 +11,9 @@ Ordnung 668 = 4 x 167 ist die **kleinste ungeloeste Ordnung** der Hadamard-Vermu
 ```txt
 ├── src/
 │   ├── strategies/            # ABC-basierte Suchstrategien
+│   ├── correlations.py         # periodische Energie und inkrementelle Flips
+│   ├── builders.py             # Goethals-Seidel- und Propus-Matrixbuilder
+│   ├── fourier.py              # gemeinsame Fourier-Projektionen
 │   └── verifier/              # Pruf-Toolchain
 │       ├── verify.py          # Matrix-Prufung
 │       ├── review.py          # Bundle-Review
@@ -43,7 +46,7 @@ python -m venv .venv
 .venv\Scripts\python -m pytest
 ```
 
-Die Test-Suite prueft bekannte Hadamard-Matrizen, Konstruktionen, Strategie-Vertraege, Pipelines sowie Ergebnis-Manifeste.
+Die Test-Suite prueft bekannte Hadamard-Matrizen, G-S-/Propus-Konstruktionen, Strategie-Vertraege, Pipelines sowie Ergebnis-Manifeste.
 
 ## Verifier (4x4 Kontrolle)
 
@@ -73,11 +76,11 @@ Parameter werden über `run.py` gesetzt, zum Beispiel `--strategy spectral --ste
 ### Pipeline
 
 Mehrere Strategien lassen sich über eine kommaseparierte `name:steps`-Angabe
-verbinden. Der empfohlene Pfad bleibt vollständig im Williamson-Raum, bevor
-die Vollmatrix einmal lokal repariert wird:
+verbinden. Der empfohlene Pfad erzeugt einen symmetrischen
+Goethals-Seidel-Kandidaten und repariert die Vollmatrix anschließend lokal:
 
 ```bash
-.venv\Scripts\python run.py --strategy "circulant:100000,annealing_w:30000,repair:5000" --seed 42
+.venv\Scripts\python run.py --strategy "circulant:100000,repair:5000" --seed 42
 ```
 
 Die erste Phase startet mit `search()`, jede weitere mit `refine()` auf dem
@@ -87,11 +90,9 @@ Nullenergie beendet die Pipeline erst nach einer unabhängigen vollständigen
 Gram-Prüfung. Die Budgets stehen in der Strategieangabe; `--steps` wird bei
 einer Pipeline nicht verwendet.
 
-`annealing_w` akzeptiert ausschließlich Williamson-Matrizen. `repair` kann
-jede passende Vorzeichenmatrix verfeinern. Insbesondere darf `hybrid` nicht
-vor `annealing_w` stehen, weil `hybrid` auch
-Goethals-Seidel-Kandidaten liefern kann. Unzulässige Folgestufen werden beim
-Aufbau oder durch ihre Strukturprüfung abgelehnt.
+`repair` kann jede passende Vorzeichenmatrix verfeinern. Die anderen
+Strategien eröffnen eine Pipeline; unzulässige Folgestufen werden bereits beim
+Aufbau abgelehnt.
 
 ### Mehrere Seeds
 
@@ -118,16 +119,18 @@ dieselbe GPU konkurrieren.
 Der Standardbenchmark umfasst 48 geordnete Fälle: acht Kernstrategien für die
 Ordnungen `4, 8, 12, 16, 20, 668`. `--all` ergänzt experimentelle Strategien
 und Pipelines. Jeder Fall läuft in einem eigenen Prozess und wird nach dem
-angegebenen Timeout beendet. `benchmark_results.md` enthält Wandzeit,
-Rohenergie, RMS-Korrelation und orthogonale Zeilenpaare. Prozessstart,
-Numba-Kompilierung und CUDA-Warm-up gehören zur gemessenen Wandzeit und müssen
-bei Mikrovergleichen separat aufgewärmt werden.
+angegebenen Timeout beendet. `benchmark_results.md` enthält die lesbare
+Tabelle; `benchmark_results.json` speichert jeden Fall mit Status, Backend,
+Algorithmuszeit, Wandzeit, Metriken, Korrelationshistogramm und Fehlerdetails.
+Die Tabelle zeigt ausschließlich die von der Strategie gemeldete
+Algorithmuszeit. Die JSON-Wandzeit enthält zusätzlich Prozessstart,
+Numba-Kompilierung und CUDA-Warm-up und dient nur der Timeout-Diagnose.
 
 ## Strategien
 
 | Gruppe | Strategien | Zustandsraum | Rechenort |
 | --- | --- | --- | --- |
-| Symmetrische Folgen | `circulant`, `annealing_w` | `4 × 84` unabhängige Vorzeichen | CPU/Numba und FFT |
+| Symmetrische Folgen | `circulant`, `annealing` | `4 × 84` unabhängige Vorzeichen | CPU/Numba und FFT |
 | Allgemeine Folgen | `diffset`, `genetic`, `montecarlo`, `spectral`, `ising` | `4 × 167` | CPU; große Genetic-/Monte-Carlo-Batches auf GPU |
 | Teilkonstruktion | `baumert` | drei symmetrische 167er-Folgen | CPU/Numba |
 | Vollmatrix | `repair` | `668 × 668` | inkrementelle CPU-Deltas; finale Gram-Prüfung optional auf GPU |
@@ -142,7 +145,7 @@ Douglas-Rachford-Schritt. Dadurch entfallen SVD oder Polarzerlegung einer
 668×668-Matrix vollständig; nur der finale diskrete Kandidat wird als
 Goethals-Seidel-Matrix aufgebaut.
 
-### Williamson-Konstruktion
+### Symmetrische Goethals-Seidel-Konstruktion
 
 Nutzt `668 = 4 × 167` und vier symmetrische zirkulante Blöcke. Dadurch sinkt
 der diskrete Suchraum von 446.224 Matrixeinträgen auf `4 × 84 = 336`

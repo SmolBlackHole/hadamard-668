@@ -6,13 +6,12 @@ import time
 import numpy as np
 from tqdm import tqdm
 
-from constructions import (
+from builders import build_goethals_seidel, build_propus
+from correlations import (
     apply_symmetric_flip,
     autocorrelation_state,
-    build_goethals_seidel,
-    build_propus,
     correlation_energy,
-    symmetric_circulant,
+    expand_symmetric_sequence,
 )
 from gpu import check_orthogonality
 from .base import SearchStrategy
@@ -62,7 +61,7 @@ class BaumertHallSearch(SearchStrategy):
         halves = [rng.choice([-1, 1], size=half).astype(np.int8)
                   for _ in range(3)]
         sequences = np.stack(
-            [symmetric_circulant(value) for value in halves])
+            [expand_symmetric_sequence(value) for value in halves])
         weights = np.array((1, 2, 1), dtype=np.int64)
         correlations = autocorrelation_state(sequences, weights)
         e = best_e = correlation_energy(correlations) // 2

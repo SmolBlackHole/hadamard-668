@@ -7,13 +7,12 @@ import time
 import numpy as np
 from tqdm import tqdm
 
-from constructions import (
+from builders import build_goethals_seidel
+from correlations import (
     apply_symmetric_flip,
     autocorrelation_state,
-    build_goethals_seidel,
-    build_williamson,
     correlation_energy,
-    symmetric_circulant,
+    expand_symmetric_sequence,
 )
 from gpu import check_orthogonality
 from .base import SearchStrategy
@@ -22,7 +21,7 @@ from .base import SearchStrategy
 class CirculantSearch(SearchStrategy):
     """Sucht vier gespiegelte Sequenzen für zirkulante Blockmatrizen.
 
-    Zweck: Erzeugt Kandidaten über Williamson und optional Goethals-Seidel.
+    Zweck: Erzeugt Kandidaten über symmetrische Goethals-Seidel-Blöcke.
     Mechanik: Flipt 336 unabhängige Halbsequenzeinträge und aktualisiert deren Autokorrelation inkrementell.
     Grundlage: Vier Sequenzen sind komplementär, wenn ihre periodischen Autokorrelationen für jeden Nichtnull-Shift zu null summieren.
     Pipeline: Kann nur eine Pipeline eröffnen, weil keine ``refine``-Methode existiert.
@@ -33,37 +32,28 @@ class CirculantSearch(SearchStrategy):
     K = 167
     HALF = 84
 
-    def __init__(self, constructions: str = "williamson", *, ORDER: int = ORDER, K: int = K, HALF: int = HALF) -> None:
-        if constructions not in {"williamson", "all"}:
-            raise ValueError("constructions must be 'williamson' or 'all'")
-        if ORDER != 4 * K or HALF != (K + 1) // 2:
+    def __init__(self, *, ORDER: int = ORDER, K: int = K, HALF: int = HALF) -> None:
+        if K % 2 == 0 or ORDER != 4 * K or HALF != (K + 1) // 2:
             raise ValueError(
-                "ORDER, K, and HALF must describe symmetric 4-block sequences")
-        self.constructions = constructions
+                "symmetric 4-block sequences require odd K, ORDER = 4*K, and HALF = (K+1)//2")
         self.ORDER = ORDER
         self.K = K
         self.HALF = HALF
 
     @property
     def name(self) -> str:
-        return "hybrid" if self.constructions == "all" else "circulant"
-
-    def _builders(self) -> tuple:
-        return (build_williamson,) if self.constructions == "williamson" else (build_williamson, build_goethals_seidel)
+        return "circulant"
 
     def _build_best(self, sequences: np.ndarray) -> tuple[np.ndarray, dict[str, int]]:
-        candidates = (
-            (matrix, check_orthogonality(matrix))
-            for matrix in (build(*sequences) for build in self._builders())
-        )
-        return min(candidates, key=lambda candidate: candidate[1]["energy"])
+        matrix = build_goethals_seidel(*sequences)
+        return matrix, check_orthogonality(matrix)
 
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
         halves = [rng.choice([-1, 1], size=self.HALF).astype(np.int8)
                   for _ in range(4)]
-        sequences = np.stack([symmetric_circulant(half) for half in halves])
+        sequences = np.stack([expand_symmetric_sequence(half) for half in halves])
         correlations = autocorrelation_state(sequences)
         energy = best_energy = correlation_energy(correlations) // 2
         best_sequences = sequences.copy()
