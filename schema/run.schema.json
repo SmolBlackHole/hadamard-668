@@ -38,6 +38,7 @@
     "method_family": {
       "enum": [
         "gs_sds",
+        "turyn",
         "sat_cp_pb",
         "alternative_algebraic",
         "local_search",

@@ -1,4 +1,4 @@
-"""FFT-Gradient guided search on circulant sequences."""
+"""FFT-guided local search in the Turyn-type sequence space."""
 from __future__ import annotations
 
 import time
@@ -6,150 +6,114 @@ import time
 import numpy as np
 from tqdm import tqdm
 
-from builders import build_goethals_seidel
+from builders import build_turyn
 from correlations import (
-    apply_symmetric_flip,
-    autocorrelation_state,
-    correlation_energy,
-    expand_symmetric_sequence,
+    apply_nonperiodic_flip,
+    nonperiodic_autocorrelation_state,
+    nonperiodic_correlation_energy,
 )
-from fourier import half_sequence_gradient, project_power_complementarity
 from gpu import check_orthogonality
 from .base import SearchStrategy
 
 
-class PocsSearch(SearchStrategy):
-    """FFT-Gradient-guided bit selection.
+class TurynPocsSearch(SearchStrategy):
+    """Use a zero-padded FFT gradient to rank exact Turyn bit flips.
 
-    Zweck: Priorisiert lokale Flips in vier symmetrischen Folgen mit einem kontinuierlichen FFT-Gradienten.
-    Mechanik: Startet mit einer kurzen Fourier-Projektion, bewertet Gradientenpositionen und fällt bei ausbleibender Verbesserung auf einen Zufallsflip zurück.
-    Grundlage: Der Gradient der periodischen Autokorrelationsenergie schätzt den Einfluss jedes diskreten Vorzeichenwechsels.
-    Pipeline: Kann nur eine Pipeline eröffnen, weil keine ``refine``-Methode existiert.
-    Grenzen: Die Gradientenrangfolge ist ein Proxy; nur die exakte kompakte Energie und die finale Gram-Metrik entscheiden.
+    Zweck: Priorisiert aussichtsreiche Turyn-Flips mit einem FFT-Gradienten.
+    Mechanik: Prüft jeden vorgeschlagenen Flip gegen die exakte NPAF-Energie.
+    Grundlage: Zero-Padding berechnet lineare statt zyklischer Korrelationen.
+    Pipeline: Erzeugt einen Kandidaten für eine nachfolgende Verfeinerung.
+    Grenzen: Der Gradient ordnet Kandidaten nur vor; er entscheidet nicht über Annahme.
     """
 
-    ORDER = 668
-    K = 167
-    HALF = 84
+    N = 56
+    WEIGHTS = np.array((1, 1, 2, 2), dtype=np.int64)
 
-    def __init__(self, projection_steps: int = 1, *, ORDER: int = ORDER, K: int = K, HALF: int = HALF) -> None:
-        if projection_steps < 0:
-            raise ValueError("projection_steps must be non-negative")
-        self.projection_steps = projection_steps
-        self.ORDER = ORDER
-        self.K = K
-        self.HALF = HALF
+    def __init__(self, *, n: int = N, gradient_interval: int = 7, candidates: int = 8) -> None:
+        if n < 2:
+            raise ValueError("Turyn type requires n >= 2")
+        if gradient_interval < 1 or candidates < 1:
+            raise ValueError(
+                "gradient_interval and candidates must be positive")
+        self.N = n
+        self.LENGTHS = np.array((n, n, n, n - 1), dtype=np.int64)
+        self.ORDER = 4 * (3 * n - 1)
+        self.gradient_interval = gradient_interval
+        self.candidates = candidates
 
     @property
     def name(self) -> str:
-        return "pocs"
+        return "turyn_pocs"
 
-    @staticmethod
-    def _project_seed(half_sequences: list[np.ndarray], steps: int) -> list[np.ndarray]:
-        full = np.stack(
-            [expand_symmetric_sequence(half) for half in half_sequences],
-        ).astype(np.float64)
-        for _ in range(steps):
-            full = np.where(full >= 0, 1.0, -1.0)
-            full = project_power_complementarity(full)
-        return [np.where(sequence >= 0, 1, -1).astype(np.int8)
-                for sequence in full]
+    def _seed(self, rng: np.random.Generator) -> np.ndarray:
+        sequences = np.zeros((4, self.N), dtype=np.int8)
+        for index, length in enumerate(self.LENGTHS):
+            sequences[index, :length] = rng.choice((-1, 1), size=length)
+        return sequences
+
+    def _build(self, sequences: np.ndarray) -> tuple[np.ndarray, dict[str, int]]:
+        matrix = build_turyn(*(sequences[index, :self.LENGTHS[index]]
+                               for index in range(4)))
+        return matrix, check_orthogonality(matrix)
+
+    def _gradient(self, sequences: np.ndarray) -> np.ndarray:
+        """Return the exact continuous NPAF gradient via zero-padded FFTs."""
+        fft_size = 2 * self.N - 1
+        spectrum = np.fft.fft(sequences, n=fft_size, axis=1)
+        correlations = np.fft.ifft(spectrum * spectrum.conj(), axis=1).real
+        total = np.tensordot(self.WEIGHTS, correlations, axes=1)
+        coefficients = np.zeros(fft_size, dtype=np.float64)
+        coefficients[1:self.N] = total[1:self.N]
+        coefficients[-(self.N - 1):] = total[1:self.N][::-1]
+        gradient = 2.0 * self.WEIGHTS[:, None] * np.fft.ifft(
+            np.fft.fft(coefficients)[None, :] * spectrum, axis=1).real
+        return gradient[:, :self.N]
 
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
-        t0 = time.perf_counter()
+        started = time.perf_counter()
         rng = np.random.default_rng(seed)
-        half = self.HALF
-
-        current = [rng.choice([-1, 1], size=half).astype(np.int8) for _ in range(4)]
-        if self.projection_steps:
-            projected = self._project_seed(current, self.projection_steps)
-            current = [sequence[:half].copy() for sequence in projected]
-        sequences = np.stack([expand_symmetric_sequence(value) for value in current])
-        correlations = autocorrelation_state(sequences)
-        best_half = [c.copy() for c in current]
-        e = best_e = correlation_energy(correlations) // 2
+        sequences = self._seed(rng)
+        correlations = nonperiodic_autocorrelation_state(
+            sequences, lengths=self.LENGTHS, weights=self.WEIGHTS)
+        energy = best_energy = nonperiodic_correlation_energy(correlations)
+        best_sequences = sequences.copy()
         accepted = best_at = 0
-
-        def matrices():
-            full = [expand_symmetric_sequence(h) for h in best_half]
-            matrix = build_goethals_seidel(*full)
-            metrics = check_orthogonality(matrix)
-            return matrix, metrics, metrics["energy"] == 0
-
-        best_M, best_met, found = matrices()
-        if found:
-            return best_M, best_met, 0.0
-
-        print(f"  sub_order={self.K}  vars={4*half}  energy_start={e}")
-        pbar = tqdm(total=steps, desc="pocs", unit="steps", ncols=100)
-        for step in range(steps):
-            pbar.update(1)
-            # Every 7 steps: FFT gradient, try top-5 (tuned: 5 seeds x 20k steps)
-            if step % 7 == 0:
-                grad = half_sequence_gradient(current)
-                sign = np.array([c.astype(np.float64) for c in current])
-                flip_score = -2.0 * sign * grad
-                flat = flip_score.ravel()
-                count = min(5, flat.size)
-                idx = np.argpartition(flat, count - 1)[:count]
-                idx = idx[np.argsort(flat[idx])]
-
+        with tqdm(total=steps, desc=self.name, unit="steps", dynamic_ncols=True) as bar:
+            for step in range(steps):
+                choices: list[tuple[int, int]] = []
+                if step % self.gradient_interval == 0:
+                    gradient = self._gradient(sequences)
+                    score = -2.0 * sequences * gradient
+                    score[3, self.N - 1] = np.inf
+                    selected = np.argpartition(
+                        score.ravel(), self.candidates - 1)[:self.candidates]
+                    choices = [tuple(map(int, divmod(index, self.N)))
+                               for index in selected]
+                else:
+                    sequence_index = int(rng.integers(0, 4))
+                    choices = [(sequence_index, int(
+                        rng.integers(0, self.LENGTHS[sequence_index])))]
                 improved = False
-                for k in idx:
-                    si, pi = divmod(k, half)
-                    current[si][pi] *= -1
-                    ne = apply_symmetric_flip(
-                        sequences, correlations, si, pi) // 2
-                    if ne < e:
-                        e = ne
-                        accepted += 1
-                        improved = True
-                        if ne < best_e:
-                            best_e = ne
-                            best_half = [c.copy() for c in current]
-                            best_at = step
-                            if ne == 0:
-                                break
-                            if step % 50 == 0:
-                                best_M, best_met, found = matrices()
-                                if found:
-                                    break
+                for sequence_index, value_index in choices:
+                    new_energy = apply_nonperiodic_flip(
+                        sequences, correlations, sequence_index, value_index,
+                        lengths=self.LENGTHS, weight=int(self.WEIGHTS[sequence_index]))
+                    if new_energy < energy:
+                        energy, accepted, improved = new_energy, accepted + 1, True
+                        if new_energy < best_energy:
+                            best_energy, best_at = new_energy, step
+                            best_sequences = sequences.copy()
                         break
-                    current[si][pi] *= -1
-                    apply_symmetric_flip(sequences, correlations, si, pi)
-
-                if improved:
-                    if ne == 0:
-                        break
-                    continue
-
-            # Random fallback
-            mi = rng.integers(0, 4)
-            pi = rng.integers(0, half)
-            current[mi][pi] *= -1
-            ne = apply_symmetric_flip(sequences, correlations, mi, pi) // 2
-            if ne <= e:
-                e, accepted = ne, accepted + 1
-                if ne < best_e:
-                    best_e = ne
-                    best_half = [c.copy() for c in current]
-                    best_at = step
-                    if ne == 0:
-                        break
-                    if step % 50 == 0:
-                        best_M, best_met, found = matrices()
-                        if found:
-                            break
-            else:
-                current[mi][pi] *= -1
-                apply_symmetric_flip(sequences, correlations, mi, pi)
-
-            if step % 50 == 0:
-                pbar.set_postfix(e=e, best=best_e, acc=accepted)
-        pbar.set_postfix(e=e, best=best_e, acc=accepted)
-        pbar.close()
-
-        best_M, best_met, _ = matrices()
-        elapsed = time.perf_counter() - t0
-        print(f"  seed={seed}  best_energy={best_e}  found@step={best_at}  accepted={accepted}  {elapsed:.1f}s")
-        return best_M, best_met, elapsed
+                    apply_nonperiodic_flip(
+                        sequences, correlations, sequence_index, value_index,
+                        lengths=self.LENGTHS, weight=int(self.WEIGHTS[sequence_index]))
+                if not best_energy:
+                    break
+                if step % 50 == 0:
+                    bar.set_postfix(e=energy, best=best_energy, acc=accepted)
+                bar.update(1)
+        matrix, metrics = self._build(best_sequences)
+        elapsed = time.perf_counter() - started
+        print(f"  seed={seed} best_energy={best_energy} found@step={best_at} "
+              f"accepted={accepted} {elapsed:.1f}s")
+        return matrix, metrics, elapsed

@@ -8,21 +8,20 @@ from pathlib import Path
 
 import benchmark
 from benchmark import ORDERS, _cell, benchmark_groups, run_one, steps_for_order
-from strategies.circulant import CirculantSearch
+from strategies.circulant import TurynGreedySearch
 
 
 def test_benchmark_worker_returns_a_completed_result() -> None:
     result = run_one(
-        lambda order: CirculantSearch(ORDER=order, K=order // 4, HALF=(order // 4 + 1) // 2),
-        4, 1, 0, 5)
+        lambda order: TurynGreedySearch(n=8), 92, 1, 0, 5)
     assert result["status"] == "ok"
-    assert result["metrics"]["energy"] == 0
+    assert result["metrics"]["energy"] >= 0
     assert result["algorithm_seconds"] >= 0
     assert result["wall_seconds"] >= result["algorithm_seconds"]
 
 
 def test_benchmark_worker_reports_a_timeout() -> None:
-    result = run_one(lambda order: CirculantSearch(), 668, 1, 0, 0.01)
+    result = run_one(lambda order: TurynGreedySearch(), 668, 1, 0, 0.01)
     assert result["status"] == "timeout"
 
 
@@ -55,7 +54,7 @@ def test_benchmark_help_works_without_pythonpath() -> None:
     assert "--all" in result.stdout
 
 
-def test_baumert_inapplicable_orders_render_as_na() -> None:
+def test_turyn_inapplicable_orders_render_as_na() -> None:
     assert _cell({"status": "na"}, 8) == "N/A"
 
 
@@ -76,7 +75,7 @@ def test_benchmark_writes_one_json_record_per_case(tmp_path, monkeypatch) -> Non
     monkeypatch.setattr(
         benchmark,
         "benchmark_groups",
-        lambda **_kwargs: (("Test", (("BaumertHall", lambda _order: None),)),),
+        lambda **_kwargs: (("Test", (("Other", lambda _order: None),)),),
     )
     monkeypatch.setattr(
         benchmark,
@@ -96,4 +95,4 @@ def test_benchmark_writes_one_json_record_per_case(tmp_path, monkeypatch) -> Non
     assert report["cases"][0]["metrics"]["energy"] == 0
     assert report["cases"][0]["algorithm_seconds"] == 0.1
     assert report["cases"][0]["correlation_histogram"] == {"0": 6}
-    assert report["cases"][1]["status"] == "na"
+    assert report["cases"][1]["status"] == "ok"

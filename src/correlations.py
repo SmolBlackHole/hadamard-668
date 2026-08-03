@@ -123,6 +123,81 @@ def periodic_autocorrelation_energy(
     return correlation_energy(autocorrelation_state(sequences))
 
 
+def _nonperiodic_matrix(
+    sequences: tuple[np.ndarray, ...] | np.ndarray,
+    lengths: tuple[int, ...] | np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    matrix = np.asarray(sequences, dtype=np.int8)
+    if matrix.ndim != 2 or matrix.shape[0] == 0:
+        raise ValueError("sequences must be a non-empty two-dimensional array")
+    actual_lengths = (np.full(matrix.shape[0], matrix.shape[1], dtype=np.int64)
+                      if lengths is None else np.asarray(lengths, dtype=np.int64))
+    if actual_lengths.shape != (matrix.shape[0],) or np.any(actual_lengths < 1):
+        raise ValueError(
+            "lengths must contain one positive value per sequence")
+    if np.any(actual_lengths > matrix.shape[1]):
+        raise ValueError("sequence length exceeds matrix width")
+    return np.ascontiguousarray(matrix), actual_lengths
+
+
+def nonperiodic_autocorrelation_state(
+    sequences: tuple[np.ndarray, ...] | np.ndarray,
+    *,
+    lengths: tuple[int, ...] | np.ndarray | None = None,
+    weights: tuple[int, ...] | np.ndarray | None = None,
+) -> np.ndarray:
+    """Return weighted non-periodic autocorrelations for ragged sign sequences."""
+    matrix, actual_lengths = _nonperiodic_matrix(sequences, lengths)
+    actual_weights = (np.ones(matrix.shape[0], dtype=np.int64) if weights is None
+                      else np.asarray(weights, dtype=np.int64))
+    if actual_weights.shape != actual_lengths.shape:
+        raise ValueError("weights must contain one value per sequence")
+    total = np.zeros(int(actual_lengths.max()), dtype=np.int64)
+    for sequence, length, weight in zip(matrix, actual_lengths, actual_weights):
+        for shift in range(1, int(length)):
+            total[shift] += int(weight) * int(np.dot(
+                sequence[:length - shift], sequence[shift:length]))
+    return total
+
+
+def nonperiodic_correlation_energy(correlations: np.ndarray) -> int:
+    """Return squared non-periodic correlation energy without the zero shift."""
+    values = np.asarray(correlations, dtype=np.int64)[1:]
+    return int(np.dot(values, values))
+
+
+def apply_nonperiodic_flip(
+    sequences: np.ndarray,
+    correlations: np.ndarray,
+    sequence_index: int,
+    value_index: int,
+    *,
+    lengths: tuple[int, ...] | np.ndarray,
+    weight: int = 1,
+) -> int:
+    """Flip one ragged-sequence value and update NPAF state in O(max length)."""
+    matrix, actual_lengths = _nonperiodic_matrix(sequences, lengths)
+    if matrix is not sequences:
+        raise ValueError("sequences must be a contiguous int8 matrix")
+    if correlations.shape != (int(actual_lengths.max()),):
+        raise ValueError("correlations and lengths are incompatible")
+    if not 0 <= sequence_index < len(actual_lengths):
+        raise IndexError("sequence_index is out of range")
+    length = int(actual_lengths[sequence_index])
+    if not 0 <= value_index < length:
+        raise IndexError("value_index is out of range")
+    old_value = int(sequences[sequence_index, value_index])
+    for shift in range(1, length):
+        neighbours = 0
+        if value_index + shift < length:
+            neighbours += int(sequences[sequence_index, value_index + shift])
+        if value_index >= shift:
+            neighbours += int(sequences[sequence_index, value_index - shift])
+        correlations[shift] -= 2 * weight * old_value * neighbours
+    sequences[sequence_index, value_index] = -old_value
+    return nonperiodic_correlation_energy(correlations)
+
+
 def apply_sequence_flip(
     sequences: np.ndarray,
     correlations: np.ndarray,

@@ -1,34 +1,35 @@
 """Compare all current Hadamard search strategies across supported orders."""
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
+from strategies.turyn_steepest import TurynSteepestSearch
+from strategies.pocs import TurynPocsSearch
+from strategies.spectral import SpectralSearch
+from strategies.repair import RepairSearch
+from strategies.montecarlo import MonteCarloSearch
+from strategies.ising import IsingSearch
+from strategies.genetic import GeneticSearch
+from strategies.diffset import DiffsetSearch
+from strategies.circulant import TurynGreedySearch
+from strategies.base import Pipeline
+from strategies.annealing import TurynAnnealingSearch
+from gpu import correlation_histogram, gram_matrix, xp
+
 import argparse
 import contextlib
 import io
 import json
 import multiprocessing
 import os
-from pathlib import Path
 from queue import Empty
 import subprocess
-import sys
 import time
 
 from tqdm import tqdm
-
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from gpu import correlation_histogram, gram_matrix, xp
-from strategies.annealing import AnnealingSearch
-from strategies.baumert import BaumertHallSearch
-from strategies.base import Pipeline
-from strategies.circulant import CirculantSearch
-from strategies.diffset import DiffsetSearch
-from strategies.genetic import GeneticSearch
-from strategies.ising import IsingSearch
-from strategies.montecarlo import MonteCarloSearch
-from strategies.repair import RepairSearch
-from strategies.spectral import SpectralSearch
-
 
 ORDERS = (4, 8, 12, 16, 20, 668)
 STEPS_SMALL = 2_000
@@ -38,22 +39,29 @@ TIMEOUT_SECONDS = 60
 GPU_COMPARE_STRATEGIES = ("repair", "ising", "spectral")
 
 
-def _circulant(order: int) -> CirculantSearch:
-    k = order // 4
-    half = (k + 1) // 2
-    return CirculantSearch(ORDER=order, K=k, HALF=half) if order <= 20 else CirculantSearch()
+def _turyn_n(order: int) -> int:
+    if order % 4:
+        raise ValueError("Turyn orders are divisible by four")
+    n = (order // 4 + 1) // 3
+    if n < 2 or order != 4 * (3 * n - 1):
+        raise ValueError("order has no TT(n) construction")
+    return n
 
 
-def _annealing(order: int) -> AnnealingSearch:
-    k = order // 4
-    half = (k + 1) // 2
-    return AnnealingSearch(ORDER=order, K=k, HALF=half) if order <= 20 else AnnealingSearch()
+def _turyn_greedy(order: int) -> TurynGreedySearch:
+    return TurynGreedySearch(n=_turyn_n(order))
 
 
-def _baumert(order: int) -> BaumertHallSearch:
-    t = order // 4
-    half = (t + 1) // 2
-    return BaumertHallSearch(ORDER=order, T=t, HALF=half) if order <= 20 else BaumertHallSearch()
+def _turyn_annealing(order: int) -> TurynAnnealingSearch:
+    return TurynAnnealingSearch(n=_turyn_n(order))
+
+
+def _turyn_pocs(order: int) -> TurynPocsSearch:
+    return TurynPocsSearch(n=_turyn_n(order))
+
+
+def _turyn_steepest(order: int) -> TurynSteepestSearch:
+    return TurynSteepestSearch(n=_turyn_n(order))
 
 
 def _half_steps(order: int) -> int:
@@ -67,25 +75,26 @@ def steps_for_order(order: int) -> int:
 def benchmark_groups(*, include_all: bool = False):
     core = (
         ("Individual strategies", (
-            ("Circulant", _circulant),
-            ("Annealing", _annealing),
-            ("BaumertHall", _baumert),
+            ("TurynGreedy", _turyn_greedy),
+            ("TurynAnnealing", _turyn_annealing),
+            ("TurynPOCS", _turyn_pocs),
+            ("TurynSteepest", _turyn_steepest),
             ("Diffset", lambda order: DiffsetSearch(order=order)),
             ("MonteCarlo", lambda order: MonteCarloSearch(order=order)),
             ("RepairSearch", lambda order: RepairSearch(order=order)),
-            ("Ising", lambda order: IsingSearch(order=order)),
             ("Spectral", lambda order: SpectralSearch(ORDER=order, inner_steps=5)),
         )),
     )
     if not include_all:
         return core
     experimental = (
-        ("Experimental strategies", (("Genetic", lambda order: GeneticSearch(order=order)),)),
+        ("Experimental strategies",
+         (("Genetic", lambda order: GeneticSearch(order=order)),)),
         ("Pipelines", (
-            ("Circulant->Repair", lambda o: Pipeline(
-                [(_circulant(o), _half_steps(o)), (RepairSearch(order=o), _half_steps(o))])),
-            ("Annealing->Repair", lambda o: Pipeline(
-                [(_annealing(o), _half_steps(o)), (RepairSearch(order=o), _half_steps(o))])),
+            ("TurynGreedy->Repair", lambda o: Pipeline(
+                [(_turyn_greedy(o), _half_steps(o)), (RepairSearch(order=o), _half_steps(o))])),
+            ("TurynAnnealing->Repair", lambda o: Pipeline(
+                [(_turyn_annealing(o), _half_steps(o)), (RepairSearch(order=o), _half_steps(o))])),
         )),
     )
     return core + experimental
@@ -174,13 +183,10 @@ def main(timeout_seconds: float = TIMEOUT_SECONDS, *, include_all: bool = False)
                     steps = steps_for_order(order)
                     progress.set_postfix_str(
                         f"{group}: {name}, n={order}, steps={steps}")
-                    incompatible_symmetric_order = (
-                        name in {"Circulant", "Annealing"}
-                        and (order // 4) % 2 == 0
-                    )
-                    result = ({"status": "na"} if (
-                        incompatible_symmetric_order
-                        or name == "BaumertHall" and (order // 4) % 2 == 0
+                    turyn_strategy = name.startswith("Turyn")
+                    result = ({"status": "na"} if turyn_strategy and (
+                        order != 4 * (3 * ((order // 4 + 1) // 3) - 1)
+                        or ((order // 4 + 1) // 3) < 2
                     ) else run_one(factory, order, steps, SEED, timeout_seconds))
                     case_results.append({
                         "group": group,

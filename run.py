@@ -1,41 +1,43 @@
 """Hadamard-668 search entry point."""
 from __future__ import annotations
 
-import argparse
-from concurrent.futures import ProcessPoolExecutor
-import datetime
 import sys
-import time
 from pathlib import Path
-
-import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from output import save_run
-from gpu import check_orthogonality
-from strategies.annealing import AnnealingSearch
-from strategies.baumert import BaumertHallSearch
-from strategies.base import Pipeline, SearchStrategy
-from strategies.circulant import CirculantSearch
-from strategies.diffset import DiffsetSearch
-from strategies.genetic import GeneticSearch
-from strategies.ising import IsingSearch
-from strategies.montecarlo import MonteCarloSearch
-from strategies.repair import RepairSearch
+from strategies.turyn_steepest import TurynSteepestSearch
+from strategies.pocs import TurynPocsSearch
 from strategies.spectral import SpectralSearch
+from strategies.repair import RepairSearch
+from strategies.montecarlo import MonteCarloSearch
+from strategies.ising import IsingSearch
+from strategies.genetic import GeneticSearch
+from strategies.diffset import DiffsetSearch
+from strategies.circulant import TurynGreedySearch
+from strategies.base import Pipeline, SearchStrategy
+from strategies.annealing import TurynAnnealingSearch
+from gpu import check_orthogonality
+from output import save_run
 
+import argparse
+from concurrent.futures import ProcessPoolExecutor
+import datetime
+import time
+
+import numpy as np
 
 ALL: dict[str, SearchStrategy] = {
-    "circulant": CirculantSearch(),
-    "annealing": AnnealingSearch(),
+    "turyn_greedy": TurynGreedySearch(),
+    "turyn_annealing": TurynAnnealingSearch(),
+    "turyn_pocs": TurynPocsSearch(),
+    "turyn_steepest": TurynSteepestSearch(),
     "repair": RepairSearch(),
     "spectral": SpectralSearch(),
     "ising": IsingSearch(),
     "diffset": DiffsetSearch(),
     "genetic": GeneticSearch(),
     "montecarlo": MonteCarloSearch(),
-    "baumert": BaumertHallSearch(),
 }
 
 GPU_INTENSIVE_STRATEGIES = frozenset({"montecarlo"})
@@ -64,8 +66,8 @@ def parse_strategy(specification: str) -> SearchStrategy:
 def method_family(strategy: SearchStrategy) -> str:
     if isinstance(strategy, Pipeline):
         return "other"
-    if strategy.name in {"circulant", "annealing"}:
-        return "gs_sds"
+    if strategy.name.startswith("turyn_"):
+        return "turyn"
     if strategy.name == "repair":
         return "local_search"
     return "other"
@@ -119,7 +121,7 @@ def select_best_run(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hadamard-668 search")
     parser.add_argument("--strategy", default="circulant",
-                        help="circulant | annealing | ... | s1:N,s2:M")
+                        help="turyn_greedy | turyn_annealing | ... | s1:N,s2:M")
     parser.add_argument("--steps", type=int, default=200_000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--runs", type=int, default=1)
@@ -137,7 +139,8 @@ def main() -> None:
         print("GPU-intensive strategy detected; using one worker.")
 
     if workers == 1:
-        results = [_execute_run(args.strategy, args.steps, seed) for seed in seeds]
+        results = [_execute_run(args.strategy, args.steps, seed)
+                   for seed in seeds]
     else:
         with ProcessPoolExecutor(max_workers=workers) as executor:
             results = list(executor.map(

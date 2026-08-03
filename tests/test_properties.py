@@ -9,13 +9,23 @@ import pytest
 from hypothesis import given, settings, strategies as st
 
 import correlations
-from builders import build_goethals_seidel, build_propus
+from builders import (
+    base_to_t_sequences,
+    build_goethals_seidel,
+    build_propus,
+    build_turyn,
+    t_sequences_to_sign_sequences,
+    turyn_to_base,
+)
 from correlations import (
+    apply_nonperiodic_flip,
     apply_sequence_flip,
     apply_symmetric_flip,
     autocorrelation_state,
     correlation_energy,
     expand_symmetric_sequence,
+    nonperiodic_autocorrelation_state,
+    nonperiodic_correlation_energy,
     periodic_autocorrelation_energy,
 )
 from gpu import (
@@ -136,9 +146,12 @@ def test_compact_energy_matches_valid_block_constructions(
     a, b, c, d = (expand_symmetric_sequence(half) for half in halves)
     order = 4 * len(a)
     four_energy = correlation_energy(autocorrelation_state((a, b, c, d))) // 2
-    assert check_orthogonality(build_goethals_seidel(a, b, c, d))["energy"] == order * four_energy
-    propus_energy = correlation_energy(autocorrelation_state((a, b, b, d))) // 2
-    assert check_orthogonality(build_propus(a, b, d))["energy"] == order * propus_energy
+    assert check_orthogonality(build_goethals_seidel(a, b, c, d))[
+        "energy"] == order * four_energy
+    propus_energy = correlation_energy(
+        autocorrelation_state((a, b, b, d))) // 2
+    assert check_orthogonality(build_propus(a, b, d))[
+        "energy"] == order * propus_energy
 
 
 @settings(max_examples=30, deadline=None)
@@ -218,7 +231,8 @@ def test_weighted_autocorrelation_state_matches_reference(
     weights = np.array((1, 2, 1, 3), dtype=np.int64)
     assert np.array_equal(
         autocorrelation_state(sequences, weights),
-        reference_correlations(sequences, tuple(int(value) for value in weights)),
+        reference_correlations(sequences, tuple(int(value)
+                               for value in weights)),
     )
 
 
@@ -264,7 +278,8 @@ def test_goethals_seidel_slicing_matches_permutation_matrix_reference() -> None:
         np.array([-1, 1, 1], dtype=np.int8),
     )
     A, B, C, D = (
-        np.array([np.roll(sequence, index) for index in range(len(sequence))], dtype=np.int8)
+        np.array([np.roll(sequence, index)
+                 for index in range(len(sequence))], dtype=np.int8)
         for sequence in sequences
     )
     reverse = np.fliplr(np.eye(3, dtype=np.int8))
@@ -277,6 +292,41 @@ def test_goethals_seidel_slicing_matches_permutation_matrix_reference() -> None:
         [-DR, -CtR, BtR, A],
     ]).astype(np.int8)
     assert np.array_equal(build_goethals_seidel(*sequences), expected)
+
+
+def test_turyn_type_eight_builds_order_ninety_two_hadamard() -> None:
+    x = np.array((1, 1, -1, 1, -1, 1, -1, 1), dtype=np.int8)
+    y = np.array((1, -1, -1, -1, -1, -1, -1, 1), dtype=np.int8)
+    z = np.array((1, -1, -1, 1, 1, 1, 1, -1), dtype=np.int8)
+    w = np.array((1, 1, 1, -1, 1, 1, -1), dtype=np.int8)
+    base = turyn_to_base(x, y, z, w)
+    t_sequences = base_to_t_sequences(*base)
+    signs = t_sequences_to_sign_sequences(*t_sequences)
+    assert [len(sequence) for sequence in base] == [15, 15, 8, 8]
+    assert np.all(np.sum(np.abs(np.stack(t_sequences)), axis=0) == 1)
+    assert all(np.all(np.isin(sequence, (-1, 1))) for sequence in signs)
+    matrix = build_turyn(x, y, z, w)
+    assert matrix.shape == (92, 92)
+    assert check_orthogonality(matrix)["energy"] == 0
+
+
+def test_nonperiodic_flip_state_matches_recomputation() -> None:
+    lengths = np.array((5, 5, 5, 4), dtype=np.int64)
+    weights = np.array((1, 1, 2, 2), dtype=np.int64)
+    sequences = np.array([
+        [1, -1, 1, -1, 1], [-1, -1, 1, 1, -1],
+        [1, 1, -1, -1, 1], [-1, 1, 1, -1, 0],
+    ], dtype=np.int8)
+    state = nonperiodic_autocorrelation_state(
+        sequences, lengths=lengths, weights=weights)
+    for sequence_index, value_index in ((0, 2), (3, 1), (2, 4)):
+        energy = apply_nonperiodic_flip(
+            sequences, state, sequence_index, value_index,
+            lengths=lengths, weight=int(weights[sequence_index]))
+        expected = nonperiodic_autocorrelation_state(
+            sequences, lengths=lengths, weights=weights)
+        assert np.array_equal(state, expected)
+        assert energy == nonperiodic_correlation_energy(expected)
 
 
 @settings(max_examples=50, deadline=None)
@@ -395,7 +445,8 @@ def test_repair_violation_cache_tracks_exact_global_maximum() -> None:
 
 def test_refinement_preserves_input_when_no_steps_are_requested() -> None:
     candidate = sylvester(4)
-    refined, metrics, _ = RepairSearch(order=4).refine(candidate, steps=0, seed=0)
+    refined, metrics, _ = RepairSearch(
+        order=4).refine(candidate, steps=0, seed=0)
     assert np.array_equal(candidate, sylvester(4))
     assert np.array_equal(refined, candidate)
     assert metrics == check_orthogonality(candidate)

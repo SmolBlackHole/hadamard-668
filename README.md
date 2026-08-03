@@ -58,15 +58,15 @@ Die Test-Suite prueft bekannte Hadamard-Matrizen, G-S-/Propus-Konstruktionen, St
 ## Suche starten
 
 ```bash
-.venv\Scripts\python run.py --strategy circulant --steps 200000 --seed 42
+.venv\Scripts\python run.py --strategy turyn_greedy --steps 200000 --seed 42
 ```
 
 Oder importieren:
 
 ```python
-from strategies.circulant import CirculantSearch
+from strategies.circulant import TurynGreedySearch
 
-matrix, metrics, elapsed = CirculantSearch().search(steps=5000, seed=42)
+matrix, metrics, elapsed = TurynGreedySearch().search(steps=5000, seed=42)
 ```
 
 Jeder Lauf schreibt `candidate.csv` und `run.json` in ein neues Verzeichnis unter `runs/`.
@@ -80,7 +80,7 @@ verbinden. Der empfohlene Pfad erzeugt einen symmetrischen
 Goethals-Seidel-Kandidaten und repariert die Vollmatrix anschließend lokal:
 
 ```bash
-.venv\Scripts\python run.py --strategy "circulant:100000,repair:5000" --seed 42
+.venv\Scripts\python run.py --strategy "turyn_greedy:100000,repair:5000" --seed 42
 ```
 
 Die erste Phase startet mit `search()`, jede weitere mit `refine()` auf dem
@@ -99,7 +99,7 @@ Aufbau abgelehnt.
 Unabhängige Läufe können parallel gestartet werden:
 
 ```bash
-.venv\Scripts\python run.py --strategy circulant --steps 200000 --seed 42 --runs 8 --workers 4
+.venv\Scripts\python run.py --strategy turyn_greedy --steps 200000 --seed 42 --runs 8 --workers 4
 ```
 
 Die Seeds sind deterministisch `seed, seed+1, ...`. Jeder Lauf erhält ein
@@ -132,7 +132,6 @@ Numba-Kompilierung und CUDA-Warm-up und dient nur der Timeout-Diagnose.
 | --- | --- | --- | --- |
 | Symmetrische Folgen | `circulant`, `annealing` | `4 × 84` unabhängige Vorzeichen | CPU/Numba und FFT |
 | Allgemeine Folgen | `diffset`, `genetic`, `montecarlo`, `spectral`, `ising` | `4 × 167` | CPU; große Genetic-/Monte-Carlo-Batches auf GPU |
-| Teilkonstruktion | `baumert` | drei symmetrische 167er-Folgen | CPU/Numba |
 | Vollmatrix | `repair` | `668 × 668` | inkrementelle CPU-Deltas; finale Gram-Prüfung optional auf GPU |
 | Orchestrierung | Pipelines | vorhandene Kandidaten | CPU |
 
@@ -145,11 +144,18 @@ Douglas-Rachford-Schritt. Dadurch entfallen SVD oder Polarzerlegung einer
 668×668-Matrix vollständig; nur der finale diskrete Kandidat wird als
 Goethals-Seidel-Matrix aufgebaut.
 
-### Symmetrische Goethals-Seidel-Konstruktion
+### Historische symmetrische Goethals-Seidel-Konstruktion
 
 Nutzt `668 = 4 × 167` und vier symmetrische zirkulante Blöcke. Dadurch sinkt
 der diskrete Suchraum von 446.224 Matrixeinträgen auf `4 × 84 = 336`
 unabhängige Vorzeichen.
+
+### Turyn-Typ-Konstruktion
+
+Die vier TT(56)-Folgen haben Laengen `(56, 56, 56, 55)` und muessen die
+gewichtete nichtperiodische Autokorrelationsbedingung
+`N_X + N_Y + 2N_Z + 2N_W = 0` erfuellen. Die fertigen Folgen werden erst dann
+ueber die feste Goethals-Seidel-Blockanordnung zu einer 668x668-Matrix erweitert.
 
 ## Lizenz
 
