@@ -4,71 +4,71 @@ Finde eine reelle Hadamard-Matrix der Ordnung 668.
 
 ## Hintergrund
 
-Ordnung 668 = 4 × 167 ist die **kleinste ungelöste Ordnung** der Hadamard-Vermutung (seit 1867). Eine Hadamard-Matrix H in {-1,+1}^(668×668) mit H·H^T = 668·I zu finden, wäre ein bedeutendes mathematisches Resultat.
+Ordnung 668 = 4 x 167 ist die **kleinste ungeloeste Ordnung** der Hadamard-Vermutung (seit 1867). Eine Hadamard-Matrix H in {-1,+1}^(668x668) mit H *H^T = 668* I zu finden, ware ein bedeutendes mathematisches Resultat.
 
 ## Projektstruktur
 
-```
+```txt
 ├── src/
-│   └── search.py             # Such-Engine (direkt + Williamson)
-├── verifier/                 # Prüf-Toolchain
-│   ├── verify.py             # Matrix-Prüfung
-│   ├── review.py             # Bundle-Review
-│   ├── score.py              # Fortschritt-Metriken
-│   ├── validate.py           # JSON-Manifest-Validator
-│   └── seed.py               # Deterministischer Seed-Generator
+│   ├── search.py              # Such-Engine (direkt + Williamson)
+│   └── verifier/              # Pruf-Toolchain
+│       ├── verify.py          # Matrix-Prufung
+│       ├── review.py          # Bundle-Review
+│       ├── score.py           # Fortschritt-Metriken
+│       ├── validate.py        # JSON-Manifest-Validator
+│       ├── seed.py            # Deterministischer Seed-Generator
+│       └── known.py           # Bekannte Matrizen (Sylvester, Paley)
 ├── schema/
-│   ├── run.schema.json       # JSON Schema fuer Suchlauf-Dokumentation
-│   └── template.json         # Vorlage fuer run.json
+│   ├── run.schema.json        # JSON Schema fur Suchlauf-Dokumentation
+│   └── template.json          # Vorlage fur run.json
 ├── tests/
-│   ├── test_search.py        # Engine-Smoke-Tests
+│   ├── test_search.py         # Engine-Smoke-Tests
 │   └── fixtures/
-│       └── h4/               # 4x4 Kontroll-Fixture
+│       └── h4/                # 4x4 Kontroll-Fixture
 └── requirements.txt
 ```
 
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
 ```
 
 ## Tests
 
 ```bash
-PYTHONPATH="src;verifier" python tests/test_search.py
+.venv\Scripts\python -m pytest tests/ -v
+# oder ohne pytest:
+PYTHONPATH="src" .venv\Scripts\python tests/test_search.py
 ```
 
-Baut eine bekannte 4x4 Hadamard-Matrix per Williamson, prüft Orthogonalität,
-und verifiziert dass die Suche die Lösung in <100 Schritten findet.
+11 Tests gegen bekannte Hadamard-Matrizen (Sylvester Ordnung 4,8,16; Paley Ordnung 8,12,20; Sylvester Ordnung 1,2), Williamson-Hilfsfunktionen, symmetrische Zirkulante und die Such-Engine.
 
 ## Verifier (4x4 Kontrolle)
 
 ```bash
-python verifier/verify.py tests/fixtures/h4/candidate.csv --order 4 --audit --require-filename candidate.csv
-python verifier/review.py tests/fixtures/h4 --order 4
+PYTHONPATH="src" .venv\Scripts\python src/verifier/verify.py tests/fixtures/h4/candidate.csv --order 4 --audit --require-filename candidate.csv
+PYTHONPATH="src" .venv\Scripts\python src/verifier/review.py tests/fixtures/h4 --order 4
 ```
 
 ## Suche starten
 
-`src/search.py` direkt ausführen oder importieren:
+```bash
+PYTHONPATH="src" .venv\Scripts\python src/search.py
+```
+
+Oder importieren:
 
 ```python
 from search import run, direct_search, williamson_search
 
-# Kurzer Testlauf
 run(strategy="both", steps=5000, seed=42)
-
-# Oder: Konstanten oben in search.py anpassen und direkt ausführen
 ```
 
-```bash
-python src/search.py
-```
+Ergebnis einer exakten Losung landet in `output/candidate.csv`.
 
-Ergebnis einer exakten Lösung landet in `output/candidate.csv`.
-
-Parameter (ganz oben in `src/search.py` änderbar):
+Parameter (oben in `src/search.py` anderbar):
 
 - `STEPS` — Anzahl Suchschritte
 - `SEED` — Zufallsseed
@@ -78,11 +78,11 @@ Parameter (ganz oben in `src/search.py` änderbar):
 
 ### Direct Local Search
 
-Arbeitet direkt auf der 668×668-Matrix. Flippt symmetrische Eintragspaare und akzeptiert Schritte, die die Energie nicht erhöhen. 222.778 Zeilenpaare müssen orthogonal werden.
+Arbeitet direkt auf der 668x668-Matrix. Flippt symmetrische Eintragspaare und akzeptiert Schritte, die die Energie nicht erhohen. 222.778 Zeilenpaare mussen orthogonal werden.
 
 ### Williamson-Konstruktion
 
-Nutzt 668 = 4 × 167. Baut die Matrix aus vier symmetrischen zirkulanten 167×167-Blöcken. Reduziert die Variablen von 446.224 auf 4×84 = 336, mit 83 quadratischen Nebenbedingungen.
+Nutzt 668 = 4 x 167. Baut die Matrix aus vier symmetrischen zirkulanten 167x167-Blocken. Reduziert die Variablen von 446.224 auf 4x84 = 336, mit 83 quadratischen Nebenbedingungen.
 
 ## Lizenz
 

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from verify import InvalidMatrix, load_matrix, normalized_sha256
+from .verify import InvalidMatrix, load_matrix, normalized_sha256
 
 
 def main() -> int:

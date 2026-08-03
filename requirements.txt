@@ -1,1 +1,7 @@
 numpy>=1.24,<3
+tqdm>=4
+cupy-cuda12x
+nvidia-cublas-cu12
+nvidia-cuda-nvrtc-cu12
+nvidia-cuda-runtime-cu12
+nvidia-curand-cu12

@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
-from verify import InvalidMatrix, read_regular_file
+from .verify import InvalidMatrix, read_regular_file
 
 
 MAX_MANIFEST_BYTES = 32 * 1024

@@ -17,8 +17,8 @@ from pathlib import Path
 
 import numpy as np
 
-from validate import InvalidManifest, load_and_validate_manifest
-from verify import InvalidMatrix, independent_audit, load_matrix_with_hash, normalized_sha256
+from .validate import InvalidManifest, load_and_validate_manifest
+from .verify import InvalidMatrix, independent_audit, load_matrix_with_hash, normalized_sha256
 
 
 def review_bundle(directory: Path, order: int) -> dict[str, object]:
@@ -67,7 +67,10 @@ def review_bundle(directory: Path, order: int) -> dict[str, object]:
                     "run.json candidate_sha256 does not match candidate.csv raw bytes"
                 )
             manifest_valid = True
-            claimed = manifest["metrics"]
+            raw_metrics = manifest.get("metrics", {})
+            if not isinstance(raw_metrics, dict):
+                raise InvalidManifest("metrics must be an object")
+            claimed: dict[str, object] = raw_metrics
             claim_mismatches = {
                 key: {"claimed": claimed[key], "recomputed": value}
                 for key, value in recomputed.items()
