@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from constructions import periodic_autocorrelation_energy
+from constructions import periodic_autocorrelation_energy, symmetric_circulant
 from gpu import check_orthogonality, xp
 from strategies.baumert import BaumertHallSearch
 from strategies.ca import CASearch
@@ -119,3 +119,17 @@ def test_baumert_hall_solves_order_four() -> None:
         ORDER=4, T=1, HALF=1).search(steps=0, seed=0)
     assert matrix.shape == (4, 4)
     assert metrics["energy"] == 0
+
+
+def test_baumert_hall_rejects_even_sequence_order() -> None:
+    with pytest.raises(ValueError, match="odd T"):
+        BaumertHallSearch(ORDER=8, T=2, HALF=1)
+
+
+def test_baumert_hall_weighted_energy_matches_built_matrix() -> None:
+    strategy = BaumertHallSearch(ORDER=12, T=3, HALF=2)
+    a = symmetric_circulant(np.array((1, -1), dtype=np.int8))
+    b = symmetric_circulant(np.array((1, 1), dtype=np.int8))
+    c = symmetric_circulant(np.array((-1, 1), dtype=np.int8))
+    proxy = strategy._bh_energy(a, b, c)
+    assert check_orthogonality(strategy._build(a, b, c))["energy"] == 12 * proxy

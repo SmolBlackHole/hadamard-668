@@ -7,7 +7,7 @@ import time
 import numpy as np
 from tqdm import tqdm
 
-from constructions import autocorrelation_energy, build_goethals_seidel, build_propus, build_williamson, symmetric_circulant
+from constructions import autocorrelation_energy, build_goethals_seidel, build_williamson, symmetric_circulant
 from gpu import check_orthogonality
 from .base import SearchStrategy
 
@@ -15,7 +15,7 @@ from .base import SearchStrategy
 class CirculantSearch(SearchStrategy):
     """Sucht vier gespiegelte Sequenzen für zirkulante Blockmatrizen.
 
-    Zweck: Erzeugt Kandidaten über Williamson, optional auch Propus und Goethals-Seidel.
+    Zweck: Erzeugt Kandidaten über Williamson und optional Goethals-Seidel.
     Mechanik: Flipt 336 unabhängige Halbsequenzeinträge und minimiert Autokorrelationsenergie.
     Grundlage: Vier Sequenzen sind komplementär, wenn ihre periodischen Autokorrelationen für jeden Nichtnull-Shift zu null summieren.
     Pipeline: Kann nur eine Pipeline eröffnen, weil keine ``refine``-Methode existiert.
@@ -42,7 +42,7 @@ class CirculantSearch(SearchStrategy):
         return "hybrid" if self.constructions == "all" else "circulant"
 
     def _builders(self) -> tuple:
-        return (build_williamson,) if self.constructions == "williamson" else (build_williamson, build_propus, build_goethals_seidel)
+        return (build_williamson,) if self.constructions == "williamson" else (build_williamson, build_goethals_seidel)
 
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         started = time.perf_counter()

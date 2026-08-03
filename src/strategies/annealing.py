@@ -8,7 +8,7 @@ import numpy as np
 
 from gpu import check_orthogonality
 from .base import SearchStrategy
-from constructions import autocorrelation_energy, build_goethals_seidel, build_propus, build_williamson, symmetric_circulant
+from constructions import autocorrelation_energy, build_goethals_seidel, build_williamson, symmetric_circulant
 
 
 class AnnealingSearch(SearchStrategy):
@@ -18,7 +18,7 @@ class AnnealingSearch(SearchStrategy):
     Mechanik: Akzeptiert schlechtere Autokorrelationsenergie gemäß exponentieller Temperaturschedule.
     Grundlage: Ein Anstieg ``ΔE`` wird mit ``exp(-ΔE / (T · E_scale))`` akzeptiert; ``T`` sinkt exponentiell.
     Pipeline: Kann nur gültige Williamson-Matrizen als Eingabe weiterverfeinern.
-    Grenzen: Propus- und Goethals-Seidel-Ausgaben können nicht als ``refine``-Start dienen.
+    Grenzen: Goethals-Seidel-Ausgaben können nicht als ``refine``-Start dienen.
     """
 
     ORDER = 668
@@ -43,7 +43,7 @@ class AnnealingSearch(SearchStrategy):
         return "annealing_w" if self.constructions == "williamson" else "annealing"
 
     def _builders(self) -> tuple:
-        return (build_williamson,) if self.constructions == "williamson" else (build_williamson, build_propus, build_goethals_seidel)
+        return (build_williamson,) if self.constructions == "williamson" else (build_williamson, build_goethals_seidel)
 
     def _search(self, current: list[np.ndarray], steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         started = time.perf_counter()

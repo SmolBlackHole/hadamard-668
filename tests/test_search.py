@@ -28,10 +28,19 @@ def test_known_matrices_are_orthogonal(order: int) -> None:
     assert metrics["orthogonal_pairs"] == order * (order - 1) // 2
 
 
-def test_symmetric_circulant_order_five() -> None:
-    half = np.array([1, -1, 1], dtype=np.int8)
-    assert np.array_equal(symmetric_circulant(
-        half), np.array([1, -1, 1, -1, 1], dtype=np.int8))
+@pytest.mark.parametrize(("half", "expected"), [
+    ([1], [1]),
+    ([1, -1], [1, -1, -1]),
+    ([1, -1, 1], [1, -1, 1, 1, -1]),
+    ([1, -1, 1, -1], [1, -1, 1, -1, -1, 1, -1]),
+])
+def test_symmetric_circulant_examples(
+    half: list[int], expected: list[int],
+) -> None:
+    assert np.array_equal(
+        symmetric_circulant(np.array(half, dtype=np.int8)),
+        np.array(expected, dtype=np.int8),
+    )
 
 
 def test_williamson_builds_order_four_hadamard() -> None:

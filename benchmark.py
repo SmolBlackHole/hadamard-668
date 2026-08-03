@@ -1,20 +1,5 @@
 """Compare all current Hadamard search strategies across supported orders."""
 from __future__ import annotations
-from strategies.walsh import WalshSearch
-from strategies.spectral import SpectralSearch
-from strategies.rowwise import RowwiseSearch
-from strategies.repair import RepairSearch
-from strategies.montecarlo import MonteCarloSearch
-from strategies.ising import IsingSearch
-from strategies.gold import GoldSearch
-from strategies.genetic import GeneticSearch
-from strategies.direct import DirectSearch
-from strategies.diffset import DiffsetSearch
-from strategies.circulant import CirculantSearch
-from strategies.ca import CASearch
-from strategies.baumert import BaumertHallSearch
-from strategies.base import Pipeline
-from strategies.annealing import AnnealingSearch
 
 import argparse
 import contextlib
@@ -32,12 +17,30 @@ from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from gpu import xp
+from strategies.annealing import AnnealingSearch
+from strategies.baumert import BaumertHallSearch
+from strategies.base import Pipeline
+from strategies.ca import CASearch
+from strategies.circulant import CirculantSearch
+from strategies.diffset import DiffsetSearch
+from strategies.direct import DirectSearch
+from strategies.genetic import GeneticSearch
+from strategies.gold import GoldSearch
+from strategies.ising import IsingSearch
+from strategies.montecarlo import MonteCarloSearch
+from strategies.repair import RepairSearch
+from strategies.rowwise import RowwiseSearch
+from strategies.spectral import SpectralSearch
+from strategies.walsh import WalshSearch
+
 
 ORDERS = (4, 8, 12, 16, 20, 668)
 STEPS_SMALL = 2_000
 STEPS_BIG = 5_000
 SEED = 42
 TIMEOUT_SECONDS = 60
+GPU_COMPARE_STRATEGIES = ("repair", "direct", "ising", "spectral", "ca", "walsh")
 
 
 def _circulant(order: int) -> CirculantSearch:
@@ -62,12 +65,14 @@ def _half_steps(order: int) -> int:
     return STEPS_BIG // 2 if order == 668 else STEPS_SMALL // 2
 
 
-def benchmark_groups():
-    return (
+def steps_for_order(order: int) -> int:
+    return STEPS_BIG if order == 668 else STEPS_SMALL
+
+
+def benchmark_groups(*, include_all: bool = False):
+    core = (
         ("Individual strategies", (
             ("Circulant", _circulant),
-            ("Hybrid", lambda o: CirculantSearch(constructions="all", ORDER=o, K=o//4,
-             HALF=(o//4+1)//2) if o <= 20 else CirculantSearch(constructions="all")),
             ("Annealing", _annealing),
             ("BaumertHall", _baumert),
             ("Diffset", lambda order: DiffsetSearch(order=order)),
@@ -75,12 +80,20 @@ def benchmark_groups():
             ("DirectSearch", lambda order: DirectSearch(order=order)),
             ("RepairSearch", lambda order: RepairSearch(order=order)),
             ("Ising", lambda order: IsingSearch(order=order)),
+            ("Spectral", lambda order: SpectralSearch(ORDER=order, inner_steps=5)),
+        )),
+    )
+    if not include_all:
+        return core
+    experimental = (
+        ("Experimental strategies", (
+            ("Hybrid", lambda o: CirculantSearch(constructions="all", ORDER=o, K=o//4,
+             HALF=(o//4+1)//2) if o <= 20 else CirculantSearch(constructions="all")),
             ("Rowwise", lambda order: RowwiseSearch(order=order)),
             ("Walsh", lambda order: WalshSearch(order=order)),
             ("Genetic", lambda order: GeneticSearch(order=order)),
             ("Gold/LFSR", lambda order: GoldSearch(order=order)),
             ("CA spectral", lambda order: CASearch(order=order, mode="spectral")),
-            ("Spectral", lambda order: SpectralSearch(ORDER=order, inner_steps=5)),
         )),
         ("Pipelines", (
             ("Circulant→Annealing", lambda o: Pipeline(
@@ -93,6 +106,7 @@ def benchmark_groups():
                 o)//2), (_annealing(o), _half_steps(o)//2), (RepairSearch(order=o), _half_steps(o))])),
         )),
     )
+    return core + experimental
 
 
 def _benchmark_worker(strategy, steps: int, seed: int, results) -> None:
@@ -100,8 +114,8 @@ def _benchmark_worker(strategy, steps: int, seed: int, results) -> None:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             started = time.perf_counter()
             _, metrics, _ = strategy.search(steps=steps, seed=seed)
-        results.put(
-            {"status": "ok", "seconds": time.perf_counter() - started, "metrics": metrics})
+        results.put({"status": "ok", "backend": xp.__name__,
+                     "seconds": time.perf_counter() - started, "metrics": metrics})
     except BaseException as error:
         results.put({"status": "error", "message": str(error)[:120]})
 
@@ -144,7 +158,9 @@ def _cell(result: dict, order: int) -> str:
     if metrics["energy"] == 0:
         return f"YES {result['seconds']:.1f}s"
     total = order * (order - 1) // 2
-    return f"e={metrics['energy']} | {metrics['orthogonal_pairs']}/{total} | {result['seconds']:.1f}s"
+    rms = (metrics["energy"] / total) ** 0.5
+    return (f"OK; e={metrics['energy']}; rms={rms:.2f}; "
+            f"orth={metrics['orthogonal_pairs']}/{total}; t={result['seconds']:.1f}s")
 
 
 def _render_table(title: str, rows: list[tuple[str, list[str]]]) -> list[str]:
@@ -155,8 +171,8 @@ def _render_table(title: str, rows: list[tuple[str, list[str]]]) -> list[str]:
             *(f"| {name} | " + " | ".join(values) + " |" for name, values in rows), ""]
 
 
-def main(timeout_seconds: float = TIMEOUT_SECONDS) -> None:
-    groups = benchmark_groups()
+def main(timeout_seconds: float = TIMEOUT_SECONDS, *, include_all: bool = False) -> None:
+    groups = benchmark_groups(include_all=include_all)
     total_cases = sum(len(strategies) * len(ORDERS)
                       for _, strategies in groups)
     rendered: list[tuple[str, list[tuple[str, list[str]]]]] = []
@@ -168,7 +184,7 @@ def main(timeout_seconds: float = TIMEOUT_SECONDS) -> None:
             for name, factory in strategies:
                 cells = []
                 for order in ORDERS:
-                    steps = STEPS_BIG if order == 668 else STEPS_SMALL
+                    steps = steps_for_order(order)
                     progress.set_postfix_str(
                         f"{group}: {name}, n={order}, steps={steps}")
                     result = ({"status": "na"} if name == "BaumertHall" and (order // 4) % 2 == 0
@@ -182,9 +198,12 @@ def main(timeout_seconds: float = TIMEOUT_SECONDS) -> None:
                     progress.update()
                 table_rows.append((name, cells))
             rendered.append((group, table_rows))
-    lines = ["# Hadamard Benchmark", "", f"Seed: {SEED}",
+    budgets = ", ".join(
+        f"n={order}: {steps_for_order(order)}" for order in ORDERS)
+    lines = ["# Hadamard Benchmark", "", f"Backend: {xp.__name__}", f"Seed: {SEED}",
+             f"Step budgets: {budgets}",
              f"Timeout per case: {timeout_seconds:g} seconds", "",
-             "Cell format: `e=energy | orthogonal_pairs/total_pairs | seconds`.", ""]
+             "Cell format: `status; e=energy; rms=root-mean-square correlation; orth=orthogonal pairs; t=seconds`.", ""]
     for group, rows in rendered:
         lines.extend(_render_table(group, rows))
     report = "\n".join(lines)
@@ -206,7 +225,7 @@ def _gpu_worker(name: str, steps: int) -> None:
     strategy = _gpu_strategy(name)
     started = time.perf_counter()
     _, metrics, _ = strategy.search(steps=steps, seed=SEED)
-    print(json.dumps({"strategy": name, "backend": os.environ.get("HADAMARD_BACKEND", "auto"),
+    print(json.dumps({"strategy": name, "backend": xp.__name__,
                       "seconds": round(time.perf_counter() - started, 3), "energy": metrics["energy"]}))
 
 
@@ -238,6 +257,8 @@ def gpu_compare(steps: int) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--timeout", type=float, default=TIMEOUT_SECONDS)
+    parser.add_argument("--all", action="store_true",
+                        help="include experimental strategies and pipelines")
     parser.add_argument("--gpu-compare", action="store_true")
     parser.add_argument("--gpu-worker", choices=GPU_COMPARE_STRATEGIES)
     parser.add_argument("--steps", type=int, default=20)
@@ -247,4 +268,4 @@ if __name__ == "__main__":
     elif args.gpu_compare:
         gpu_compare(args.steps)
     else:
-        main(args.timeout)
+        main(args.timeout, include_all=args.all)

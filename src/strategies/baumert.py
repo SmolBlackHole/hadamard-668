@@ -6,6 +6,7 @@ import time
 import numpy as np
 from tqdm import tqdm
 
+from constructions import autocorrelation_state, build_goethals_seidel, build_propus, symmetric_circulant
 from gpu import check_orthogonality
 from .base import SearchStrategy
 
@@ -13,7 +14,7 @@ from .base import SearchStrategy
 class BaumertHallSearch(SearchStrategy):
     """Sucht Baumert-Hall-Arrays der Ordnung ``4t``.
 
-    Zweck: Reduziert die Suche auf drei symmetrische zirkulante Sequenzen ``A``, ``B`` und ``C``; ``D`` wird als ``B^T`` festgelegt.
+    Zweck: Reduziert Baumert-Hall- und Propus-Kandidaten auf drei symmetrische zirkulante Sequenzen ``A``, ``B`` und ``C``.
     Mechanik: Flippt Halbsequenzeintraege und minimiert die gewichtete periodische Autokorrelationsenergie von ``A, B, C``.
     Grundlage: Die Nebenbedingung ``A A^T + 2 B B^T + C C^T = 4t I`` liefert mit der Baumert-Hall-Blockanordnung einen Hadamard-Kandidaten.
     Pipeline: Kann nur eine Pipeline eroeffnen, weil keine ``refine``-Methode existiert.
@@ -25,8 +26,9 @@ class BaumertHallSearch(SearchStrategy):
     HALF = 84
 
     def __init__(self, *, ORDER: int = ORDER, T: int = T, HALF: int = HALF) -> None:
-        if ORDER != 4 * T or HALF != (T + 1) // 2:
-            raise ValueError("ORDER, T, HALF must satisfy ORDER = 4*T, HALF = (T+1)//2")
+        if T % 2 == 0 or ORDER != 4 * T or HALF != (T + 1) // 2:
+            raise ValueError(
+                "Baumert-Hall requires odd T, ORDER = 4*T, and HALF = (T+1)//2")
         self.ORDER = ORDER
         self.T = T
         self.HALF = HALF
@@ -35,41 +37,15 @@ class BaumertHallSearch(SearchStrategy):
     def name(self) -> str:
         return "baumert_hall"
 
-    @staticmethod
-    def _sym(half: np.ndarray) -> np.ndarray:
-        n = 2 * len(half) - 1
-        r = np.zeros(n, dtype=np.int8)
-        r[:len(half)] = half
-        r[len(half):] = half[n - len(half) - 1::-1]
-        return r
-
-    @staticmethod
-    def _circulant(v: np.ndarray) -> np.ndarray:
-        return np.array([np.roll(v, i) for i in range(len(v))], dtype=np.int8)
-
     def _bh_energy(self, a: np.ndarray, b: np.ndarray, c: np.ndarray) -> int:
         """A A^T + 2 B B^T + C C^T off-diagonal squared sum."""
-        t = self.T
-        total = np.zeros(t, dtype=np.int64)
-        for s, weight in [(a, 1), (b, 2), (c, 1)]:
-            for d in range(t):
-                total[d] += weight * int(np.dot(s, np.roll(s, -d)))
-        return int(np.sum(total[1:(t + 1) // 2] ** 2))
+        total = autocorrelation_state(
+            np.stack((a, b, c)), np.array((1, 2, 1), dtype=np.int64))
+        independent = total[1:(self.T + 1) // 2]
+        return int(np.dot(independent, independent))
 
     def _build(self, a: np.ndarray, b: np.ndarray, c: np.ndarray) -> np.ndarray:
-        t = self.T
-        A = self._circulant(a)
-        B = self._circulant(b)
-        C = self._circulant(c)
-        D = B.T
-        R = np.fliplr(np.eye(t, dtype=np.int8))
-        BR, CR, DR = B @ R, C @ R, D @ R
-        return np.block([
-            [A,    BR,   CR,   DR],
-            [-BR,   A, -DR.T,  CR.T],
-            [-CR, DR.T,    A, -BR.T],
-            [-DR, -CR.T, BR.T,    A],
-        ]).astype(np.int8)
+        return build_goethals_seidel(a, b, c, b)
 
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         t0 = time.perf_counter()
@@ -79,13 +55,18 @@ class BaumertHallSearch(SearchStrategy):
         cur = [rng.choice([-1, 1], size=half).astype(np.int8) for _ in range(3)]
         best_half = [s.copy() for s in cur]
         e = best_e = self._bh_energy(
-            *[self._sym(s) for s in cur])
+            *[symmetric_circulant(s) for s in cur])
         accepted = best_at = 0
 
         def _best():
-            seqs = [self._sym(s) for s in best_half]
-            M = self._build(seqs[0], seqs[1], seqs[2])
-            return M, check_orthogonality(M)
+            seqs = [symmetric_circulant(s) for s in best_half]
+            matrices = (
+                self._build(seqs[0], seqs[1], seqs[2]),
+                build_propus(seqs[0], seqs[1], seqs[2]),
+            )
+            candidates = ((matrix, check_orthogonality(matrix))
+                          for matrix in matrices)
+            return min(candidates, key=lambda candidate: candidate[1]["energy"])
 
         best_M, best_met = _best()
         if best_met["energy"] == 0:
@@ -97,7 +78,8 @@ class BaumertHallSearch(SearchStrategy):
             mi = rng.integers(0, 3)
             pi = rng.integers(0, half)
             cur[mi][pi] *= -1
-            ne = self._bh_energy(*[self._sym(s) for s in cur])
+            ne = self._bh_energy(
+                *[symmetric_circulant(s) for s in cur])
             if ne <= e:
                 e, accepted = ne, accepted + 1
                 if ne < best_e:

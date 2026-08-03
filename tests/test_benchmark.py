@@ -1,7 +1,11 @@
 """Contracts for isolated benchmark execution."""
 from __future__ import annotations
 
-from benchmark import ORDERS, _cell, benchmark_groups, run_one
+import subprocess
+import sys
+from pathlib import Path
+
+from benchmark import ORDERS, _cell, benchmark_groups, run_one, steps_for_order
 from strategies.walsh import WalshSearch
 
 
@@ -21,7 +25,40 @@ def test_benchmark_has_nine_strategies_for_every_order() -> None:
     assert len(groups) == 1
     assert len(groups[0][1]) == 9
     assert len(groups[0][1]) * len(ORDERS) == 54
+    assert [steps_for_order(order) for order in ORDERS] == [
+        2_000, 2_000, 2_000, 2_000, 2_000, 5_000]
+
+
+def test_full_benchmark_adds_experimental_strategies_and_pipelines() -> None:
+    groups = benchmark_groups(include_all=True)
+    assert [name for name, _ in groups] == [
+        "Individual strategies", "Experimental strategies", "Pipelines"]
+    assert sum(len(strategies) for _, strategies in groups) > 9
+
+
+def test_benchmark_help_works_without_pythonpath() -> None:
+    root = Path(__file__).parents[1]
+    result = subprocess.run(
+        [sys.executable, "benchmark.py", "--help"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--all" in result.stdout
 
 
 def test_baumert_inapplicable_orders_render_as_na() -> None:
     assert _cell({"status": "na"}, 8) == "N/A"
+
+
+def test_benchmark_cell_has_unambiguous_metrics() -> None:
+    result = {
+        "status": "ok",
+        "seconds": 1.25,
+        "metrics": {"energy": 16, "orthogonal_pairs": 3},
+    }
+    cell = _cell(result, 4)
+    assert cell == "OK; e=16; rms=1.63; orth=3/6; t=1.2s"
+    assert " | " not in cell
