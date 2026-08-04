@@ -7,7 +7,7 @@ import time
 import numpy as np
 
 from correlations import _npa_f_residual
-from gpu import xp
+from gpu import to_numpy, xp
 
 from .base import Result, TurynStrategy
 
@@ -90,6 +90,6 @@ class TurynSpectralDescentSearch(TurynStrategy):
             column = (choice % self.N).astype(xp.int64)
             _apply_flips(batch, correlations, energies, sequence, column, self.LENGTHS)
 
-        best = xp.asnumpy(batch[int(energies.argmin().get())])
+        best = to_numpy(batch[int(energies.argmin())])
         matrix, metrics = self.build(best)
-        return Result(matrix, metrics, time.perf_counter() - started)
+        return Result(matrix, metrics, time.perf_counter() - started, best)

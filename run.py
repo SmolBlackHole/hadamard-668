@@ -46,11 +46,11 @@ def _execute_run(
         cal = max(time.perf_counter() - t0, 0.001)
         chunk = max(50, int(0.5 / cal * 50))
         for _ in range(int(time_budget / (chunk * cal / 50)) + 1):
-            matrix, metrics, _ = strategy.search(steps=chunk, seed=seed)
+            matrix, metrics, _, _sequences = strategy.search(steps=chunk, seed=seed)
             if metrics["energy"] == 0:
                 break
     if matrix is None:
-        matrix, metrics, _ = strategy.search(steps, seed)
+        matrix, metrics, _, _sequences = strategy.search(steps, seed)
     wall = time.perf_counter() - started
     return RunResult(
         seed=seed,

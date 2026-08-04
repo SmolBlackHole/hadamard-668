@@ -57,4 +57,4 @@ class TurynGreedySearch(TurynStrategy):
         print(
             f"  seed={seed} best_energy={best_energy} found@step={best_at} accepted={accepted} {elapsed:.1f}s"
         )
-        return Result(matrix, metrics, elapsed)
+        return Result(matrix, metrics, elapsed, best_sequences)

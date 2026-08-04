@@ -17,6 +17,7 @@ class Result(NamedTuple):
     matrix: np.ndarray
     metrics: dict[str, int]
     elapsed: float
+    sequences: np.ndarray | None = None
 
 
 @dataclass
@@ -49,7 +50,7 @@ class SearchStrategy(ABC):
     def hamming(self) -> int | None:
         return None
 
-    def refine(self, matrix: np.ndarray, steps: int, seed: int) -> Result:
+    def refine(self, matrix: np.ndarray, steps: int, seed: int, sequences: np.ndarray | None = None) -> Result:
         raise NotImplementedError(f"{self.name} cannot refine")
 
     def seed(self, rng: np.random.Generator) -> np.ndarray:
@@ -102,14 +103,12 @@ class TurynStrategy(SearchStrategy):
         return matrix, check_orthogonality(matrix)
 
     def hamming(self) -> int | None:
-        """Bits differing from the known TT(N) solution, or None if unknown."""
-        from fixtures import hamming_distance, known_solution
+        """Minimal bits differing from ANY known TT(N) equivalence class."""
+        from fixtures import equiv_hamming
 
-        sol = known_solution(self.N)
-        if sol is None or not hasattr(self, "_last_seq"):
+        if not hasattr(self, "_last_seq"):
             return None
-        ref, lengths = sol
-        return hamming_distance(self._last_seq, ref, lengths)
+        return equiv_hamming(self._last_seq, self.LENGTHS, self.N)
 
 
 class Pipeline(SearchStrategy):
@@ -133,19 +132,32 @@ class Pipeline(SearchStrategy):
     def construction(self) -> str:
         return self._stages[0][0].construction
 
+    def hamming(self) -> int | None:
+        """Minimal bits differing from ANY known TT(N) equivalence class."""
+        from fixtures import equiv_hamming
+
+        first = self._stages[0][0]
+        if not hasattr(self, '_last_seq') or not hasattr(first, 'N'):
+            return None
+        return equiv_hamming(self._last_seq, first.LENGTHS, first.N)
+
     def search(self, steps: int, seed: int) -> Result:
         s, steps_s = self._stages[0]
         carry = s.search(steps_s, seed)
         total_elapsed = carry.elapsed
+        if carry.sequences is not None:
+            self._last_seq = carry.sequences
         if carry.metrics["energy"] == 0:
             m = check_orthogonality(carry.matrix)
             if m["energy"] == 0:
-                return Result(carry.matrix, m, total_elapsed)
+                return Result(carry.matrix, m, total_elapsed, carry.sequences)
         for idx, (s, steps_s) in enumerate(self._stages[1:], start=1):
-            carry = s.refine(carry.matrix, steps_s, seed + idx)
+            carry = s.refine(carry.matrix, steps_s, seed + idx, carry.sequences)
             total_elapsed += carry.elapsed
+            if carry.sequences is not None:
+                self._last_seq = carry.sequences
             if carry.metrics["energy"] == 0:
                 m = check_orthogonality(carry.matrix)
                 if m["energy"] == 0:
-                    return Result(carry.matrix, m, total_elapsed)
-        return Result(carry.matrix, carry.metrics, total_elapsed)
+                    return Result(carry.matrix, m, total_elapsed, carry.sequences)
+        return Result(carry.matrix, carry.metrics, total_elapsed, carry.sequences)

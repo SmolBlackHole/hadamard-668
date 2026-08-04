@@ -7,7 +7,7 @@ import time
 import numpy as np
 
 from correlations import _npa_f_residual
-from gpu import check_orthogonality, to_numpy, xp
+from gpu import to_numpy, xp
 
 from .base import Result, TurynStrategy
 
@@ -97,6 +97,6 @@ class PocsSearch(TurynStrategy):
             improved = energy < best_energy
             best = xp.where(improved[:, None, None], candidate, best)
             best_energy = xp.minimum(best_energy, energy)
-        best_np = to_numpy(best[int(xp.argmin(best_energy).item())])
-        matrix = self.build(best_np)[0]
-        return Result(matrix, check_orthogonality(matrix), time.perf_counter() - started)
+        best_np = to_numpy(best[int(xp.argmin(best_energy))])
+        matrix, metrics = self.build(best_np)
+        return Result(matrix, metrics, time.perf_counter() - started, best_np)

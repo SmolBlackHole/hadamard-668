@@ -87,7 +87,7 @@ def test_run_writes_each_parallel_seed_separately(tmp_path) -> None:
 
 
 def test_turyn_search_uses_the_expected_order() -> None:
-    matrix, _, _ = TurynGreedySearch(n=8).search(steps=0, seed=0)
+    matrix, _, _, _ = TurynGreedySearch(n=8).search(steps=0, seed=0)
     assert matrix.shape == (92, 92)
 
 
@@ -96,7 +96,7 @@ def test_real_pipeline_runs_all_stages() -> None:
         (TurynGreedySearch(n=8), 0),
         (RepairSearch(n=8), 0),
     ]
-    _, metrics, _ = Pipeline(stages).search(steps=0, seed=0)
+    _, metrics, _, _ = Pipeline(stages).search(steps=0, seed=0)
     assert metrics["energy"] >= 0
 
 
@@ -131,12 +131,12 @@ def test_pipeline_short_circuits_only_after_exact_verification() -> None:
         def search(self, steps: int, seed: int):
             raise AssertionError("later stages use refine")
 
-        def refine(self, matrix: np.ndarray, steps: int, seed: int):
+        def refine(self, matrix: np.ndarray, steps: int, seed: int, sequences: np.ndarray | None = None):
             calls.append(seed)
             candidate = sylvester(4)
             return Result(candidate, check_orthogonality(candidate), 0.0)
 
-    _, metrics, _ = Pipeline([(Source(), 1), (Sink(), 1)]).search(0, 10)
+    _, metrics, _, _ = Pipeline([(Source(), 1), (Sink(), 1)]).search(0, 10)
 
     assert calls == [11]
     assert metrics["energy"] == 0

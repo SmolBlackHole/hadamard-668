@@ -13,7 +13,7 @@ from correlations import (
     nonperiodic_autocorrelation_state,
     nonperiodic_correlation_energy,
 )
-from gpu import xp
+from gpu import to_numpy, xp
 
 from .base import Result, TurynStrategy
 
@@ -47,7 +47,7 @@ class RepairSearch(TurynStrategy):
         r0 = _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
         Q = np.zeros((K, K, self.N - 1), dtype=np.float64)
         for idx, (pi, pj) in enumerate(pairs):
-            q = xp.asnumpy(residuals[idx]) - xp.asnumpy(r0) - deltas_top[pi] - deltas_top[pj]
+            q = to_numpy(residuals[idx]) - to_numpy(r0) - deltas_top[pi] - deltas_top[pj]
             Q[pi, pj] = q
             Q[pj, pi] = q
         return Q
@@ -61,13 +61,16 @@ class RepairSearch(TurynStrategy):
         residuals = _npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
         r0 = _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
         return np.array(
-            [xp.asnumpy(residuals[i] - r0) for i in range(B)], dtype=np.float64
-        ), xp.asnumpy(r0)
+            [to_numpy(residuals[i] - r0) for i in range(B)], dtype=np.float64
+        ), to_numpy(r0)
 
-    def search(self, steps: int, seed: int) -> Result:
+    def search(self, steps: int, seed: int, sequences: np.ndarray | None = None) -> Result:
         started = time.perf_counter()
-        rng = np.random.default_rng(seed)
-        sequences = self.seed(rng)
+        if sequences is None:
+            rng = np.random.default_rng(seed)
+            sequences = self.seed(rng)
+        else:
+            sequences = sequences.copy()
         positions = [(r, c) for r in range(4) for c in range(int(self.LENGTHS[r]))]
         seq_f = xp.asarray(sequences.astype(np.float32), dtype=xp.float32)
 
@@ -98,7 +101,7 @@ class RepairSearch(TurynStrategy):
             if step % self.pair_interval == self.pair_interval - 1 and best_e > 0:
                 top_idx = np.argsort(energies)[:self.pair_top]
                 Q = self._q_pair_model(seq_f, positions, top_idx, deltas[top_idx])
-                r0_now = xp.asnumpy(
+                r0_now = to_numpy(
                     _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS,
                                     weights=TURYN_WEIGHTS_F, module=xp)[0])
                 best_pair_e = best_e
@@ -125,10 +128,9 @@ class RepairSearch(TurynStrategy):
         matrix, metrics = self.build(sequences)
         elapsed = time.perf_counter() - started
         print(f"  seed={seed} best_energy={best_e:.0f} {elapsed:.1f}s")
-        return Result(matrix, metrics, elapsed)
+        return Result(matrix, metrics, elapsed, sequences)
 
-    def refine(self, matrix: np.ndarray, steps: int, seed: int) -> Result:
-        """Repair an existing matrix: extract sequences, repair, rebuild."""
-        # Matrix -> sequences is lossy (we can't perfectly extract sequences).
-        # For now, re-run search on the same seed.
+    def refine(self, matrix: np.ndarray, steps: int, seed: int, sequences: np.ndarray | None = None) -> Result:
+        if sequences is not None:
+            return self.search(steps, seed, sequences)
         return self.search(steps, seed)

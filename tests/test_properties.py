@@ -204,12 +204,12 @@ def test_pipeline_passes_matrix_and_incremented_seed():
         def search(self, steps, seed):
             raise AssertionError
 
-        def refine(self, matrix, steps, seed):
+        def refine(self, matrix, steps, seed, sequences=None):
             return Result(
                 matrix, {"energy": 1, "orthogonal_pairs": 0, "max_abs_correlation": 2}, 0.2
             )
 
-    _, metrics, _ = Pipeline([(Source(), 3), (Sink(), 5)]).search(steps=0, seed=20)
+    _, metrics, _, _ = Pipeline([(Source(), 3), (Sink(), 5)]).search(steps=0, seed=20)
     assert metrics["energy"] == 1
 
 

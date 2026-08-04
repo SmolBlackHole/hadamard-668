@@ -6,7 +6,7 @@ from functools import cache
 
 import numpy as np
 
-from gpu import xp
+from gpu import to_numpy, xp
 
 
 def turyn_lengths(n: int) -> np.ndarray:
@@ -41,10 +41,11 @@ def turyn_sum_patterns(n: int) -> np.ndarray:
     return np.asarray(patterns, dtype=np.int16)
 
 
-def _seed_one(n: int, _rng: np.random.Generator | None = None) -> np.ndarray:
+def _seed_one(n: int, rng: np.random.Generator | None = None) -> np.ndarray:
     """Single random seed from a sum pattern (instant, no filtering)."""
     patterns = turyn_sum_patterns(n)
-    rng = np.random.default_rng()
+    if rng is None:
+        rng = np.random.default_rng()
     pidx = int(rng.integers(0, len(patterns)))
     pattern = patterns[pidx]
     lengths = turyn_lengths(n)
@@ -60,14 +61,15 @@ def _seed_one(n: int, _rng: np.random.Generator | None = None) -> np.ndarray:
     return seq
 
 
-def _sum_seeds(n: int, count: int, _rng: np.random.Generator | None = None) -> np.ndarray:
+def _sum_seeds(n: int, count: int, rng: np.random.Generator | None = None) -> np.ndarray:
     """Batch of sum-constrained seeds via argsort trick. Returns (count, 4, n) float32."""
     patterns = turyn_sum_patterns(n)
     lengths = turyn_lengths(n)
     size = min(count, 32_768)
     survivors: list[np.ndarray] = []
     remaining = count
-    rng = np.random.default_rng()
+    if rng is None:
+        rng = np.random.default_rng()
     for _ in range(20):
         selected = patterns[rng.integers(0, len(patterns), size=size)]
         plus = (np.asarray(lengths)[None, :] + selected) // 2
@@ -94,7 +96,7 @@ def _dr_project(
         proj = _project_fourier(state, lengths=lengths, weights=weights)
         refl = 2 * proj - state
         state = (state + _project_sign(refl) - proj).astype(xp.float32)
-    result = xp.asnumpy(state)
+    result = to_numpy(state)
     result[:, 3, -1] = 0
     dr_batch = np.where(result >= 0, 1, -1).astype(np.int8)
     dr_batch[:, 3, -1] = 0
@@ -125,10 +127,6 @@ def seed_turyn_batch(
     """Return ``count`` PSD-valid TT(n) seeds via DR projection + PSD filter."""
     if count < 1:
         raise ValueError("count must be positive")
-
-    if count == 1:
-        result = _seed_one(n)[None, ...]
-        return module.asarray(result, dtype=module.int8) if module != np else result
 
     lengths = turyn_lengths(n)
     weights = np.array((1, 1, 2, 2), dtype=np.float64)
