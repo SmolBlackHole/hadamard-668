@@ -45,9 +45,11 @@ class RepairSearch(TurynStrategy):
                 batch[idx, r, c] *= -1
         residuals = _npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
         r0 = _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
+        residuals_cpu = to_numpy(residuals)
+        r0_cpu = to_numpy(r0)
         Q = np.zeros((K, K, self.N - 1), dtype=np.float64)
         for idx, (pi, pj) in enumerate(pairs):
-            q = to_numpy(residuals[idx]) - to_numpy(r0) - deltas_top[pi] - deltas_top[pj]
+            q = residuals_cpu[idx] - r0_cpu - deltas_top[pi] - deltas_top[pj]
             Q[pi, pj] = q
             Q[pj, pi] = q
         return Q
@@ -60,9 +62,8 @@ class RepairSearch(TurynStrategy):
             batch[idx, r, c] *= -1
         residuals = _npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
         r0 = _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
-        return np.array(
-            [to_numpy(residuals[i] - r0) for i in range(B)], dtype=np.float64
-        ), to_numpy(r0)
+        r0_cpu = to_numpy(r0)
+        return to_numpy(residuals) - r0_cpu[None, :], r0_cpu
 
     def search(self, steps: int, seed: int, sequences: np.ndarray | None = None) -> Result:
         started = time.perf_counter()

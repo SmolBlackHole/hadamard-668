@@ -65,6 +65,7 @@ class RepairExperiment(TurynStrategy):
         tabu_size: int = 256,
         plateau_threshold: int = 8,
         plateau_noise: int = 4,
+        verbose: bool = True,
     ):
         super().__init__(n=n, sieve=sieve)
         self.pair_interval = pair_interval
@@ -74,6 +75,7 @@ class RepairExperiment(TurynStrategy):
         self.tabu_size = tabu_size
         self.plateau_threshold = plateau_threshold
         self.plateau_noise = plateau_noise
+        self.verbose = verbose
         self.ORDER = 4 * (3 * n - 1)
 
     @property
@@ -87,12 +89,13 @@ class RepairExperiment(TurynStrategy):
         batch = xp.repeat(seq_f[None, ...], B, axis=0)
         for idx, (r, c) in enumerate(positions):
             batch[idx, r, c] *= -1
-        residuals = _npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
-        r0 = _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
-        return (
-            np.array([to_numpy(residuals[i] - r0) for i in range(B)], dtype=np.float64),
-            to_numpy(r0),
-        )
+        residuals = _npa_f_residual(
+            batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
+        r0 = _npa_f_residual(
+            seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
+        r0_cpu = to_numpy(r0)
+        residuals_cpu = to_numpy(residuals)
+        return residuals_cpu - r0_cpu[None, :], r0_cpu
 
     def _q_pair_model(self, seq_f, positions, top_indices, deltas_top):
         K = len(top_indices)
@@ -104,11 +107,15 @@ class RepairExperiment(TurynStrategy):
             for t in (pi, pj):
                 r, c = positions[top_indices[t]]
                 batch[idx, r, c] *= -1
-        residuals = _npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
-        r0 = _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
+        residuals = _npa_f_residual(
+            batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
+        r0 = _npa_f_residual(
+            seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
+        residuals_cpu = to_numpy(residuals)
+        r0_cpu = to_numpy(r0)
         Q = np.zeros((K, K, self.N - 1), dtype=np.float64)
         for idx, (pi, pj) in enumerate(pairs):
-            q = to_numpy(residuals[idx]) - to_numpy(r0) - deltas_top[pi] - deltas_top[pj]
+            q = residuals_cpu[idx] - r0_cpu - deltas_top[pi] - deltas_top[pj]
             Q[pi, pj] = q
             Q[pj, pi] = q
         return Q
@@ -123,7 +130,8 @@ class RepairExperiment(TurynStrategy):
             for t in (ti, tj, tk):
                 r, c = positions[top_indices[t]]
                 batch[idx, r, c] *= -1
-        residuals = _npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
+        residuals = _npa_f_residual(
+            batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
         energies = xp.sum(residuals ** 2, axis=1)
         best_idx = int(xp.argmin(energies))
         return (triples[best_idx], float(energies[best_idx]))
@@ -142,33 +150,36 @@ class RepairExperiment(TurynStrategy):
             sequences[r, c] *= -1
             seq_f[r, c] *= -1
 
+    # ── Exact energy helper ──────────────────────────────────────────────────
+
+    def _exact_energy(self, sequences: np.ndarray) -> float:
+        return float(
+            nonperiodic_correlation_energy(
+                nonperiodic_autocorrelation_state(
+                    sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
+
     # ── Search ──────────────────────────────────────────────────────────────
 
     def search(self, steps: int, seed: int, sequences: np.ndarray | None = None) -> Result:
         started = time.perf_counter()
-        rng = np.random.default_rng(seed + 1)  # +1: separate RNG from seed generation
+        rng = np.random.default_rng(seed + 1)
         if sequences is None:
             rng_seed = np.random.default_rng(seed)
             sequences = self.seed(rng_seed)
         else:
             sequences = sequences.copy()
-        positions = [(r, c) for r in range(4) for c in range(int(self.LENGTHS[r]))]
+        positions = [(r, c) for r in range(4)
+                     for c in range(int(self.LENGTHS[r]))]
         seq_f = xp.asarray(sequences.astype(np.float32), dtype=xp.float32)
 
-        best_e = float(
-            nonperiodic_correlation_energy(
-                nonperiodic_autocorrelation_state(
-                    sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
-
+        best_e = self._exact_energy(sequences)
         best_seq = sequences.copy()
         best_e_ever = best_e
         best_at = 0
 
-        # Tabu: remember recent state hashes to prevent oscillations
         tabu: deque[int] = deque(maxlen=self.tabu_size)
         tabu.append(self._state_key(sequences))
 
-        # Stats
         singles_used = 0
         pairs_used = 0
         triples_used = 0
@@ -179,40 +190,56 @@ class RepairExperiment(TurynStrategy):
             if best_e == 0:
                 break
 
-            # Phase 1: singles
+            # Phase 1: singles — GPU full scan, CPU-confirmed acceptance
             deltas, r0 = self._single_deltas(seq_f, positions)
             energies = np.sum((r0 + deltas) ** 2, axis=1)
             best_idx = int(np.argmin(energies))
             best_single_e = float(energies[best_idx])
 
-            if best_single_e < best_e - 0.5:  # tolerance for float noise
+            single_accepted = False
+            if best_single_e < best_e - 0.5:
                 r, c = positions[best_idx]
                 sequences[r, c] *= -1
                 seq_f[r, c] *= -1
-                key = self._state_key(sequences)
-                if key in tabu:
-                    # Undo — this would create a cycle
+                cpu_e = self._exact_energy(sequences)
+                if cpu_e < best_e:
+                    key = self._state_key(sequences)
+                    if key in tabu:
+                        sequences[r, c] *= -1
+                        seq_f[r, c] *= -1
+                    else:
+                        tabu.append(key)
+                        best_e = cpu_e
+                        singles_used += 1
+                        single_accepted = True
+                        if best_e < best_e_ever:
+                            best_e_ever = best_e
+                            best_seq = sequences.copy()
+                            best_at = step
+                            plateau_strikes = 0
+                        if best_e == 0:
+                            break
+                else:
+                    # CPU check failed — tabu this direction to prevent re-proposal
+                    tabu.append(key)
                     sequences[r, c] *= -1
                     seq_f[r, c] *= -1
-                else:
-                    tabu.append(key)
-                    best_e = float(
-                        nonperiodic_correlation_energy(
-                            nonperiodic_autocorrelation_state(
-                                sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
-                    singles_used += 1
-                    if best_e < best_e_ever:
-                        best_e_ever = best_e
-                        best_seq = sequences.copy()
-                        best_at = step
-                        plateau_strikes = 0
-                    if best_e == 0:
-                        break
 
-            # Phase 2: pairs
-            if step % self.pair_interval == self.pair_interval - 1 and best_e > 0:
+            if single_accepted:
+                continue
+
+            # Phase 2: pairs — on interval tick OR after single stall
+            should_try_pairs = (
+                step % self.pair_interval == self.pair_interval - 1
+                or best_single_e >= best_e - 0.5  # singles stalled
+            )
+            if should_try_pairs and best_e > 0:
+                # Recompute deltas for current state (not stale)
+                deltas, r0 = self._single_deltas(seq_f, positions)
+                energies = np.sum((r0 + deltas) ** 2, axis=1)
                 top_idx = np.argsort(energies)[:self.pair_top]
-                Q = self._q_pair_model(seq_f, positions, top_idx, deltas[top_idx])
+                Q = self._q_pair_model(
+                    seq_f, positions, top_idx, deltas[top_idx])
                 r0_now = to_numpy(
                     _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS,
                                     weights=TURYN_WEIGHTS_F, module=xp)[0])
@@ -226,31 +253,36 @@ class RepairExperiment(TurynStrategy):
                             best_pair_e = e
                             best_pair = (top_idx[i], top_idx[j])
                 if best_pair is not None and best_pair_e < best_e - 0.5:
-                    # Apply tentatively, check tabu
                     for pi in best_pair:
                         r, c = positions[pi]
                         sequences[r, c] *= -1
                         seq_f[r, c] *= -1
-                    key = self._state_key(sequences)
-                    if key in tabu:
+                    cpu_e = self._exact_energy(sequences)
+                    if cpu_e < best_e:
+                        key = self._state_key(sequences)
+                        if key in tabu:
+                            for pi in best_pair:
+                                r, c = positions[pi]
+                                sequences[r, c] *= -1
+                                seq_f[r, c] *= -1
+                        else:
+                            tabu.append(key)
+                            best_e = cpu_e
+                            pairs_used += 1
+                            if best_e < best_e_ever:
+                                best_e_ever = best_e
+                                best_seq = sequences.copy()
+                                best_at = step
+                                plateau_strikes = 0
+                            if best_e == 0:
+                                break
+                    else:
+                        # CPU check failed — tabu
+                        tabu.append(key)
                         for pi in best_pair:
                             r, c = positions[pi]
                             sequences[r, c] *= -1
                             seq_f[r, c] *= -1
-                    else:
-                        tabu.append(key)
-                        best_e = float(
-                            nonperiodic_correlation_energy(
-                                nonperiodic_autocorrelation_state(
-                                    sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
-                        pairs_used += 1
-                        if best_e < best_e_ever:
-                            best_e_ever = best_e
-                            best_seq = sequences.copy()
-                            best_at = step
-                            plateau_strikes = 0
-                        if best_e == 0:
-                            break
                 else:
                     plateau_strikes += 1
 
@@ -265,36 +297,40 @@ class RepairExperiment(TurynStrategy):
                             r, c = positions[triple_candidates[ti]]
                             sequences[r, c] *= -1
                             seq_f[r, c] *= -1
-                        key = self._state_key(sequences)
-                        if key in tabu:
+                        cpu_e = self._exact_energy(sequences)
+                        if cpu_e < best_e:
+                            key = self._state_key(sequences)
+                            if key in tabu:
+                                for ti in triple_indices:
+                                    r, c = positions[triple_candidates[ti]]
+                                    sequences[r, c] *= -1
+                                    seq_f[r, c] *= -1
+                            else:
+                                tabu.append(key)
+                                best_e = cpu_e
+                                triples_used += 1
+                                if best_e < best_e_ever:
+                                    best_e_ever = best_e
+                                    best_seq = sequences.copy()
+                                    best_at = step
+                                    plateau_strikes = 0
+                                if best_e == 0:
+                                    break
+                        else:
+                            # CPU check failed — tabu
+                            tabu.append(key)
                             for ti in triple_indices:
                                 r, c = positions[triple_candidates[ti]]
                                 sequences[r, c] *= -1
                                 seq_f[r, c] *= -1
-                        else:
-                            tabu.append(key)
-                            best_e = float(
-                                nonperiodic_correlation_energy(
-                                    nonperiodic_autocorrelation_state(
-                                        sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
-                            triples_used += 1
-                            if best_e < best_e_ever:
-                                best_e_ever = best_e
-                                best_seq = sequences.copy()
-                                best_at = step
-                                plateau_strikes = 0
-                            if best_e == 0:
-                                break
                 else:
                     plateau_strikes += 1
 
             # Phase 4: plateau escape
             if plateau_strikes >= self.plateau_threshold and best_e > 0:
-                self._random_kick(sequences, seq_f, positions, rng, self.plateau_noise)
-                best_e = float(
-                    nonperiodic_correlation_energy(
-                        nonperiodic_autocorrelation_state(
-                            sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
+                self._random_kick(sequences, seq_f, positions,
+                                  rng, self.plateau_noise)
+                best_e = self._exact_energy(sequences)
                 kicks_used += 1
                 plateau_strikes = 0
                 if best_e < best_e_ever:
@@ -312,12 +348,13 @@ class RepairExperiment(TurynStrategy):
         if kicks_used:
             stats_parts.append(f"kicks={kicks_used}")
         stats_parts.append(f"plateau_strikes={plateau_strikes}")
-        print(
-            f"  seed={seed} best_e={best_e_ever:.0f}"
-            f" ({', '.join(stats_parts)})"
-            f" best@step={best_at}"
-            f" {elapsed:.1f}s"
-        )
+        if self.verbose:
+            print(
+                f"  seed={seed} best_e={best_e_ever:.0f}"
+                f" ({', '.join(stats_parts)})"
+                f" best@step={best_at}"
+                f" {elapsed:.1f}s"
+            )
         return Result(matrix, metrics, elapsed, best_seq)
 
     def refine(self, matrix: np.ndarray, steps: int, seed: int,
@@ -345,18 +382,21 @@ def _benchmark(tt_name: str, sol: np.ndarray, lengths: np.ndarray,
     print(f"  {'noise':>5} {'flips':>6} {'repaired':>10} {'hamming':>8} {'time':>8}")
     print(f"  {'-' * 41}")
 
+    all_positions = [(r, c) for r in range(4) for c in range(int(lengths[r]))]
     rng = np.random.default_rng(2026)
     for pct in noise_levels:
         n_flips = max(1, int(total_bits * pct / 100))
+        steps_budget = max(200, n_flips * 10)
         repaired = 0
         best_h = 999
         total_time = 0.0
         for trial in range(trials):
             damaged = sol.copy()
-            for _ in range(n_flips):
-                ri = int(rng.integers(0, 4))
-                ci = int(rng.integers(0, lengths[ri]))
-                damaged[ri, ci] *= -1
+            chosen = rng.choice(len(all_positions),
+                                size=n_flips, replace=False)
+            for idx in chosen:
+                r, c = all_positions[int(idx)]
+                damaged[r, c] *= -1
 
             rp = RepairExperiment(
                 n=n, sieve=False,
@@ -365,7 +405,7 @@ def _benchmark(tt_name: str, sol: np.ndarray, lengths: np.ndarray,
                 tabu_size=256, plateau_threshold=8, plateau_noise=4,
             )
             t0 = time.perf_counter()
-            result = rp.search(steps=max(200, n_flips * 10), seed=2026 + trial,
+            result = rp.search(steps=steps_budget, seed=2026 + trial,
                                sequences=damaged)
             total_time += time.perf_counter() - t0
             h = equiv_hamming(result.sequences, lengths, n)
@@ -375,7 +415,8 @@ def _benchmark(tt_name: str, sol: np.ndarray, lengths: np.ndarray,
                 best_h = h
 
         avg_t = total_time / trials
-        print(f"  {pct:>4}% {n_flips:>6} {repaired:>8}/{trials} {best_h:>8} {avg_t:>7.1f}s")
+        print(
+            f"  {pct:>4}% {n_flips:>6} {repaired:>8}/{trials} {best_h:>8} {avg_t:>7.1f}s")
 
 
 if __name__ == "__main__":

@@ -10,3 +10,4 @@ checkpoints/
 *.pkl
 runs/
 data/turyn-type-*
+results/
