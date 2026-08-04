@@ -8,22 +8,31 @@ from .pocs import PocsSearch
 from .repair import RepairSearch
 from .spectral_descent import TurynSpectralDescentSearch
 
-_CLASSES: dict[str, type[SearchStrategy]] = {
+try:
+    from experiments.syndrome_repair import RepairExperiment
+except ImportError:
+    RepairExperiment = None  # type: ignore[assignment]
+
+_CLASSES: dict[str, type[SearchStrategy] | None] = {
     "greedy": TurynGreedySearch,
     "spectral_descent": TurynSpectralDescentSearch,
     "pocs": PocsSearch,
     "repair": RepairSearch,
+    "repair-exp": RepairExperiment,
 }
 
 GPU = frozenset({"pocs", "spectral_descent"})
 DEFAULT = "spectral_descent"
 
-_TURYN_CLASSES: set[type[SearchStrategy]] = {
+_TURYN_CLASSES: set[type[SearchStrategy] | None] = {
     TurynGreedySearch,
     TurynSpectralDescentSearch,
     PocsSearch,
     RepairSearch,
+    RepairExperiment,
 }
+
+_KNOWN_N: set[str] = {"greedy", "spectral_descent", "pocs", "repair", "repair-exp"}
 
 
 def _turyn_n(order: int) -> int:
@@ -35,6 +44,8 @@ def _turyn_n(order: int) -> int:
 
 def build(name: str, order: int) -> SearchStrategy:
     cls = _CLASSES[name]
+    if cls is None:
+        raise ImportError(f"strategy '{name}' requires packages not installed")
     if cls in _TURYN_CLASSES:
         return cls(n=_turyn_n(order))  # type: ignore[call-arg]
     return cls(order=order)  # type: ignore[call-arg]
