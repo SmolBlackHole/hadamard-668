@@ -42,7 +42,11 @@ class TurynAnnealingSearch(SearchStrategy):
 
     @property
     def name(self) -> str:
-        return "turyn_annealing"
+        return "annealing"
+
+    @property
+    def construction(self) -> str:
+        return f"turyn_tt_{self.N}"
 
     def _seed(self, rng: np.random.Generator) -> np.ndarray:
         if self.sieve:

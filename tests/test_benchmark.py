@@ -6,9 +6,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-import benchmark
+sys.path.insert(0, str(Path(__file__).parent.parent / "experiments"))
+import benchmark as bm_mod
 from benchmark import ORDERS, _cell, benchmark_groups, run_one, steps_for_order
-from strategies.circulant import TurynGreedySearch
+benchmark = bm_mod
+from strategies.greedy import TurynGreedySearch
 
 
 def test_benchmark_worker_returns_a_completed_result() -> None:
@@ -44,7 +46,7 @@ def test_full_benchmark_adds_experimental_strategies_and_pipelines() -> None:
 def test_benchmark_help_works_without_pythonpath() -> None:
     root = Path(__file__).parents[1]
     result = subprocess.run(
-        [sys.executable, "benchmark.py", "--help"],
+        [sys.executable, "experiments/benchmark.py", "--help"],
         cwd=root,
         capture_output=True,
         text=True,

@@ -3,7 +3,10 @@
 Spot patterns: block structure, symmetry, spatial regularity.
 """
 from __future__ import annotations
-from verifier.known import sylvester, paley
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from fixtures import sylvester, paley
 import matplotlib.pyplot as plt
 
 import numpy as np

@@ -37,6 +37,10 @@ class MonteCarloSearch(SearchStrategy):
     def name(self) -> str:
         return "montecarlo"
 
+    @property
+    def construction(self) -> str:
+        return f"turyn_tt_{self.N}"
+
     def _energies(self, batch):
         return self._energies_from_correlations(self._correlations(batch))
 

@@ -36,6 +36,10 @@ class DiffsetSearch(SearchStrategy):
     def name(self) -> str:
         return "diffset"
 
+    @property
+    def construction(self) -> str:
+        return f"goethals_seidel_k_{self.K}"
+
     def _seed(self) -> list[np.ndarray]:
         residues = {value * value % self.K for value in range(1, self.K)}
         base = -np.ones(self.K, dtype=np.int8)

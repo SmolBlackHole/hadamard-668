@@ -40,6 +40,10 @@ class IsingSearch(SearchStrategy):
     def name(self) -> str:
         return "ising"
 
+    @property
+    def construction(self) -> str:
+        return f"turyn_tt_{self.N}"
+
     def _energy_gradient(self, state, *, module=np):
         fft_size = 2 * self.N - 1
         spectrum = module.fft.fft(state, n=fft_size, axis=-1)

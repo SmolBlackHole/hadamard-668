@@ -15,10 +15,11 @@ import time
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import numpy as np
 
-from .validate import InvalidManifest, load_and_validate_manifest
-from .verify import InvalidMatrix, independent_audit, load_matrix_with_hash, normalized_sha256
+from verifier.validate import InvalidManifest, load_and_validate_manifest
+from verifier.verify import InvalidMatrix, independent_audit, load_matrix_with_hash, normalized_sha256
 
 
 def review_bundle(directory: Path, order: int) -> dict[str, object]:

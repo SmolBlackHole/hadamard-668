@@ -1,13 +1,13 @@
 """Compare all current Hadamard search strategies across supported orders."""
 from __future__ import annotations
-from strategies.turyn_steepest import TurynSteepestSearch
-from strategies.pocs import TurynPocsSearch
-from strategies.spectral import SpectralSearch
+from strategies.steepest import TurynSteepestSearch
+from strategies.spectral_descent import TurynSpectralDescentSearch
+from strategies.pocs import PocsSearch
 from strategies.repair import RepairSearch
 from strategies.montecarlo import MonteCarloSearch
 from strategies.ising import IsingSearch
 from strategies.genetic import GeneticSearch
-from strategies.circulant import TurynGreedySearch
+from strategies.greedy import TurynGreedySearch
 from strategies.base import Pipeline
 from strategies.annealing import TurynAnnealingSearch
 from gpu import correlation_histogram, gram_matrix, xp
@@ -33,7 +33,7 @@ STEPS_SMALL = 2_000
 STEPS_BIG = 5_000
 SEED = 42
 TIMEOUT_SECONDS = 60
-GPU_COMPARE_STRATEGIES = ("repair", "ising", "spectral")
+GPU_COMPARE_STRATEGIES = ("repair", "ising", "pocs")
 
 
 def _turyn_n(order: int) -> int:
@@ -53,8 +53,8 @@ def _turyn_annealing(order: int) -> TurynAnnealingSearch:
     return TurynAnnealingSearch(n=_turyn_n(order))
 
 
-def _turyn_pocs(order: int) -> TurynPocsSearch:
-    return TurynPocsSearch(n=_turyn_n(order))
+def _spectral_descent(order: int) -> TurynSpectralDescentSearch:
+    return TurynSpectralDescentSearch(n=_turyn_n(order))
 
 
 def _turyn_steepest(order: int) -> TurynSteepestSearch:
@@ -66,11 +66,11 @@ def sieve_strategies(sieve: bool):
     return (
         ("TurynGreedy", lambda n: TurynGreedySearch(n=n, sieve=sieve)),
         ("TurynAnnealing", lambda n: TurynAnnealingSearch(n=n, sieve=sieve)),
-        ("TurynPOCS", lambda n: TurynPocsSearch(n=n, sieve=sieve)),
+        ("SpectralDescent", lambda n: TurynSpectralDescentSearch(n=n, sieve=sieve)),
         ("TurynSteepest", lambda n: TurynSteepestSearch(n=n, sieve=sieve)),
         ("MonteCarlo", lambda n: MonteCarloSearch(
             order=4 * (3 * n - 1), sieve=sieve)),
-        ("Spectral", lambda n: SpectralSearch(
+        ("POCS", lambda n: PocsSearch(
             ORDER=4 * (3 * n - 1), inner_steps=5, sieve=sieve)),
         ("Genetic", lambda n: GeneticSearch(order=4 * (3 * n - 1), sieve=sieve)),
         ("Ising", lambda n: IsingSearch(order=4 * (3 * n - 1), sieve=sieve)),
@@ -90,11 +90,11 @@ def benchmark_groups(*, include_all: bool = False):
         ("Individual strategies", (
             ("TurynGreedy", _turyn_greedy),
             ("TurynAnnealing", _turyn_annealing),
-            ("TurynPOCS", _turyn_pocs),
+            ("SpectralDescent", _spectral_descent),
             ("TurynSteepest", _turyn_steepest),
             ("MonteCarlo", lambda order: MonteCarloSearch(order=order)),
             ("RepairSearch", lambda order: RepairSearch(order=order)),
-            ("Spectral", lambda order: SpectralSearch(ORDER=order, inner_steps=5)),
+            ("POCS", lambda order: PocsSearch(ORDER=order, inner_steps=5)),
         )),
     )
     if not include_all:
@@ -200,7 +200,7 @@ def main(timeout_seconds: float = TIMEOUT_SECONDS, *, include_all: bool = False)
                     progress.set_postfix_str(
                         f"{group}: {name}, n={order}, steps={steps}")
                     turyn_strategy = name.startswith("Turyn") or name in {
-                        "MonteCarlo", "Ising", "Spectral", "Genetic",
+                        "MonteCarlo", "Ising", "POCS", "Genetic",
                     }
                     result = ({"status": "na"} if turyn_strategy and (
                         order != 4 * (3 * ((order // 4 + 1) // 3) - 1)
@@ -303,7 +303,7 @@ def sieve_compare(steps: int, timeout_seconds: float, ns: tuple[int, ...] = SIEV
 def _gpu_strategy(name: str):
     factories = {
         "repair": RepairSearch, "ising": IsingSearch,
-        "spectral": lambda: SpectralSearch(inner_steps=1),
+        "pocs": lambda: PocsSearch(inner_steps=1),
     }
     return factories[name]()
 

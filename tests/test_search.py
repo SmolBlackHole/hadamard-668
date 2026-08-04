@@ -14,9 +14,9 @@ from correlations import expand_symmetric_sequence, periodic_autocorrelation_ene
 from gpu import check_orthogonality
 from run import derive_seeds, select_best_run, worker_count
 from strategies.base import Pipeline, SearchStrategy
-from strategies.circulant import TurynGreedySearch
+from strategies.greedy import TurynGreedySearch
 from strategies.repair import RepairSearch
-from verifier.known import get_known, paley, sylvester
+from fixtures import get_known, paley, sylvester
 
 
 @pytest.mark.parametrize("order", [1, 2, 4, 8, 12, 16, 20])
@@ -75,7 +75,7 @@ def test_run_writes_each_parallel_seed_separately(tmp_path) -> None:
         [
             sys.executable,
             "run.py",
-            "--strategy", "turyn_greedy",
+            "--strategy", "greedy",
             "--steps", "0",
             "--seed", "7",
             "--runs", "2",
@@ -161,10 +161,10 @@ def test_pipeline_rejects_non_refining_followup() -> None:
 
 def test_parallel_run_helpers_are_deterministic_and_gpu_safe() -> None:
     assert derive_seeds(40, 3) == [40, 41, 42]
-    assert worker_count("turyn_greedy", runs=3, workers=8) == 3
-    assert worker_count("turyn_greedy:10,repair:5", runs=3, workers=2) == 2
+    assert worker_count("greedy", runs=3, workers=8) == 3
+    assert worker_count("greedy:10,repair:5", runs=3, workers=2) == 2
     assert worker_count("montecarlo", runs=3, workers=3) == 1
-    assert worker_count("spectral", runs=3, workers=3) == 1
+    assert worker_count("pocs", runs=3, workers=3) == 1
 
     matrix = sylvester(4)
     results = [

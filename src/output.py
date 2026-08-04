@@ -7,6 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
+from verifier.verify import independent_audit
+
 
 def save_run(
     matrix: np.ndarray,
@@ -19,8 +21,12 @@ def save_run(
     steps: int,
     wall_seconds: float,
     hardware_summary: str,
+    order: int,
+    construction: str,
 ) -> str:
     """Write canonical candidate.csv and schema-compatible run.json."""
+    if metrics["energy"] == 0:
+        independent_audit(matrix.tolist())
     directory.mkdir(parents=True, exist_ok=True)
     candidate_path = directory / "candidate.csv"
     candidate_path.write_text(
@@ -32,6 +38,8 @@ def save_run(
     manifest = {
         "schema_version": "h668-run-v1",
         "result_type": "exact_solution" if metrics["energy"] == 0 else "checkpoint",
+        "order": order,
+        "construction": construction,
         "method_family": method_family,
         "search_scope": search_scope,
         "coverage_kind": "heuristic",

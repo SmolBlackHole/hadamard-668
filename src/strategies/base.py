@@ -40,6 +40,16 @@ class SearchStrategy(ABC):
     def name(self) -> str:
         """Eindeutiger Name fuer --strategy."""
 
+    @property
+    def construction(self) -> str:
+        """Kanonische Konstruktionsbezeichnung (z.B. turyn_tt_56)."""
+        return "unknown"
+
+    @property
+    def order(self) -> int:
+        """Matrix-Ordnung, die diese Strategie erzeugt."""
+        return self.ORDER
+
     def refine(self, matrix: np.ndarray, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         """Optionales Verfeinern einer existierenden Matrix.
 
@@ -79,6 +89,10 @@ class Pipeline(SearchStrategy):
     @property
     def name(self) -> str:
         return "->".join(strategy.name for strategy, _ in self._stages)
+
+    @property
+    def construction(self) -> str:
+        return self._stages[0][0].construction
 
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         matrix = np.empty((1, 1), dtype=np.int8)

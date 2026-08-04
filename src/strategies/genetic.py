@@ -41,6 +41,10 @@ class GeneticSearch(SearchStrategy):
     def name(self) -> str:
         return "genetic"
 
+    @property
+    def construction(self) -> str:
+        return f"turyn_tt_{self.N}"
+
     def _energies(self, population, *, module=np):
         return nonperiodic_batch_energy(
             population, lengths=self.LENGTHS, weights=self.WEIGHTS, module=module)

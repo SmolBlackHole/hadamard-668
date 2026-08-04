@@ -42,8 +42,8 @@ from gpu import (
 from output import save_run
 from strategies.base import Pipeline, SearchStrategy
 from strategies.repair import RepairSearch
-from verifier.known import paley, sylvester
-from verifier.review import review_bundle
+from fixtures import paley, sylvester
+from tools.review import review_bundle
 from verifier.validate import InvalidManifest, load_and_validate_manifest
 
 
@@ -504,6 +504,8 @@ def test_output_manifest_and_review(matrix: np.ndarray, tmp_path) -> None:
         steps=1,
         wall_seconds=0.0,
         hardware_summary="test",
+        order=len(matrix),
+        construction="sylvester",
     )
     manifest_path = tmp_path / "run.json"
     manifest = load_and_validate_manifest(manifest_path)
@@ -512,10 +514,22 @@ def test_output_manifest_and_review(matrix: np.ndarray, tmp_path) -> None:
     assert review_bundle(tmp_path, len(matrix))["exact_solution"]
 
 
+def test_output_rejects_an_invalid_claimed_solution(tmp_path) -> None:
+    with pytest.raises(ValueError, match="other than -1 or 1"):
+        save_run(
+            np.array([[2, 0], [0, 2]], dtype=np.int8),
+            {"energy": 0, "orthogonal_pairs": 1, "max_abs_correlation": 0},
+            tmp_path / "invalid", method_family="other", search_scope="test",
+            seed=0, steps=1, wall_seconds=0.0, hardware_summary="test",
+            order=2, construction="test")
+    assert not (tmp_path / "invalid").exists()
+
+
 def test_manifest_rejects_unknown_method_family(tmp_path) -> None:
     matrix = sylvester(4)
     save_run(matrix, check_orthogonality(matrix), tmp_path, method_family="gs_sds",
-             search_scope="test", seed=0, steps=1, wall_seconds=0.0, hardware_summary="test")
+             search_scope="test", seed=0, steps=1, wall_seconds=0.0, hardware_summary="test",
+             order=len(matrix), construction="sylvester")
     manifest_path = tmp_path / "run.json"
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     data["method_family"] = "not-a-method"

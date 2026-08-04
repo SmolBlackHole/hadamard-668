@@ -11,3 +11,4 @@ nvidia-cufft-cu12
 nvidia-curand-cu12
 pytest>=8
 hypothesis>=6
+python-sat>=1.9

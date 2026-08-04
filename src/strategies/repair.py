@@ -35,6 +35,10 @@ class RepairSearch(SearchStrategy):
     def name(self) -> str:
         return "repair"
 
+    @property
+    def construction(self) -> str:
+        return "matrix_repair"
+
     @staticmethod
     def _most_violated_pair(
         gram: np.ndarray, row_argmax: np.ndarray, row_max: np.ndarray,

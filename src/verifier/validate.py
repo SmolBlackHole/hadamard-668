@@ -23,6 +23,8 @@ DECIMAL = re.compile(r"^(0|[1-9][0-9]*)$")
 REQUIRED_KEYS = {
     "schema_version",
     "result_type",
+    "order",
+    "construction",
     "method_family",
     "search_scope",
     "coverage_kind",
@@ -128,6 +130,13 @@ def load_and_validate_manifest(path: Path) -> dict[str, object]:
         raise InvalidManifest("schema_version must be 'h668-run-v1'")
     if data["result_type"] not in {"exact_solution", "checkpoint"}:
         raise InvalidManifest("invalid result_type")
+    order = data["order"]
+    if not isinstance(order, int) or isinstance(order, bool):
+        raise InvalidManifest("order must be an integer")
+    if order < 4 or order % 4 != 0 or order > 2_000:
+        raise InvalidManifest(
+            "order must be a positive multiple of 4 not exceeding 2000")
+    _bounded_string(data["construction"], "construction", 100)
     if data["method_family"] not in METHOD_FAMILIES:
         raise InvalidManifest("invalid method_family")
     if data["coverage_kind"] not in {"heuristic", "exhaustive_claim", "certified"}:

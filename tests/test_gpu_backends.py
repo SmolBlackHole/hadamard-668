@@ -12,11 +12,11 @@ import pytest
 from gpu import gram_backend, gram_matrix, to_numpy, xp
 from strategies.ising import IsingSearch
 from strategies.repair import RepairSearch
-from strategies.spectral import SpectralSearch
+from strategies.pocs import PocsSearch
 
 
 @pytest.mark.parametrize("strategy", [
-    RepairSearch(4), IsingSearch(92), SpectralSearch(ORDER=92, inner_steps=1),
+    RepairSearch(4), IsingSearch(92), PocsSearch(ORDER=92, inner_steps=1),
 ])
 def test_full_matrix_strategies_return_host_sign_matrices(strategy) -> None:
     matrix, metrics, _ = strategy.search(steps=1, seed=1)

@@ -7,14 +7,14 @@ import pytest
 from correlations import periodic_autocorrelation_energy
 from fourier import project_power_complementarity, project_weighted_nonperiodic_power
 from gpu import check_orthogonality, to_numpy, xp
-from strategies.circulant import TurynGreedySearch
+from strategies.greedy import TurynGreedySearch
 from strategies.annealing import TurynAnnealingSearch
 from strategies.genetic import GeneticSearch
 from strategies.ising import IsingSearch
 from strategies.montecarlo import MonteCarloSearch
-from strategies.pocs import TurynPocsSearch
-from strategies.spectral import SpectralSearch
-from strategies.turyn_steepest import TurynSteepestSearch
+from strategies.spectral_descent import TurynSpectralDescentSearch
+from strategies.pocs import PocsSearch
+from strategies.steepest import TurynSteepestSearch
 
 
 def test_periodic_autocorrelation_of_singletons_is_zero() -> None:
@@ -59,7 +59,7 @@ def test_weighted_nonperiodic_projection_supports_batches() -> None:
 
 
 def test_turyn_pocs_gradient_is_finite() -> None:
-    strategy = TurynPocsSearch(n=8)
+    strategy = TurynSpectralDescentSearch(n=8)
     gradient = strategy._gradient(strategy._seed(np.random.default_rng(2)))
     assert gradient.shape == (4, 8)
     assert np.all(np.isfinite(gradient))
@@ -67,7 +67,7 @@ def test_turyn_pocs_gradient_is_finite() -> None:
 
 @pytest.mark.parametrize("strategy", [
     TurynGreedySearch(n=8), TurynAnnealingSearch(n=8),
-    TurynPocsSearch(n=8), TurynSteepestSearch(n=8, candidates=8),
+    TurynSpectralDescentSearch(n=8), TurynSteepestSearch(n=8, candidates=8),
 ])
 def test_turyn_strategies_follow_result_contract(strategy) -> None:
     matrix, metrics, elapsed = strategy.search(steps=1, seed=1)

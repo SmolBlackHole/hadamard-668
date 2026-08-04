@@ -9,9 +9,10 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import numpy as np
 
-from .verify import InvalidMatrix, load_matrix, normalized_sha256
+from verifier.verify import InvalidMatrix, load_matrix, normalized_sha256
 
 
 def main() -> int:
