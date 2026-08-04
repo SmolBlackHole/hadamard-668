@@ -164,6 +164,7 @@ def test_parallel_run_helpers_are_deterministic_and_gpu_safe() -> None:
     assert worker_count("turyn_greedy", runs=3, workers=8) == 3
     assert worker_count("turyn_greedy:10,repair:5", runs=3, workers=2) == 2
     assert worker_count("montecarlo", runs=3, workers=3) == 1
+    assert worker_count("spectral", runs=3, workers=3) == 1
 
     matrix = sylvester(4)
     results = [

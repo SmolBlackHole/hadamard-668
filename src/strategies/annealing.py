@@ -13,6 +13,7 @@ from correlations import (
     nonperiodic_correlation_energy,
 )
 from gpu import check_orthogonality
+from sieve import seed_turyn_batch
 from .base import SearchStrategy
 
 
@@ -29,7 +30,7 @@ class TurynAnnealingSearch(SearchStrategy):
     N = 56
     WEIGHTS = np.array((1, 1, 2, 2), dtype=np.int64)
 
-    def __init__(self, t_start: float = 5.0, t_end: float = 0.001, *, n: int = N) -> None:
+    def __init__(self, t_start: float = 5.0, t_end: float = 0.001, *, n: int = N, sieve: bool = True) -> None:
         if n < 2:
             raise ValueError("Turyn type requires n >= 2")
         self.t_start = t_start
@@ -37,12 +38,15 @@ class TurynAnnealingSearch(SearchStrategy):
         self.N = n
         self.LENGTHS = np.array((n, n, n, n - 1), dtype=np.int64)
         self.ORDER = 4 * (3 * n - 1)
+        self.sieve = sieve
 
     @property
     def name(self) -> str:
         return "turyn_annealing"
 
     def _seed(self, rng: np.random.Generator) -> np.ndarray:
+        if self.sieve:
+            return seed_turyn_batch(self.N, 1, rng)[0]
         sequences = np.zeros((4, self.N), dtype=np.int8)
         for index, length in enumerate(self.LENGTHS):
             sequences[index, :length] = rng.choice((-1, 1), size=length)

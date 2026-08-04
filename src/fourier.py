@@ -19,15 +19,23 @@ def project_weighted_nonperiodic_power(
     *,
     lengths: np.ndarray,
     weights: np.ndarray,
+    module=np,
 ) -> np.ndarray:
-    """Project padded sequences onto the weighted non-periodic power shell."""
-    state = np.asarray(sequences, dtype=np.float64)
-    fft_size = 2 * state.shape[1] - 1
-    spectrum = np.fft.fft(state, n=fft_size, axis=1)
-    target = float(np.dot(lengths, weights))
-    power = np.sum(weights[:, None] * np.abs(spectrum) ** 2, axis=0)
-    projected = np.fft.ifft(
-        spectrum * np.sqrt(target / np.maximum(power, 1e-12))[None, :], axis=1).real[:, :state.shape[1]]
+    """Project one state or a batch onto the weighted non-periodic power shell."""
+    state = module.asarray(sequences, dtype=module.float32)
+    if state.ndim not in (2, 3) or state.shape[-2] != len(lengths):
+        raise ValueError(
+            "sequences must have shape (sequences, values) or (batch, sequences, values)")
+    fft_size = 2 * state.shape[-1] - 1
+    spectrum = module.fft.fft(state, n=fft_size, axis=-1)
+    actual_lengths = module.asarray(lengths)
+    actual_weights = module.asarray(weights, dtype=state.dtype)
+    target = module.sum(actual_lengths * actual_weights)
+    shape = (1,) * (state.ndim - 2) + (len(weights), 1)
+    power = module.sum(actual_weights.reshape(shape) *
+                       module.abs(spectrum) ** 2, axis=-2)
+    projected = module.fft.ifft(
+        spectrum * module.sqrt(target / module.maximum(power, 1e-12))[..., None, :], axis=-1).real[..., :state.shape[-1]]
     for index, length in enumerate(lengths):
-        projected[index, int(length):] = 0.0
+        projected[..., index, int(length):] = 0.0
     return projected

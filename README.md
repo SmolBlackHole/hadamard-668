@@ -105,15 +105,15 @@ Unabhängige Läufe können parallel gestartet werden:
 Die Seeds sind deterministisch `seed, seed+1, ...`. Jeder Lauf erhält ein
 eigenes Verzeichnis mit `candidate.csv` und `run.json`. Am Ende werden alle
 Energien zusammengefasst und der beste Lauf anhand einer vollständigen
-Gram-Metrik markiert. Für die CUDA-Batchstrategie `montecarlo` wird die
-Workerzahl automatisch auf eins begrenzt, damit nicht mehrere Prozesse um
-dieselbe GPU konkurrieren.
+Gram-Metrik markiert. Für CUDA-Batchstrategien wird die Workerzahl automatisch
+auf eins begrenzt, damit nicht mehrere Prozesse um dieselbe GPU konkurrieren.
 
 ## Benchmark
 
 ```bash
 .venv\Scripts\python benchmark.py --timeout 60
 .venv\Scripts\python benchmark.py --all --timeout 60
+.venv\Scripts\python benchmark.py --sieve-compare --steps 2000
 ```
 
 Der Standardbenchmark umfasst 48 geordnete Fälle: acht Kernstrategien für die
@@ -126,11 +126,18 @@ Die Tabelle zeigt ausschließlich die von der Strategie gemeldete
 Algorithmuszeit. Die JSON-Wandzeit enthält zusätzlich Prozessstart,
 Numba-Kompilierung und CUDA-Warm-up und dient nur der Timeout-Diagnose.
 
+`--sieve-compare` misst für alle Turyn-Solver dieselben Seeds mit zufälligem
+und PSD-/Sum-Pattern-gefiltertem Start. Standard sind `n=2,3,...,9,36,56`;
+mit `--sieve-n 8 56` lässt sich die Auswahl begrenzen. `SIEVED OUT` bedeutet,
+dass die notwendige TT-Zeilensummenbedingung für diese Ordnung keine Lösung
+zulässt.
+
 ## Strategien
 
 | Gruppe | Strategien | Zustandsraum | Rechenort |
 | --- | --- | --- | --- |
-| Turyn-Solver | `turyn_greedy`, `turyn_annealing`, `turyn_pocs`, `turyn_steepest`, `genetic`, `montecarlo`, `spectral`, `ising` | 223 Turyn-Bits | CPU; Monte-Carlo-Batches auf GPU |
+| Turyn-Solver | `turyn_greedy`, `turyn_annealing`, `turyn_steepest` | 223 Turyn-Bits | CPU |
+| GPU-Batch-Turyn | `turyn_pocs`, `montecarlo`, `genetic`, `spectral`, `ising` | 223 Turyn-Bits je Kandidat | CUDA; CPU-Einzelzustand außer bei `montecarlo` |
 | Vollmatrix | `repair` | `668 × 668` | inkrementelle CPU-Deltas; finale Gram-Prüfung optional auf GPU |
 | Orchestrierung | Pipelines | vorhandene Kandidaten | CPU |
 

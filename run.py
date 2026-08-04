@@ -1,11 +1,5 @@
 """Hadamard-668 search entry point."""
 from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
 from strategies.turyn_steepest import TurynSteepestSearch
 from strategies.pocs import TurynPocsSearch
 from strategies.spectral import SpectralSearch
@@ -18,13 +12,16 @@ from strategies.base import Pipeline, SearchStrategy
 from strategies.annealing import TurynAnnealingSearch
 from gpu import check_orthogonality
 from output import save_run
-
 import argparse
 from concurrent.futures import ProcessPoolExecutor
 import datetime
 import time
-
 import numpy as np
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
 
 ALL: dict[str, SearchStrategy] = {
     "turyn_greedy": TurynGreedySearch(),
@@ -38,7 +35,9 @@ ALL: dict[str, SearchStrategy] = {
     "montecarlo": MonteCarloSearch(),
 }
 
-GPU_INTENSIVE_STRATEGIES = frozenset({"montecarlo"})
+GPU_INTENSIVE_STRATEGIES = frozenset({
+    "montecarlo", "turyn_pocs", "genetic", "spectral", "ising",
+})
 
 
 def parse_strategy(specification: str) -> SearchStrategy:
