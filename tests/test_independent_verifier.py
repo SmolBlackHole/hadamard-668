@@ -6,7 +6,7 @@ import pytest
 from typing import Sequence, cast
 
 from strategies.greedy import TurynGreedySearch
-from fixtures import sylvester
+from constructions import sylvester
 from verifier.verify import (
     InvalidMatrix,
     build_turyn_reference,

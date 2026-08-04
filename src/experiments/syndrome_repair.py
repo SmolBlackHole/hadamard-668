@@ -1,22 +1,21 @@
-"""GPU-parallel repair: single, pair, triple flips + POCS pre-processing.
+"""GPU-parallel repair: single, pair, triple flips.
 
 Evaluates all single-flip candidates via batched GPU FFT, periodically
 scans all pairs for non-greedy jumps, and samples triple flips from
-gradient-ranked positions. Optional Douglas-Rachford pre-processing.
+gradient-ranked positions.
 """
 from __future__ import annotations
-
-import sys, time, math
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-import numpy as np
-from gpu import to_numpy, xp
-
 from correlations import (nonperiodic_autocorrelation_state,
-                           nonperiodic_correlation_energy,
-                           apply_nonperiodic_flip)
-from fourier import project_weighted_nonperiodic_power
+                          nonperiodic_correlation_energy,
+                          apply_nonperiodic_flip)
+from gpu import xp
+import numpy as np
+
+import sys
+import time
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+
 
 WEIGHTS_I = np.array((1, 1, 2, 2), dtype=np.int64)
 WEIGHTS_F = np.array((1, 1, 2, 2), dtype=np.float64)
@@ -60,34 +59,13 @@ def _fft_gradient(seq_float, lengths):
     return grad
 
 
-def _pocs_relax(state_float, lengths, steps=10):
-    state_np = to_numpy(state_float).astype(np.float32)
-    n_pocs = int(lengths[0])
-    for _ in range(steps):
-        proj = project_weighted_nonperiodic_power(
-            state_np, lengths=lengths, weights=WEIGHTS_F.astype(np.float64), module=np)
-        proj = np.asarray(proj, dtype=np.float32)
-        refl = 2.0 * proj - state_np
-        signs = np.where(refl >= 0, np.float32(1), np.float32(-1))
-        if signs.ndim == 3:
-            signs[:, 3, n_pocs - 1] = 0
-        else:
-            signs[3, n_pocs - 1] = 0
-        state_np = np.float32(0.5) * (state_np + 2 * signs - refl)
-    signs = np.where(state_np >= 0, np.float32(1), np.float32(-1))
-    if signs.ndim == 3:
-        signs[:, 3, n_pocs - 1] = 0
-    else:
-        signs[3, n_pocs - 1] = 0
-    return xp.asarray(signs, dtype=xp.float32)
-
-
 class GpuRepair:
     def __init__(self, sequences, lengths):
         self.seq = sequences.copy()
         self.lengths = lengths
         self.n = int(lengths[0])
-        self.all_positions = [(r, c) for r in range(4) for c in range(int(lengths[r]))]
+        self.all_positions = [(r, c) for r in range(4)
+                              for c in range(int(lengths[r]))]
         self.n_pos = len(self.all_positions)
         self.pairs = [(self.all_positions[i], self.all_positions[j])
                       for i in range(self.n_pos) for j in range(i + 1, self.n_pos)]
@@ -100,7 +78,8 @@ class GpuRepair:
     def _gradient_top_positions(self, n_top=60):
         seq_f = xp.asarray(self.seq.astype(np.float64), dtype=xp.float64)
         grad = _fft_gradient(seq_f, self.lengths)
-        score = xp.float64(-2.0) * xp.asarray(self.seq, dtype=xp.float64) * grad
+        score = xp.float64(-2.0) * xp.asarray(self.seq,
+                                              dtype=xp.float64) * grad
         score[3, int(self.lengths[3]):] = xp.inf
         flat = score.ravel()
         indices = xp.argsort(flat)[:n_top]
@@ -129,24 +108,11 @@ class GpuRepair:
         return triples
 
     def repair(self, max_steps=200, pair_interval=3, triple_interval=8,
-               max_batch=16384, pocs_preprocess=False):
+               max_batch=16384):
         all_flips = []
         best_e = self._exact_energy()
         if best_e == 0:
             return [], 0.0
-
-        if pocs_preprocess and best_e > 0:
-            state_f = xp.asarray(self.seq.astype(np.float32), dtype=xp.float32)
-            relaxed = _pocs_relax(state_f, self.lengths, steps=30)
-            relaxed_np = xp.asnumpy(relaxed).astype(np.int8)
-            pocs_e = float(nonperiodic_correlation_energy(
-                nonperiodic_autocorrelation_state(relaxed_np, lengths=self.lengths,
-                                                  weights=WEIGHTS_I)))
-            if pocs_e < best_e:
-                self.seq = relaxed_np
-                best_e = pocs_e
-                if best_e == 0:
-                    return [], 0.0
 
         seq_f = xp.asarray(self.seq.astype(np.float32), dtype=xp.float32)
         current_e = best_e
@@ -188,8 +154,10 @@ class GpuRepair:
                     best_pair_e = float(energies[best_idx])
                     if best_pair_e < current_e:
                         (r1, c1), (r2, c2) = chunk[best_idx]
-                        self.seq[r1, c1] *= -1; self.seq[r2, c2] *= -1
-                        seq_f[r1, c1] *= -1; seq_f[r2, c2] *= -1
+                        self.seq[r1, c1] *= -1
+                        self.seq[r2, c2] *= -1
+                        seq_f[r1, c1] *= -1
+                        seq_f[r2, c2] *= -1
                         current_e = best_pair_e
                         all_flips.extend([(r1, c1), (r2, c2)])
                         improved = True
@@ -226,26 +194,15 @@ class GpuRepair:
 # ── Benchmark ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    from test_independent_verifier import TT8, TT36_HEX
+    from fixtures import tt_sequences
 
     rng = np.random.default_rng(2026)
 
-    seqs = [[], [], [], []]
-    for d in TT36_HEX[:-1]:
-        for i, b in enumerate(f"{int(d,16):04b}"):
-            seqs[i].append(1 if b == "0" else -1)
-    for i, b in enumerate(f"{int(TT36_HEX[-1],16):03b}"):
-        seqs[i].append(1 if b == "0" else -1)
-    SOL36 = np.zeros((4, 36), dtype=np.int8)
-    for i, s in enumerate(seqs):
-        SOL36[i, : len(s)] = s
-
-    tt8_arr = np.zeros((4, 8), dtype=np.int8)
-    for i, s in enumerate(TT8):
-        tt8_arr[i, : len(s)] = np.array(list(s), dtype=np.int8)
+    SOL36 = tt_sequences(36)
+    tt8_arr = tt_sequences(8)
 
     backend = "CUPY" if xp.__name__ == "cupy" else "NUMPY"
-    print(f"GPU: {backend}  single+pairs+triples (+POCS)")
+    print(f"GPU: {backend}  single+pairs+triples")
     print()
 
     for name, sol, lengths in [
@@ -261,8 +218,8 @@ if __name__ == "__main__":
 
         for noise_pct in [1, 2, 5, 10, 20]:
             n_flips = max(1, int(total_bits * noise_pct / 100))
-            g_rec = gp_rec = pocs_rec = 0
-            g_time = gp_time = pocs_time = 0.0
+            g_rec = gp_rec = 0
+            g_time = gp_time = 0.0
             for trial in range(10):
                 p = sol.copy()
                 for _ in range(n_flips):
@@ -273,7 +230,8 @@ if __name__ == "__main__":
                 # Greedy
                 g_seq = p.copy()
                 t0 = time.perf_counter()
-                corr = nonperiodic_autocorrelation_state(g_seq, lengths=lengths, weights=WEIGHTS_I)
+                corr = nonperiodic_autocorrelation_state(
+                    g_seq, lengths=lengths, weights=WEIGHTS_I)
                 best_e = nonperiodic_correlation_energy(corr)
                 imp = True
                 while imp and best_e > 0:
@@ -281,29 +239,27 @@ if __name__ == "__main__":
                     for row in range(4):
                         for col in range(int(lengths[row])):
                             ne = apply_nonperiodic_flip(g_seq, corr, row, col,
-                                                       lengths=lengths, weight=int(WEIGHTS_I[row]))
-                            if ne < best_e: best_e = ne; imp = True; break
+                                                        lengths=lengths, weight=int(WEIGHTS_I[row]))
+                            if ne < best_e:
+                                best_e = ne
+                                imp = True
+                                break
                             apply_nonperiodic_flip(g_seq, corr, row, col,
                                                    lengths=lengths, weight=int(WEIGHTS_I[row]))
-                        if imp: break
-                if best_e == 0: g_rec += 1
+                        if imp:
+                            break
+                if best_e == 0:
+                    g_rec += 1
                 g_time += time.perf_counter() - t0
 
                 # GPU singles+pairs+triples
                 t0 = time.perf_counter()
                 gr = GpuRepair(p.copy(), lengths)
-                flips, e = gr.repair(pair_interval=3, triple_interval=6, pocs_preprocess=False)
-                if gr._exact_energy() == 0: gp_rec += 1
+                flips, e = gr.repair(pair_interval=3, triple_interval=6)
+                if gr._exact_energy() == 0:
+                    gp_rec += 1
                 gp_time += time.perf_counter() - t0
-
-                # GPU + POCS pre-processing
-                t0 = time.perf_counter()
-                gr2 = GpuRepair(p.copy(), lengths)
-                flips2, e2 = gr2.repair(pair_interval=3, triple_interval=6, pocs_preprocess=True)
-                if gr2._exact_energy() == 0: pocs_rec += 1
-                pocs_time += time.perf_counter() - t0
 
             print(f"  {noise_pct:>3}% ({n_flips:>2}f) | "
                   f"greedy: {g_rec:>2}/10 ({g_time:.1f}s) | "
-                  f"gpu: {gp_rec:>2}/10 ({gp_time:.1f}s) | "
-                  f"gpu+pocs: {pocs_rec:>2}/10 ({pocs_time:.1f}s)")
+                  f"gpu: {gp_rec:>2}/10 ({gp_time:.1f}s)")

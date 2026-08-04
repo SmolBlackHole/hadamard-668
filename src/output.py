@@ -1,4 +1,4 @@
-"""Write reproducible, verifier-compatible search results."""
+"""Persist a search result as CSV + JSON."""
 from __future__ import annotations
 
 import hashlib
@@ -10,56 +10,33 @@ import numpy as np
 from verifier.verify import independent_audit
 
 
-def save_run(
-    matrix: np.ndarray,
-    metrics: dict[str, int],
-    directory: Path,
-    *,
-    method_family: str,
-    search_scope: str,
-    seed: int,
-    steps: int,
-    wall_seconds: float,
-    hardware_summary: str,
-    order: int,
-    construction: str,
-) -> str:
-    """Write canonical candidate.csv and schema-compatible run.json."""
+def save(matrix: np.ndarray, metrics: dict[str, int], directory: Path,
+         *, strategy: str, seed: int, steps: int, wall: float,
+         order: int, construction: str) -> str:
+    """Write matrix.csv and run.json. Audits via pure Python if energy==0."""
     if metrics["energy"] == 0:
         independent_audit(matrix.tolist())
+
     directory.mkdir(parents=True, exist_ok=True)
-    candidate_path = directory / "candidate.csv"
-    candidate_path.write_text(
-        "\n".join(",".join(str(int(value)) for value in row)
-                  for row in matrix) + "\n",
-        encoding="utf-8",
-    )
-    candidate_sha256 = hashlib.sha256(candidate_path.read_bytes()).hexdigest()
-    manifest = {
-        "schema_version": "h668-run-v1",
-        "result_type": "exact_solution" if metrics["energy"] == 0 else "checkpoint",
+    csv_path = directory / "matrix.csv"
+    csv_path.write_text(
+        "\n".join(",".join(str(int(v)) for v in row) for row in matrix) + "\n",
+        encoding="utf-8")
+
+    sha = hashlib.sha256(csv_path.read_bytes()).hexdigest()
+    info = {
         "order": order,
         "construction": construction,
-        "method_family": method_family,
-        "search_scope": search_scope,
-        "coverage_kind": "heuristic",
-        "seed_derivation": f"fixed-seed-{seed}",
-        "seeds": [str(seed)],
-        "evaluations": steps,
-        "wall_seconds": round(wall_seconds, 3),
-        "hardware_summary": hardware_summary,
-        "model_summary": None,
-        "code_url": None,
-        "code_commit": None,
-        "parent_candidate_sha256": None,
-        "candidate_sha256": candidate_sha256,
-        "metrics": {
-            "off_diagonal_energy": metrics["energy"],
-            "orthogonal_row_pairs": metrics["orthogonal_pairs"],
-            "max_absolute_off_diagonal": metrics["max_abs_correlation"],
-        },
-        "publication_consent": True,
+        "strategy": strategy,
+        "seed": seed,
+        "steps": steps,
+        "wall_seconds": round(wall, 3),
+        "energy": metrics["energy"],
+        "orthogonal_pairs": metrics["orthogonal_pairs"],
+        "max_off_diagonal": metrics["max_abs_correlation"],
+        "is_solution": metrics["energy"] == 0,
+        "sha256": sha,
     }
-    (directory / "run.json").write_text(json.dumps(manifest,
-                                                   indent=2) + "\n", encoding="utf-8")
-    return candidate_sha256
+    (directory / "run.json").write_text(
+        json.dumps(info, indent=2) + "\n", encoding="utf-8")
+    return sha

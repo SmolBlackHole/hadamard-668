@@ -1,22 +1,19 @@
 """Hadamard search entry point."""
 from __future__ import annotations
 
-import argparse
-import datetime
 import sys
-import time
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-
-import numpy as np
-
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from gpu import check_orthogonality
-from output import save_run
-from strategies.registry import (
-    DEFAULT_STRATEGY, GPU_NAMES, list_names, make_strategy, parse_strategy,
-)
+from strategies.registry import DEFAULT, GPU, parse as parse_strategy
+from output import save
+
+import argparse
+import datetime
+import time
+from concurrent.futures import ProcessPoolExecutor
+
+import numpy as np
 
 
 def select_best_run(
@@ -34,7 +31,7 @@ def derive_seeds(seed: int, runs: int) -> list[int]:
 def worker_count(specification: str, runs: int, workers: int) -> int:
     names = {p.rsplit(":", 1)[0] if ":" in p else p
              for p in specification.split(",")}
-    if names & GPU_NAMES:
+    if names & GPU:
         return 1
     return min(runs, workers)
 
@@ -43,6 +40,7 @@ def _execute_run(spec: str, steps: int, seed: int, order: int,
                  time_budget: float = 0.0):
     strategy = parse_strategy(spec, order)
     started = time.perf_counter()
+    matrix, metrics = None, None
     if time_budget > 0:
         t0 = time.perf_counter()
         strategy.search(steps=50, seed=seed)
@@ -52,17 +50,16 @@ def _execute_run(spec: str, steps: int, seed: int, order: int,
             matrix, metrics, _ = strategy.search(steps=chunk, seed=seed)
             if metrics["energy"] == 0:
                 break
-    else:
-        matrix, _, _ = strategy.search(steps, seed)
+    if matrix is None:
+        matrix, metrics, _ = strategy.search(steps, seed)
     wall = time.perf_counter() - started
-    metrics = check_orthogonality(matrix)
     return seed, matrix, metrics, wall
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hadamard search")
-    parser.add_argument("--strategy", default=DEFAULT_STRATEGY,
-                        help=f"one of: {', '.join(list_names())} | s1:N,s2:M")
+    parser.add_argument("--strategy", default=DEFAULT,
+                        help="strategy name or s1:steps,s2:steps")
     parser.add_argument("--steps", type=int, default=200_000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--runs", type=int, default=1)
@@ -96,11 +93,9 @@ def main() -> None:
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     for seed, matrix, metrics, wall in results:
         out = Path(args.runs_dir) / f"{strategy.name}_{seed}_{timestamp}"
-        save_run(matrix, metrics, out,
-                 method_family="gs_sds" if strategy.name != "repair" else "local_search",
-                 search_scope=args.strategy, seed=seed, steps=args.steps,
-                 wall_seconds=wall, hardware_summary="numpy-or-cupy",
-                 order=matrix.shape[0], construction=strategy.construction)
+        save(matrix, metrics, out,
+             strategy=args.strategy, seed=seed, steps=args.steps,
+             wall=wall, order=matrix.shape[0], construction=strategy.construction)
 
     best = min(results, key=lambda r: r[2]["energy"])
     print("\nRun summary")
@@ -109,7 +104,8 @@ def main() -> None:
         print(f"  seed={seed} energy={m['energy']} elapsed={wall:.1f}s{star}")
     if best[2]["energy"] == 0:
         print("*** HADAMARD! ***")
-    print(f"best seed={best[0]} energy={best[2]['energy']} elapsed={best[3]:.1f}s")
+    print(
+        f"best seed={best[0]} energy={best[2]['energy']} elapsed={best[3]:.1f}s")
 
 
 if __name__ == "__main__":

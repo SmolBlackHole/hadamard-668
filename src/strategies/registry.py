@@ -1,50 +1,22 @@
-"""Strategy registry and factory for CLI dispatch."""
+"""Strategy lookup — map CLI name to SearchStrategy for a given order."""
 from __future__ import annotations
 
 from .base import Pipeline, SearchStrategy
 from .greedy import TurynGreedySearch
-from .steepest import TurynSteepestSearch
 from .spectral_descent import TurynSpectralDescentSearch
 from .pocs import PocsSearch
-from .montecarlo import MonteCarloSearch
 from .repair import RepairSearch
-from .annealing import TurynAnnealingSearch
-from .ising import IsingSearch
-from .genetic import GeneticSearch
 
-
-_STRATEGY_CLASSES: dict[str, type[SearchStrategy]] = {
+_CLASSES: dict[str, type[SearchStrategy]] = {
     "greedy": TurynGreedySearch,
-    "steepest": TurynSteepestSearch,
     "spectral_descent": TurynSpectralDescentSearch,
     "pocs": PocsSearch,
-    "montecarlo": MonteCarloSearch,
     "repair": RepairSearch,
-    "annealing": TurynAnnealingSearch,
-    "ising": IsingSearch,
-    "genetic": GeneticSearch,
 }
 
-_TURYN_N_CLASSES = frozenset({
-    "greedy", "steepest", "spectral_descent", "annealing",
-})
-_ORDER_KWARG_KEY: dict[str, str] = {
-    "pocs": "ORDER",
-    "montecarlo": "order",
-    "repair": "order",
-    "ising": "order",
-    "genetic": "order",
-}
-
-GPU_NAMES = frozenset({
-    "montecarlo", "spectral_descent", "pocs", "ising", "genetic",
-})
-
-DEFAULT_STRATEGY = "spectral_descent"
-
-
-def list_names() -> list[str]:
-    return sorted(_STRATEGY_CLASSES)
+_TURYN_N = frozenset({"greedy", "spectral_descent"})
+GPU = frozenset({"pocs", "spectral_descent"})
+DEFAULT = "spectral_descent"
 
 
 def _turyn_n(order: int) -> int:
@@ -54,24 +26,17 @@ def _turyn_n(order: int) -> int:
     return n
 
 
-def make_strategy(name: str, order: int) -> SearchStrategy:
-    cls = _STRATEGY_CLASSES[name]
-    if name in _TURYN_N_CLASSES:
-        return cls(n=_turyn_n(order))
-    kwarg = _ORDER_KWARG_KEY.get(name, "order")
-    return cls(**{kwarg: order})
+def build(name: str, order: int) -> SearchStrategy:
+    cls = _CLASSES[name]
+    return cls(n=_turyn_n(order)) if name in _TURYN_N else cls(order=order)
 
 
-def parse_strategy(specification: str, order: int) -> SearchStrategy:
-    if ":" not in specification:
-        if specification not in _STRATEGY_CLASSES:
-            raise ValueError(f"unknown strategy: {specification}")
-        return make_strategy(specification, order)
-
+def parse(spec: str, order: int) -> SearchStrategy:
+    """'name' or 'name:steps,name2:steps' → Strategy or Pipeline."""
+    if ":" not in spec:
+        return build(spec, order)
     stages = []
-    for part in specification.split(","):
-        name, steps_text = part.rsplit(":", 1)
-        if name not in _STRATEGY_CLASSES:
-            raise ValueError(f"unknown strategy in pipeline: {name}")
-        stages.append((make_strategy(name, order), int(steps_text)))
+    for part in spec.split(","):
+        n, st = part.rsplit(":", 1)
+        stages.append((build(n, order), int(st)))
     return Pipeline(stages)

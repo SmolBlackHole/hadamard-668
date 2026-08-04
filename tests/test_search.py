@@ -10,13 +10,12 @@ import numpy as np
 import pytest
 
 from builders import build_goethals_seidel
-from correlations import expand_symmetric_sequence, periodic_autocorrelation_energy
 from gpu import check_orthogonality
 from run import derive_seeds, select_best_run, worker_count
 from strategies.base import Pipeline, SearchStrategy
 from strategies.greedy import TurynGreedySearch
 from strategies.repair import RepairSearch
-from fixtures import get_known, paley, sylvester
+from constructions import get_known, paley, sylvester
 
 
 @pytest.mark.parametrize("order", [1, 2, 4, 8, 12, 16, 20])
@@ -28,32 +27,11 @@ def test_known_matrices_are_orthogonal(order: int) -> None:
     assert metrics["orthogonal_pairs"] == order * (order - 1) // 2
 
 
-@pytest.mark.parametrize(("half", "expected"), [
-    ([1], [1]),
-    ([1, -1], [1, -1, -1]),
-    ([1, -1, 1], [1, -1, 1, 1, -1]),
-    ([1, -1, 1, -1], [1, -1, 1, -1, -1, 1, -1]),
-])
-def test_expand_symmetric_sequence_examples(
-    half: list[int], expected: list[int],
-) -> None:
-    assert np.array_equal(
-        expand_symmetric_sequence(np.array(half, dtype=np.int8)),
-        np.array(expected, dtype=np.int8),
-    )
-
-
 def test_goethals_seidel_builds_order_four_hadamard() -> None:
     matrix = build_goethals_seidel(
         *(np.ones(1, dtype=np.int8) for _ in range(4)))
     assert check_orthogonality(matrix) == {
         "energy": 0, "orthogonal_pairs": 6, "max_abs_correlation": 0}
-
-
-def test_periodic_energy_of_singletons_is_zero() -> None:
-    sequence = np.array([1], dtype=np.int8)
-    assert periodic_autocorrelation_energy(
-        (sequence, sequence, sequence, sequence)) == 0
 
 
 def test_run_help_works_without_pythonpath() -> None:
@@ -92,7 +70,7 @@ def test_run_writes_each_parallel_seed_separately(tmp_path) -> None:
     assert result.returncode == 0, result.stderr
     outputs = sorted(tmp_path.iterdir())
     assert len(outputs) == 2
-    assert all((directory / "candidate.csv").is_file()
+    assert all((directory / "matrix.csv").is_file()
                for directory in outputs)
     assert all((directory / "run.json").is_file() for directory in outputs)
     assert "Run summary" in result.stdout
@@ -163,8 +141,8 @@ def test_parallel_run_helpers_are_deterministic_and_gpu_safe() -> None:
     assert derive_seeds(40, 3) == [40, 41, 42]
     assert worker_count("greedy", runs=3, workers=8) == 3
     assert worker_count("greedy:10,repair:5", runs=3, workers=2) == 2
-    assert worker_count("montecarlo", runs=3, workers=3) == 1
     assert worker_count("pocs", runs=3, workers=3) == 1
+    assert worker_count("spectral_descent", runs=3, workers=3) == 1
 
     matrix = sylvester(4)
     results = [

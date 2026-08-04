@@ -1,71 +1,77 @@
-"""Lokale Suche im zyklischen Vier-Sequenzen- und Difference-Set-Raum."""
+"""Difference-set seeded local search (Goethals-Seidel space)."""
 from __future__ import annotations
-
 import time
-
 import numpy as np
-
 from builders import build_goethals_seidel
-from correlations import (
-    apply_sequence_flip,
-    autocorrelation_state,
-    correlation_energy,
-)
 from gpu import check_orthogonality
 from .base import SearchStrategy
 
 
+def _paf_state(sequences, weights=None):
+    """Weighted periodic autocorrelation for equal-length sequences."""
+    seqs = np.asarray(sequences, dtype=np.int8)
+    w = np.ones(seqs.shape[0], dtype=np.int64) if weights is None else np.asarray(weights, dtype=np.int64)
+    n = seqs.shape[1]
+    total = np.zeros(n, dtype=np.int64)
+    for si, seq in enumerate(seqs):
+        for d in range(n):
+            corr = 0
+            for i in range(n):
+                corr += int(seq[i]) * int(seq[(i + d) % n])
+            total[d] += int(w[si]) * corr
+    return total
+
+
+def _paf_energy(correlations: np.ndarray) -> int:
+    values = np.asarray(correlations, dtype=np.int64)[1:]
+    return int(np.dot(values, values))
+
+
+def _paf_flip(sequences, correlations, si, vi, weight=1):
+    n = sequences.shape[1]
+    old = int(sequences[si, vi])
+    for d in range(1, n):
+        fwd = int(sequences[si, (vi + d) % n])
+        bwd = int(sequences[si, (vi - d) % n])
+        correlations[d] -= 2 * weight * old * (fwd + bwd)
+    sequences[si, vi] = -old
+    return _paf_energy(correlations)
+
+
 class DiffsetSearch(SearchStrategy):
-    """Sucht vier zyklische Difference-Set-Indikatoren mit Vorzeichenflips.
-
-    Zweck: Erzeugt Goethals-Seidel-Kandidaten im allgemeinen Vier-Sequenzen-Raum.
-    Mechanik: Startet mit quadratischen Resten und bewertet Einzelflips über exakte inkrementelle Korrelationsdeltas.
-    Grundlage: Mitgliedschaft in vier Teilmengen von ``C_K`` wird als Vorzeichenfolge kodiert; komplementäre Differenzen liefern Goethals-Seidel-Kandidaten.
-    Pipeline: Kann nur eine Pipeline eröffnen, weil keine ``refine``-Methode existiert.
-    Grenzen: Die lokalen Flips erhalten weder Blockgrößen noch eine Difference-Set-Garantie.
-    """
-
     def __init__(self, order: int = SearchStrategy.ORDER) -> None:
         if order < 4 or order % 4:
-            raise ValueError(
-                "diffset search requires an order divisible by four")
+            raise ValueError("diffset search requires an order divisible by four")
         self.ORDER = order
         self.K = order // 4
 
     @property
-    def name(self) -> str:
-        return "diffset"
+    def name(self) -> str: return "diffset"
 
     @property
-    def construction(self) -> str:
-        return f"goethals_seidel_k_{self.K}"
+    def construction(self) -> str: return f"goethals_seidel_k_{self.K}"
 
     def _seed(self) -> list[np.ndarray]:
-        residues = {value * value % self.K for value in range(1, self.K)}
+        residues = {v * v % self.K for v in range(1, self.K)}
         base = -np.ones(self.K, dtype=np.int8)
         base[list(residues)] = 1
-        return [np.roll(base, shift).copy() for shift in range(4)]
+        return [np.roll(base, s).copy() for s in range(4)]
 
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
         current = np.stack(self._seed())
-        correlations = autocorrelation_state(current)
-        energy = best_energy = correlation_energy(correlations)
+        corr = _paf_state(current)
+        energy = best_energy = _paf_energy(corr)
         best = current.copy()
         for _ in range(steps):
-            sequence, index = rng.integers(0, 4), rng.integers(0, self.K)
-            candidate_energy = apply_sequence_flip(
-                current, correlations, int(sequence), int(index))
-            if candidate_energy <= energy:
-                energy = candidate_energy
-                if energy < best_energy:
-                    best_energy = energy
-                    best = current.copy()
-                    if energy == 0:
-                        break
+            si, vi = int(rng.integers(0, 4)), int(rng.integers(0, self.K))
+            e = _paf_flip(current, corr, si, vi)
+            if e <= energy:
+                energy = e
+                if e < best_energy:
+                    best_energy = e; best = current.copy()
+                    if e == 0: break
             else:
-                apply_sequence_flip(
-                    current, correlations, int(sequence), int(index))
-        matrix = build_goethals_seidel(*best)
-        return matrix, check_orthogonality(matrix), time.perf_counter() - started
+                _paf_flip(current, corr, si, vi)
+        return build_goethals_seidel(*best), check_orthogonality(best), time.perf_counter() - started

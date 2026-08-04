@@ -14,8 +14,44 @@ from correlations import (
 )
 from gpu import check_orthogonality, xp
 from sieve import seed_turyn_batch
-from .montecarlo import MonteCarloSearch
 from .base import SearchStrategy
+
+
+def _gpu_correlations(batch):
+    """Weighted zero-padded NPAF for a batch."""
+    n = batch.shape[2]
+    fft_size = 2 * n - 1
+    spectrum = xp.fft.fft(batch, n=fft_size, axis=2)
+    corr = xp.fft.ifft(xp.abs(spectrum) ** 2, axis=2).real
+    return xp.sum(xp.asarray([1, 1, 2, 2], dtype=xp.int64)[None, :, None] * corr, axis=1)
+
+
+def _gpu_energies_from_correlations(correlations):
+    return xp.sum(correlations[:, 1:correlations.shape[1]] ** 2, axis=1)
+
+
+def _gpu_apply_flips(batch, correlations, energies, seq_idx, col_idx, lengths):
+    """Update batch state after flipping (seq_idx, col_idx) for each trajectory."""
+    n = batch.shape[2]
+    fft_size = 2 * n - 1
+    spectrum = xp.fft.fft(batch, n=fft_size, axis=2)
+    weight = xp.asarray([1, 1, 2, 2], dtype=xp.int64)
+    for i in range(len(batch)):
+        si = int(seq_idx[i])
+        ci = int(col_idx[i])
+        w = int(weight[si])
+        old = int(batch[i, si, ci])
+        L = int(lengths[si])
+        # Update correlation state via incremental NPAF
+        for shift in range(1, L):
+            neighbours = 0
+            if ci + shift < L:
+                neighbours += int(batch[i, si, ci + shift])
+            if ci >= shift:
+                neighbours += int(batch[i, si, ci - shift])
+            correlations[i, shift] -= 2 * w * old * neighbours
+        batch[i, si, ci] = -old
+    energies[:] = _gpu_energies_from_correlations(correlations)
 
 
 class TurynSpectralDescentSearch(SearchStrategy):
@@ -135,9 +171,8 @@ class TurynSpectralDescentSearch(SearchStrategy):
                  if self.sieve else rng.integers(
                      0, 2, size=(self.batch_size, 4, self.N), dtype=xp.int8) * 2 - 1)
         batch[:, 3, -1] = 0
-        delta = MonteCarloSearch(self.ORDER, batch_size=self.batch_size)
-        correlations = delta._correlations(batch)
-        energies = delta._energies_from_correlations(correlations)
+        correlations = _gpu_correlations(batch)
+        energies = _gpu_energies_from_correlations(correlations)
         rows = xp.arange(self.batch_size)
         for step in range(steps):
             if step % self.gradient_interval == 0:
@@ -162,8 +197,8 @@ class TurynSpectralDescentSearch(SearchStrategy):
                     0, int(self.LENGTHS.sum()), size=self.batch_size)
                 sequence = xp.minimum(position // self.N, 3).astype(xp.int64)
                 column = (position - sequence * self.N).astype(xp.int64)
-            delta._apply_flips(batch, correlations, energies, sequence, column,
-                               self.LENGTHS, self.WEIGHTS)
+            _gpu_apply_flips(batch, correlations, energies,
+                             sequence, column, self.LENGTHS)
         best = xp.asnumpy(batch[int(energies.argmin().get())])
         matrix, metrics = self._build(best)
         return matrix, metrics, time.perf_counter() - started

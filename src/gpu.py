@@ -82,16 +82,6 @@ def metrics_from_gram(gram: Any) -> dict[str, int]:
     }
 
 
-def correlation_histogram(gram: Any) -> dict[str, int]:
-    """Count absolute off-diagonal correlations once per unordered row pair."""
-    module = np if isinstance(gram, np.ndarray) else xp
-    rows, columns = module.triu_indices(gram.shape[0], k=1)
-    values = to_numpy(module.abs(gram[rows, columns]))
-    magnitudes, counts = np.unique(values, return_counts=True)
-    return {str(int(magnitude)): int(count)
-            for magnitude, count in zip(magnitudes, counts)}
-
-
 def check_orthogonality(matrix: np.ndarray) -> dict[str, int]:
     """Return exact off-diagonal Gram-matrix metrics for a sign matrix."""
     return metrics_from_gram(gram_matrix(matrix))
