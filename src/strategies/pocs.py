@@ -2,11 +2,10 @@
 from __future__ import annotations
 import time
 import numpy as np
-from builders import build_turyn
 from correlations import nonperiodic_batch_energy
-from gpu import check_orthogonality, to_numpy, xp
+from gpu import check_orthogonality, xp
 from sieve import seed_turyn_batch
-from .base import SearchStrategy
+from .base import TurynStrategy
 
 
 def _project_weighted_nonperiodic_power(sequences, *, lengths, weights, module=np):
@@ -27,27 +26,24 @@ def _project_weighted_nonperiodic_power(sequences, *, lengths, weights, module=n
     return proj
 
 
-class PocsSearch(SearchStrategy):
-    WEIGHTS = np.array((1, 1, 2, 2), dtype=np.float64)
+class PocsSearch(TurynStrategy):
+    """Douglas-Rachford splitting: project alternately between
+    weighted NPAF power shell and {+-1} constraint."""
 
-    def __init__(self, inner_steps: int = 50, *, ORDER: int = 668, batch_size: int = 256,
-                 sieve: bool = True) -> None:
-        n = (ORDER // 4 + 1) // 3
-        if ORDER != 4 * (3 * n - 1) or n < 2:
-            raise ValueError("pocs requires a TT(n)-compatible order")
-        self.ORDER, self.N, self.inner_steps = ORDER, n, inner_steps
-        self.batch_size, self.sieve = batch_size, sieve
-        self.LENGTHS = np.array((n, n, n, n - 1), dtype=np.int64)
+    W_F = np.array((1, 1, 2, 2), dtype=np.float64)
+
+    def __init__(self, inner_steps: int = 50, *, n: int = TurynStrategy.DEFAULT_N,
+                 batch_size: int = 256, sieve: bool = True):
+        super().__init__(n=n, sieve=sieve)
+        self.inner_steps = inner_steps
+        self.batch_size = batch_size
 
     @property
     def name(self) -> str: return "pocs"
 
-    @property
-    def construction(self) -> str: return f"turyn_tt_{self.N}"
-
     def _project_fourier(self, state, *, module=np):
         return _project_weighted_nonperiodic_power(
-            state, lengths=self.LENGTHS, weights=self.WEIGHTS, module=module)
+            state, lengths=self.LENGTHS, weights=self.W_F, module=module)
 
     def _project_sign(self, state, *, module=np):
         signs = module.where(state >= 0, 1.0, -1.0).astype(module.float32)
@@ -69,17 +65,18 @@ class PocsSearch(SearchStrategy):
         state[:, 3, -1] = 0.0
         best = self._project_sign(state, module=module)
         best_energy = nonperiodic_batch_energy(
-            best, lengths=self.LENGTHS, weights=self.WEIGHTS, module=module)
+            best, lengths=self.LENGTHS, weights=self.W_F, module=module)
         for _ in range(steps):
             for _ in range(self.inner_steps):
                 state = self._step(state, module=module)
             candidate = self._project_sign(
                 self._project_fourier(state, module=module), module=module)
             energy = nonperiodic_batch_energy(
-                candidate, lengths=self.LENGTHS, weights=self.WEIGHTS, module=module)
+                candidate, lengths=self.LENGTHS, weights=self.W_F, module=module)
             improved = energy < best_energy
             best = module.where(improved[:, None, None], candidate, best)
             best_energy = module.minimum(best_energy, energy)
-        best = to_numpy(best[int(module.argmin(best_energy).item())])
-        matrix = build_turyn(*(best[idx, :self.LENGTHS[idx]] for idx in range(4)))
+        best_np = best[int(module.argmin(best_energy).item())]
+        best_np = best_np if isinstance(best_np, np.ndarray) else best_np.get()
+        matrix = self.build(best_np)[0]
         return matrix, check_orthogonality(matrix), time.perf_counter() - started

@@ -68,10 +68,10 @@ def test_random_turyn_sequences_fail_the_sequence_condition() -> None:
 
 def test_solver_builder_agrees_with_the_reference_construction() -> None:
     strategy = TurynGreedySearch(n=8, sieve=False)
-    sequences = strategy._seed(np.random.default_rng(3))
+    sequences = strategy.seed(np.random.default_rng(3))
     compact = tuple(sequences[row, :length].tolist()
                     for row, length in enumerate(strategy.LENGTHS))
-    solver_matrix, solver_metrics = strategy._build(sequences)
+    solver_matrix, solver_metrics = strategy.build(sequences)
     reference_matrix = build_turyn_reference(compact)
     assert np.array_equal(solver_matrix, np.asarray(reference_matrix, dtype=np.int8))
     if solver_metrics["energy"] == 0:

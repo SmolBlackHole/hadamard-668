@@ -1,19 +1,17 @@
 """Hadamard search entry point."""
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from strategies.registry import DEFAULT, GPU, parse as parse_strategy
 from output import save
-
-import argparse
-import datetime
-import time
-from concurrent.futures import ProcessPoolExecutor
+from strategies.registry import DEFAULT, GPU, parse as parse_strategy
 
 import numpy as np
+from concurrent.futures import ProcessPoolExecutor
+import time
+import datetime
+import argparse
 
 
 def select_best_run(

@@ -1,4 +1,4 @@
-"""Gemeinsamer Vertrag und sequentielle Pipeline fuer Suchstrategien."""
+"""Shared contract and pipeline for search strategies."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -6,7 +6,9 @@ from typing import NamedTuple
 
 import numpy as np
 
+from builders import build_turyn
 from gpu import check_orthogonality
+from sieve import seed_turyn_batch
 
 
 class Result(NamedTuple):
@@ -31,9 +33,46 @@ class SearchStrategy(ABC):
     def refine(self, matrix: np.ndarray, steps: int, seed: int) -> Result:
         raise NotImplementedError(f"{self.name} cannot refine")
 
-    def check(self, matrix: np.ndarray) -> dict[str, int]:
-        from gpu import check_orthogonality
-        return check_orthogonality(matrix)
+    def seed(self, rng: np.random.Generator) -> np.ndarray:
+        """Generate a starting candidate. Override for custom seeding."""
+        raise NotImplementedError(f"{self.name} has no seed method")
+
+    def build(self, sequences: np.ndarray) -> tuple[np.ndarray, dict[str, int]]:
+        """Build matrix from sequences and compute metrics."""
+        raise NotImplementedError(f"{self.name} has no build method")
+
+
+# ── Turyn shared base ─────────────────────────────────────────────────────────
+
+class TurynStrategy(SearchStrategy):
+    """Shared seed + build for all Turyn-type sequence solvers."""
+    WEIGHTS = np.array((1, 1, 2, 2), dtype=np.int64)
+    DEFAULT_N = 56
+
+    def __init__(self, *, n: int = DEFAULT_N, sieve: bool = True):
+        if n < 2:
+            raise ValueError("Turyn type requires n >= 2")
+        self.N = n
+        self.LENGTHS = np.array((n, n, n, n - 1), dtype=np.int64)
+        self.ORDER = 4 * (3 * n - 1)
+        self.sieve = sieve
+
+    @property
+    def construction(self) -> str:
+        return f"turyn_tt_{self.N}"
+
+    def seed(self, rng: np.random.Generator) -> np.ndarray:
+        if self.sieve:
+            return seed_turyn_batch(self.N, 1, rng)[0]
+        seq = np.zeros((4, self.N), dtype=np.int8)
+        for i, L in enumerate(self.LENGTHS):
+            seq[i, :L] = rng.choice((-1, 1), size=int(L))
+        return seq
+
+    def build(self, sequences: np.ndarray) -> tuple[np.ndarray, dict[str, int]]:
+        matrix = build_turyn(
+            *(sequences[i, :self.LENGTHS[i]] for i in range(4)))
+        return matrix, check_orthogonality(matrix)
 
 
 class Pipeline(SearchStrategy):

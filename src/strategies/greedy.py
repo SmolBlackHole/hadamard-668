@@ -6,18 +6,15 @@ import time
 import numpy as np
 from tqdm import tqdm
 
-from builders import build_turyn
 from correlations import (
     apply_nonperiodic_flip,
     nonperiodic_autocorrelation_state,
     nonperiodic_correlation_energy,
 )
-from gpu import check_orthogonality
-from sieve import seed_turyn_batch
-from .base import SearchStrategy
+from .base import TurynStrategy
 
 
-class TurynGreedySearch(SearchStrategy):
+class TurynGreedySearch(TurynStrategy):
     """Greedily minimize the weighted non-periodic Turyn energy.
 
     Zweck: Sucht TT(n)-Folgen der Längen ``(n,n,n,n-1)``.
@@ -27,43 +24,14 @@ class TurynGreedySearch(SearchStrategy):
     Grenzen: Lokale Minima werden ohne Temperatur oder Restart nicht verlassen.
     """
 
-    N = 56
-    WEIGHTS = np.array((1, 1, 2, 2), dtype=np.int64)
-
-    def __init__(self, *, n: int = N, sieve: bool = True) -> None:
-        if n < 2:
-            raise ValueError("Turyn type requires n >= 2")
-        self.N = n
-        self.LENGTHS = np.array((n, n, n, n - 1), dtype=np.int64)
-        self.ORDER = 4 * (3 * n - 1)
-        self.sieve = sieve
-
     @property
     def name(self) -> str:
         return "greedy"
 
-    @property
-    def construction(self) -> str:
-        return f"turyn_tt_{self.N}"
-
-    def _seed(self, rng: np.random.Generator) -> np.ndarray:
-        if self.sieve:
-            return seed_turyn_batch(self.N, 1, rng)[0]
-        sequences = np.zeros((4, self.N), dtype=np.int8)
-        for index, length in enumerate(self.LENGTHS):
-            sequences[index, :length] = rng.choice((-1, 1), size=length)
-        return sequences
-
-    def _build(self, sequences: np.ndarray) -> tuple[np.ndarray, dict[str, int]]:
-        lengths = self.LENGTHS
-        matrix = build_turyn(*(sequences[index, :lengths[index]]
-                               for index in range(4)))
-        return matrix, check_orthogonality(matrix)
-
     def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
-        sequences = self._seed(rng)
+        sequences = self.seed(rng)
         correlations = nonperiodic_autocorrelation_state(
             sequences, lengths=self.LENGTHS, weights=self.WEIGHTS)
         energy = best_energy = nonperiodic_correlation_energy(correlations)
@@ -91,7 +59,7 @@ class TurynGreedySearch(SearchStrategy):
                 if step % 50 == 0:
                     bar.set_postfix(e=energy, best=best_energy, acc=accepted)
                 bar.update(1)
-        matrix, metrics = self._build(best_sequences)
+        matrix, metrics = self.build(best_sequences)
         elapsed = time.perf_counter() - started
         print(f"  seed={seed} best_energy={best_energy} found@step={best_at} "
               f"accepted={accepted} {elapsed:.1f}s")

@@ -24,7 +24,7 @@ def test_pocs_gradient_matches_finite_differences_and_directional_derivative(n: 
     rng = np.random.default_rng(n)
     values = rng.normal(size=(4, n))
     values[3, -1] = 0.0
-    gradient = strategy._gradient(values)
+    gradient = strategy.gradient(values)
     finite_difference = np.zeros_like(values)
     epsilon = 1e-6
     for row, length in enumerate(strategy.LENGTHS):
@@ -56,11 +56,11 @@ def test_pocs_gradient_ranks_exact_single_flip_deltas() -> None:
     hits = 0
     for seed in range(12):
         strategy = SFDS(n=8, sieve=False, candidates=4)
-        sequences = strategy._seed(np.random.default_rng(seed))
+        sequences = strategy.seed(np.random.default_rng(seed))
         state = nonperiodic_autocorrelation_state(
             sequences, lengths=strategy.LENGTHS, weights=strategy.WEIGHTS)
         energy = nonperiodic_correlation_energy(state)
-        gradient = strategy._gradient(sequences)
+        gradient = strategy.gradient(sequences)
         proxies, deltas = [], []
         for row, length in enumerate(strategy.LENGTHS):
             for column in range(int(length)):

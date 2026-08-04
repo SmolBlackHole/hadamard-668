@@ -1,7 +1,7 @@
 """Strategy lookup — map CLI name to SearchStrategy for a given order."""
 from __future__ import annotations
 
-from .base import Pipeline, SearchStrategy
+from .base import Pipeline, SearchStrategy, TurynStrategy
 from .greedy import TurynGreedySearch
 from .spectral_descent import TurynSpectralDescentSearch
 from .pocs import PocsSearch
@@ -14,7 +14,6 @@ _CLASSES: dict[str, type[SearchStrategy]] = {
     "repair": RepairSearch,
 }
 
-_TURYN_N = frozenset({"greedy", "spectral_descent"})
 GPU = frozenset({"pocs", "spectral_descent"})
 DEFAULT = "spectral_descent"
 
@@ -28,7 +27,9 @@ def _turyn_n(order: int) -> int:
 
 def build(name: str, order: int) -> SearchStrategy:
     cls = _CLASSES[name]
-    return cls(n=_turyn_n(order)) if name in _TURYN_N else cls(order=order)
+    if issubclass(cls, TurynStrategy):
+        return cls(n=_turyn_n(order))
+    return cls(order=order)
 
 
 def parse(spec: str, order: int) -> SearchStrategy:
@@ -40,3 +41,4 @@ def parse(spec: str, order: int) -> SearchStrategy:
         n, st = part.rsplit(":", 1)
         stages.append((build(n, order), int(st)))
     return Pipeline(stages)
+
