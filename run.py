@@ -83,7 +83,12 @@ def main() -> None:
         parser.error(str(e))
 
     if workers == 1:
-        results = [_execute_run(args.strategy, args.steps, s, args.order, args.time) for s in seeds]
+        results = []
+        for s in seeds:
+            try:
+                results.append(_execute_run(args.strategy, args.steps, s, args.order, args.time))
+            except Exception as exc:
+                print(f"  run seed={s} FAILED: {exc}")
     else:
         with ProcessPoolExecutor(max_workers=workers) as e:
             results = list(
@@ -99,7 +104,7 @@ def main() -> None:
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     for r in results:
-        out = Path(args.runs_dir) / f"{strategy.name}_{r.seed}_{timestamp}"
+        out = Path(args.runs_dir) / f"{strategy.name.replace('->', '_')}_{r.seed}_{timestamp}"
         save(
             r.matrix,
             {

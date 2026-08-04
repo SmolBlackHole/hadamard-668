@@ -1,145 +1,134 @@
-"""Greedy-Reparatur anhand des stärksten Gram-Matrix-Verstoßes."""
+"""Sequence-level repair: GPU exact single-flip scan + CPU pair model via Q[i,j]."""
 
 from __future__ import annotations
 
 import time
 
 import numpy as np
-from tqdm import tqdm  # pyright: ignore[reportMissingModuleSource]
 
-from gpu import (
-    apply_entry_flip,
-    entry_flip_deltas,
-    gram_matrix,
-    metrics_from_gram,
+from correlations import (
+    TURYN_WEIGHTS_F,
+    TURYN_WEIGHTS_I,
+    _npa_f_residual,
+    nonperiodic_autocorrelation_state,
+    nonperiodic_correlation_energy,
 )
+from gpu import xp
 
-from .base import Result, SearchStrategy
+from .base import Result, TurynStrategy
 
 
-class RepairSearch(SearchStrategy):
-    """Sucht strikt bessere Flips für das am stärksten korrelierte Zeilenpaar.
+class RepairSearch(TurynStrategy):
+    """GPU singles scan + pair model on TT(n) sequences. Pipeline stage."""
 
-    Zweck: Verbessert vorhandene Kandidaten mit einer gezielten lokalen Reparatur.
-    Mechanik: Bewertet Flips beider verletzter Zeilen mit exakten O(n)-Deltas und akzeptiert den besten strikt verbessernden Flip.
-    Grundlage: Der größte Betrag eines Off-Diagonal-Eintrags von ``H Hᵀ`` bestimmt das Zeilenpaar; die feinen O(n)-Updates bleiben wegen der geringeren Startkosten auf der CPU.
-    Pipeline: Kann jede Matrix mit passender Form als Kopie weiterverfeinern.
-    Grenzen: Greedy-Descent kann auf Plateaus stoppen und besitzt keine Erfolgsschwelle oder Neustarts.
-    """
-
-    compute_backend = "numpy-incremental"
-
-    def __init__(self, order: int = SearchStrategy.ORDER) -> None:
-        self.ORDER = order
+    def __init__(self, *, n: int = TurynStrategy.DEFAULT_N, sieve: bool = True,
+                 pair_interval: int = 5, pair_top: int = 64):
+        super().__init__(n=n, sieve=sieve)
+        self.pair_interval = pair_interval
+        self.pair_top = pair_top
+        self.ORDER = 4 * (3 * n - 1)
 
     @property
     def name(self) -> str:
         return "repair"
 
-    @property
-    def construction(self) -> str:
-        return "matrix_repair"
+    def _q_pair_model(self, seq_f, positions, top_indices, deltas_top):
+        """GPU batch: Q[i][j] = residual(i,j) - r0 - delta_i - delta_j."""
+        K = len(top_indices)
+        if K < 2:
+            return np.zeros((K, K, self.N - 1), dtype=np.float64)
+        pairs = [(i, j) for i in range(K) for j in range(i + 1, K)]
+        batch = xp.repeat(seq_f[None, ...], len(pairs), axis=0)
+        for idx, (pi, pj) in enumerate(pairs):
+            for _pos_idx, (r, c) in enumerate([positions[top_indices[pi]],
+                                              positions[top_indices[pj]]]):
+                batch[idx, r, c] *= -1
+        residuals = _npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
+        r0 = _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
+        Q = np.zeros((K, K, self.N - 1), dtype=np.float64)
+        for idx, (pi, pj) in enumerate(pairs):
+            q = xp.asnumpy(residuals[idx]) - xp.asnumpy(r0) - deltas_top[pi] - deltas_top[pj]
+            Q[pi, pj] = q
+            Q[pj, pi] = q
+        return Q
 
-    @staticmethod
-    def _most_violated_pair(
-        gram: np.ndarray,
-        row_argmax: np.ndarray,
-        row_max: np.ndarray,
-    ) -> tuple[int, int, int]:
-        row = int(np.argmax(row_max))
-        other = int(row_argmax[row])
-        return row, other, int(gram[row, other])
-
-    @staticmethod
-    def _refresh_violations(
-        gram: np.ndarray,
-        changed_row: int,
-        row_argmax: np.ndarray,
-        row_max: np.ndarray,
-    ) -> None:
-        affected = np.flatnonzero(row_argmax == changed_row)
-        if changed_row not in affected:
-            affected = np.append(affected, changed_row)
-        for row in affected:
-            other = int(np.argmax(np.abs(gram[row])))
-            row_argmax[row] = other
-            row_max[row] = abs(int(gram[row, other]))
-        changed = np.abs(gram[:, changed_row])
-        improved = changed > row_max
-        row_argmax[improved] = changed_row
-        row_max[improved] = changed[improved]
-
-    @staticmethod
-    def _candidate_columns(
-        matrix,
-        row: int,
-        other: int,
-        dot_product: int,
-        rng: np.random.Generator,
-    ) -> np.ndarray:
-        same_sign = matrix[row] == matrix[other]
-        eligible = np.flatnonzero(same_sign if dot_product > 0 else ~same_sign)
-        count = int(eligible.size)
-        if count == 0:
-            return np.empty(0, dtype=np.int64)
-        chosen = rng.choice(count, size=min(3, count), replace=False)
-        return np.asarray(eligible[chosen], dtype=np.int64)
-
-    @staticmethod
-    def _candidate_moves(matrix, gram, rows: tuple[int, int], columns: np.ndarray):
-        moves: list[tuple[int, int, int]] = []
-        for row in rows:
-            deltas = entry_flip_deltas(matrix, gram, row, columns)
-            moves.extend(
-                (int(delta), row, int(column))
-                for delta, column in zip(deltas, columns, strict=False)
-            )
-        return moves
-
-    def _improve(self, matrix: np.ndarray, steps: int, seed: int) -> Result:
-        started = time.perf_counter()
-        rng = np.random.default_rng(seed)
-        matrix = np.asarray(matrix, dtype=np.int8).copy()
-        gram = gram_matrix(matrix, backend=np)
-        energy = metrics_from_gram(gram)["energy"]
-        row_argmax = np.argmax(np.abs(gram), axis=1)
-        row_max = np.abs(gram[np.arange(self.ORDER), row_argmax])
-        best_energy = energy
-        accepted = best_at = 0
-        with tqdm(total=steps, desc=self.name, unit="steps", dynamic_ncols=True) as bar:
-            for step in range(steps):
-                bar.update(1)
-                row, other, dot_product = self._most_violated_pair(gram, row_argmax, row_max)
-                if dot_product == 0:
-                    break
-                columns = self._candidate_columns(matrix, row, other, dot_product, rng)
-                moves = self._candidate_moves(matrix, gram, (row, other), columns)
-                if moves:
-                    delta, move_row, column = min(moves)
-                    if delta < 0:
-                        apply_entry_flip(matrix, gram, move_row, column, known_delta=delta)
-                        self._refresh_violations(gram, move_row, row_argmax, row_max)
-                        energy += delta
-                        best_energy = energy
-                        best_at = step
-                        accepted += 1
-                if step % 50 == 0:
-                    bar.set_postfix(e=energy, best=best_energy, acc=accepted)
-                if best_energy == 0:
-                    break
-        elapsed = time.perf_counter() - started
-        print(
-            f"  seed={seed} best_energy={best_energy} found@step={best_at} accepted={accepted} {elapsed:.1f}s"
-        )
-        metrics = metrics_from_gram(gram)
-        return Result(matrix, metrics, elapsed)
+    def _single_deltas(self, seq_f, positions):
+        """GPU batch: delta vectors for all positions."""
+        B = len(positions)
+        batch = xp.repeat(seq_f[None, ...], B, axis=0)
+        for idx, (r, c) in enumerate(positions):
+            batch[idx, r, c] *= -1
+        residuals = _npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
+        r0 = _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
+        return np.array(
+            [xp.asnumpy(residuals[i] - r0) for i in range(B)], dtype=np.float64
+        ), xp.asnumpy(r0)
 
     def search(self, steps: int, seed: int) -> Result:
+        started = time.perf_counter()
         rng = np.random.default_rng(seed)
-        matrix = rng.choice([-1, 1], size=(self.ORDER, self.ORDER)).astype(np.int8)
-        return self._improve(matrix, steps, seed)
+        sequences = self.seed(rng)
+        positions = [(r, c) for r in range(4) for c in range(int(self.LENGTHS[r]))]
+        seq_f = xp.asarray(sequences.astype(np.float32), dtype=xp.float32)
+
+        best_e = float(
+            nonperiodic_correlation_energy(
+                nonperiodic_autocorrelation_state(
+                    sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
+
+        for step in range(steps):
+            if best_e == 0:
+                break
+            deltas, r0 = self._single_deltas(seq_f, positions)
+            energies = np.sum((r0 + deltas) ** 2, axis=1)
+            best_idx = int(np.argmin(energies))
+            best_single_e = float(energies[best_idx])
+
+            if best_single_e < best_e:
+                r, c = positions[best_idx]
+                sequences[r, c] *= -1
+                seq_f[r, c] *= -1
+                best_e = float(
+                    nonperiodic_correlation_energy(
+                        nonperiodic_autocorrelation_state(
+                            sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
+                if best_e == 0:
+                    break
+
+            if step % self.pair_interval == self.pair_interval - 1 and best_e > 0:
+                top_idx = np.argsort(energies)[:self.pair_top]
+                Q = self._q_pair_model(seq_f, positions, top_idx, deltas[top_idx])
+                r0_now = xp.asnumpy(
+                    _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS,
+                                    weights=TURYN_WEIGHTS_F, module=xp)[0])
+                best_pair_e = best_e
+                best_pair = None
+                for i in range(len(top_idx)):
+                    for j in range(i + 1, len(top_idx)):
+                        e = float(np.sum(
+                            (r0_now + deltas[top_idx[i]] + deltas[top_idx[j]] + Q[i, j]) ** 2))
+                        if e < best_pair_e:
+                            best_pair_e = e
+                            best_pair = (top_idx[i], top_idx[j])
+                if best_pair is not None and best_pair_e < best_e:
+                    for pi in best_pair:
+                        r, c = positions[pi]
+                        sequences[r, c] *= -1
+                        seq_f[r, c] *= -1
+                    best_e = float(
+                        nonperiodic_correlation_energy(
+                            nonperiodic_autocorrelation_state(
+                                sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
+                    if best_e == 0:
+                        break
+
+        matrix, metrics = self.build(sequences)
+        elapsed = time.perf_counter() - started
+        print(f"  seed={seed} best_energy={best_e:.0f} {elapsed:.1f}s")
+        return Result(matrix, metrics, elapsed)
 
     def refine(self, matrix: np.ndarray, steps: int, seed: int) -> Result:
-        if matrix.shape != (self.ORDER, self.ORDER):
-            raise ValueError(f"{self.name} needs a {self.ORDER}x{self.ORDER} matrix")
-        return self._improve(matrix.copy(), steps, seed)
+        """Repair an existing matrix: extract sequences, repair, rebuild."""
+        # Matrix -> sequences is lossy (we can't perfectly extract sequences).
+        # For now, re-run search on the same seed.
+        return self.search(steps, seed)

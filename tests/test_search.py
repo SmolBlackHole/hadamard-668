@@ -94,7 +94,7 @@ def test_turyn_search_uses_the_expected_order() -> None:
 def test_real_pipeline_runs_all_stages() -> None:
     stages = [
         (TurynGreedySearch(n=8), 0),
-        (RepairSearch(order=92), 0),
+        (RepairSearch(n=8), 0),
     ]
     _, metrics, _ = Pipeline(stages).search(steps=0, seed=0)
     assert metrics["energy"] >= 0

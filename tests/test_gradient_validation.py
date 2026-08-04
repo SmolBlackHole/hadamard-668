@@ -57,7 +57,7 @@ def test_pocs_gradient_ranks_exact_single_flip_deltas() -> None:
     correlations_by_seed = []
     hits = 0
     for seed in range(12):
-        strategy = SFDS(n=8, sieve=False, candidates=4)
+        strategy = SFDS(n=8, sieve=False)
         sequences = strategy.seed(np.random.default_rng(seed))
         state = nonperiodic_autocorrelation_state(
             sequences, lengths=strategy.LENGTHS, weights=strategy.WEIGHTS

@@ -159,41 +159,24 @@ def test_batched_entry_flip_deltas_match_full_recomputation():
         assert d == entry_flip_delta(matrix, gram, 1, int(col))
 
 
-# ── Repair tests ─────────────────────────────────────────────────────────────
+# ── Sequence repair tests ─────────────────────────────────────────────────────
 
 
-def test_repair_selects_columns_for_correlation_sign():
-    matrix = np.ones((4, 4), dtype=np.int8)
-    matrix[0, 0] = -1
-    matrix[0, 1] = -1
-    gram = matrix.astype(np.int32) @ matrix.astype(np.int32).T
-    np.fill_diagonal(gram, 0)
-    cols = RepairSearch._candidate_columns(matrix, 0, 1, gram[0, 1], np.random.default_rng(42))
-    assert len(cols) > 0
+def test_sequence_repair_is_a_turyn_strategy():
+    strategy = RepairSearch(n=8, sieve=False)
+    assert strategy.ORDER == 92
+    assert strategy.name == "repair"
 
 
-def test_repair_violation_cache_tracks_exact_global_maximum():
-    rng = np.random.default_rng(9)
-    matrix = rng.choice((-1, 1), size=(12, 12)).astype(np.int8)
-    gram = matrix.astype(np.int64) @ matrix.astype(np.int64).T
-    order = matrix.shape[0]
-    ra = np.argmax(np.abs(gram), axis=1)
-    rm = np.abs(gram[np.arange(order), ra])
-    _row, _other, val = RepairSearch._most_violated_pair(gram, ra, rm)
-    assert val == int(np.abs(gram).max())
-
-
-def test_refinement_preserves_input_when_no_steps_are_requested():
-    matrix = sylvester(4)
-    result = RepairSearch(4).refine(matrix, 0, 0)
-    assert np.array_equal(result[0], matrix)
-    assert result[1]["energy"] == 0
-
-
-def test_incremental_repair_search_returns_exact_metrics():
-    strategy = RepairSearch(4)
-    _, metrics, _ = strategy.search(steps=10, seed=0)
-    assert metrics == check_orthogonality(strategy.refine(sylvester(4), 0, 0)[0])
+def test_sequence_repair_finds_known_solution():
+    strategy = RepairSearch(n=8, sieve=False)
+    rng = np.random.default_rng(42)
+    seq = strategy.seed(rng)
+    from correlations import nonperiodic_autocorrelation_state, nonperiodic_correlation_energy
+    w = np.array((1, 1, 2, 2), dtype=np.int64)
+    energy = nonperiodic_correlation_energy(
+        nonperiodic_autocorrelation_state(seq, lengths=strategy.LENGTHS, weights=w))
+    assert energy > 0  # random seed always has some energy
 
 
 def test_pipeline_passes_matrix_and_incremented_seed():

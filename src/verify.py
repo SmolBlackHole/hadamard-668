@@ -29,17 +29,16 @@ def independent_audit(rows: list[list[int]]) -> None:
         if sum(v * v for v in rows[i]) != order:
             raise InvalidMatrix(f"row {i + 1} has incorrect squared length")
         for j in range(i):
-            dot = sum(a * b for a, b in zip(rows[i], rows[j], strict=False))
+            dot = sum(a * b for a, b in zip(rows[i][:], rows[j][:]))
             if dot != 0:
                 raise InvalidMatrix(
                     f"independent audit failed for rows {j + 1} and {i + 1}: dot product is {dot}"
                 )
 
 
-def verify_goethals_seidel_sequences(
-    sequences: Sequence[Sequence[int]],
-) -> None:
-    values = tuple(_sign_sequence(s, n) for n, s in zip("ABCD", sequences, strict=False))
+def verify_goethals_seidel_sequences(sequences: Sequence[Sequence[int]]) -> None:
+    """Check the periodic autocorrelation condition with direct Python loops."""
+    values = tuple(_sign_sequence(s, n) for n, s in zip("ABCD", sequences))
     if len(values) != 4 or len({len(s) for s in values}) != 1:
         raise InvalidMatrix("G-S requires four equally long sign sequences")
     size = len(values[0])
@@ -49,10 +48,9 @@ def verify_goethals_seidel_sequences(
             raise InvalidMatrix(f"G-S autocorrelation at shift {shift} is {corr}")
 
 
-def verify_turyn_sequences(
-    sequences: Sequence[Sequence[int]],
-) -> None:
-    values = tuple(_sign_sequence(s, n) for n, s in zip("XYZW", sequences, strict=False))
+def verify_turyn_sequences(sequences: Sequence[Sequence[int]]) -> None:
+    """Check the weighted non-periodic TT(n) condition with direct loops."""
+    values = tuple(_sign_sequence(s, n) for n, s in zip("XYZW", sequences))
     if len(values) != 4:
         raise InvalidMatrix("Turyn type requires four sign sequences")
     size = len(values[0])
@@ -61,13 +59,13 @@ def verify_turyn_sequences(
     for shift in range(1, size):
         corr = sum(
             w * sum(s[i] * s[i + shift] for i in range(len(s) - shift))
-            for s, w in zip(values, (1, 1, 2, 2), strict=False)
+            for s, w in zip(values, (1, 1, 2, 2))
         )
         if corr:
             raise InvalidMatrix(f"Turyn autocorrelation at shift {shift} is {corr}")
 
 
-# ── Reference builders ────────────────────────────────────────────────────────
+# ── Reference builders (pure Python — independent of builders.py) ──────────────
 
 
 def _circulant(values: list[int]) -> list[list[int]]:
@@ -76,7 +74,7 @@ def _circulant(values: list[int]) -> list[list[int]]:
 
 
 def _transpose(m: list[list[int]]) -> list[list[int]]:
-    return [list(col) for col in zip(*m, strict=False)]
+    return [list(col) for col in zip(*m)]
 
 
 def _reverse_columns(m: list[list[int]]) -> list[list[int]]:
@@ -86,7 +84,7 @@ def _reverse_columns(m: list[list[int]]) -> list[list[int]]:
 def _turyn_sign_sequences(
     sequences: Sequence[Sequence[int]],
 ) -> tuple[list[int], list[int], list[int], list[int]]:
-    values = tuple(_sign_sequence(s, n) for n, s in zip("XYZW", sequences, strict=False))
+    values = tuple(_sign_sequence(s, n) for n, s in zip("XYZW", sequences))
     if len(values) != 4:
         raise InvalidMatrix("Turyn type requires four sign sequences")
     x, y, z, w = values
@@ -95,24 +93,23 @@ def _turyn_sign_sequences(
         raise InvalidMatrix("Turyn sequences must have lengths (n, n, n, n-1)")
     a, b, c, d = z + w, z + [-v for v in w], x, y
     short, long = len(c), len(a)
-    t1 = [(lx + rx) // 2 for lx, rx in zip(a, b, strict=False)] + [0] * short
-    t2 = [(lx - rx) // 2 for lx, rx in zip(a, b, strict=False)] + [0] * short
-    t3 = [0] * long + [(lx + rx) // 2 for lx, rx in zip(c, d, strict=False)]
-    t4 = [0] * long + [(lx - rx) // 2 for lx, rx in zip(c, d, strict=False)]
+    t1 = [(lx + rx) // 2 for lx, rx in zip(a, b)] + [0] * short
+    t2 = [(lx - rx) // 2 for lx, rx in zip(a, b)] + [0] * short
+    t3 = [0] * long + [(lx + rx) // 2 for lx, rx in zip(c, d)]
+    t4 = [0] * long + [(lx - rx) // 2 for lx, rx in zip(c, d)]
     if any(sum(abs(s[i]) for s in (t1, t2, t3, t4)) != 1 for i in range(len(t1))):
         raise InvalidMatrix("Turyn conversion did not produce disjoint T-sequences")
     return (
-        [a + b + c + d for a, b, c, d in zip(t1, t2, t3, t4, strict=False)],
-        [-a + b + c - d for a, b, c, d in zip(t1, t2, t3, t4, strict=False)],
-        [-a - b + c + d for a, b, c, d in zip(t1, t2, t3, t4, strict=False)],
-        [-a + b - c + d for a, b, c, d in zip(t1, t2, t3, t4, strict=False)],
+        [a + b + c + d for a, b, c, d in zip(t1, t2, t3, t4)],
+        [-a + b + c - d for a, b, c, d in zip(t1, t2, t3, t4)],
+        [-a - b + c + d for a, b, c, d in zip(t1, t2, t3, t4)],
+        [-a + b - c + d for a, b, c, d in zip(t1, t2, t3, t4)],
     )
 
 
-def build_goethals_seidel_reference(
-    sequences: Sequence[Sequence[int]],
-) -> list[list[int]]:
-    values = tuple(_sign_sequence(s, n) for n, s in zip("ABCD", sequences, strict=False))
+def build_goethals_seidel_reference(sequences: Sequence[Sequence[int]]) -> list[list[int]]:
+    """Build a G-S array without using the solver's construction helpers."""
+    values = tuple(_sign_sequence(s, n) for n, s in zip("ABCD", sequences))
     if len(values) != 4 or len({len(s) for s in values}) != 1:
         raise InvalidMatrix("G-S requires four equally long sign sequences")
     a, b, c, d = (_circulant(s) for s in values)
@@ -121,21 +118,27 @@ def build_goethals_seidel_reference(
     blocks = ((a, br, cr, dr), (br, a, dtr, ctr), (cr, dtr, a, btr), (dr, ctr, btr, a))
     signs = ((1, 1, 1, 1), (-1, 1, -1, 1), (-1, 1, 1, -1), (-1, -1, 1, 1))
     return [
-        [sig * val for block, sig in zip(block_row, sign_row, strict=False) for val in block[row]]
-        for block_row, sign_row in zip(blocks, signs, strict=False)
+        [sig * val for block, sig in zip(block_row, sign_row) for val in block[row]]
+        for block_row, sign_row in zip(blocks, signs)
         for row in range(len(a))
     ]
 
 
-def build_turyn_reference(
-    sequences: Sequence[Sequence[int]],
-) -> list[list[int]]:
+def build_turyn_reference(sequences: Sequence[Sequence[int]]) -> list[list[int]]:
+    """Build the TT(n) -> T-sequence -> G-S candidate in plain Python."""
     return build_goethals_seidel_reference(_turyn_sign_sequences(sequences))
 
 
 def verify_turyn_candidate(sequences: Sequence[Sequence[int]]) -> list[list[int]]:
+    """Independently validate a Turyn candidate from sequences through H H^T.
+
+    Computes the Turyn sign-sequence conversion once and runs three
+    independent checks: Turyn NPAF condition, G-S PAF condition, and
+    the full-matrix row-pair dot-product audit.
+    """
     verify_turyn_sequences(sequences)
-    verify_goethals_seidel_sequences(_turyn_sign_sequences(sequences))
-    matrix = build_turyn_reference(sequences)
+    bases = _turyn_sign_sequences(sequences)
+    verify_goethals_seidel_sequences(bases)
+    matrix = build_goethals_seidel_reference(bases)
     independent_audit(matrix)
     return matrix

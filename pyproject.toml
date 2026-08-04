@@ -43,7 +43,7 @@ select = [
     "PERF",   # performance
     "RET",    # return checks
 ]
-ignore = ["E501", "E741", "C901", "PERF401"]
+ignore = ["E501", "E741", "C901", "PERF401", "B905"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["src"]

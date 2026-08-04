@@ -67,7 +67,6 @@ class SearchStrategy(ABC):
 class TurynStrategy(SearchStrategy):
     """Shared seed + build for all Turyn-type sequence solvers."""
 
-    WEIGHTS = np.array((1, 1, 2, 2), dtype=np.int64)
     DEFAULT_N = 56
 
     def __init__(self, *, n: int = DEFAULT_N, sieve: bool = True):
@@ -75,6 +74,7 @@ class TurynStrategy(SearchStrategy):
             raise ValueError("Turyn type requires n >= 2")
         self.N = n
         self.LENGTHS = np.array((n, n, n, n - 1), dtype=np.int64)
+        self.WEIGHTS = np.array((1, 1, 2, 2), dtype=np.int64)
         self.ORDER = 4 * (3 * n - 1)
         self.sieve = sieve
 
@@ -83,12 +83,18 @@ class TurynStrategy(SearchStrategy):
         return f"turyn_tt_{self.N}"
 
     def seed(self, rng: np.random.Generator) -> np.ndarray:
+        return self.seed_batch(1, rng)[0]
+
+    def seed_batch(self, size: int, rng: np.random.Generator, *, module=np) -> np.ndarray:
+        """Generate ``size`` starting sequences. Returns (size, 4, N)."""
         if self.sieve:
-            return seed_turyn_batch(self.N, 1, rng)[0]
-        seq = np.zeros((4, self.N), dtype=np.int8)
-        for i, L in enumerate(self.LENGTHS):
-            seq[i, :L] = rng.choice((-1, 1), size=int(L))
-        return seq
+            batch = seed_turyn_batch(self.N, size, rng, module=module)
+        else:
+            batch = np.zeros((size, 4, self.N), dtype=np.int8)
+            for i, L in enumerate(self.LENGTHS):
+                batch[:, i, : int(L)] = rng.choice((-1, 1), size=(size, int(L))).astype(np.int8)
+        batch[:, 3, -1] = 0
+        return batch
 
     def build(self, sequences: np.ndarray) -> tuple[np.ndarray, dict[str, int]]:
         matrix = build_turyn(*(sequences[i, : self.LENGTHS[i]] for i in range(4)))
@@ -128,18 +134,18 @@ class Pipeline(SearchStrategy):
         return self._stages[0][0].construction
 
     def search(self, steps: int, seed: int) -> Result:
-        matrix = np.empty((1, 1), dtype=np.int8)
-        metrics = {"energy": 2**63, "orthogonal_pairs": 0, "max_abs_correlation": 0}
-        elapsed = 0.0
-        for idx, (strategy, steps_s) in enumerate(self._stages):
-            matrix, metrics, step_elapsed = (
-                strategy.search(steps_s, seed + idx)
-                if idx == 0
-                else strategy.refine(matrix, steps_s, seed + idx)
-            )
-            elapsed += step_elapsed
-            if metrics["energy"] == 0:
-                metrics = check_orthogonality(matrix)
-                if metrics["energy"] == 0:
-                    break
-        return Result(matrix, metrics, elapsed)
+        s, steps_s = self._stages[0]
+        carry = s.search(steps_s, seed)
+        total_elapsed = carry.elapsed
+        if carry.metrics["energy"] == 0:
+            m = check_orthogonality(carry.matrix)
+            if m["energy"] == 0:
+                return Result(carry.matrix, m, total_elapsed)
+        for idx, (s, steps_s) in enumerate(self._stages[1:], start=1):
+            carry = s.refine(carry.matrix, steps_s, seed + idx)
+            total_elapsed += carry.elapsed
+            if carry.metrics["energy"] == 0:
+                m = check_orthogonality(carry.matrix)
+                if m["energy"] == 0:
+                    return Result(carry.matrix, m, total_elapsed)
+        return Result(carry.matrix, carry.metrics, total_elapsed)

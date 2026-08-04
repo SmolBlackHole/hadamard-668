@@ -7,23 +7,14 @@ import time
 import numpy as np
 
 from correlations import (
+    TURYN_WEIGHTS_F,
+    TURYN_WEIGHTS_I,
+    _npa_f_residual,
     apply_nonperiodic_flip,
     nonperiodic_autocorrelation_state,
     nonperiodic_correlation_energy,
 )
 from gpu import xp
-
-WEIGHTS_I = np.array((1, 1, 2, 2), dtype=np.int64)
-WEIGHTS_F = np.array((1, 1, 2, 2), dtype=np.float64)
-
-
-def _residual_gpu(seq_batch, lengths):
-    x_seq = xp.asarray(seq_batch, dtype=xp.float32)
-    n = int(lengths[0])
-    spectrum = xp.fft.fft(x_seq, n=2 * n - 1, axis=2)
-    corr = xp.fft.ifft(xp.abs(spectrum) ** 2, axis=2).real
-    w = xp.asarray(WEIGHTS_F, dtype=xp.float32)
-    return xp.sum(w[None, :, None] * corr, axis=1)[:, 1:n]
 
 
 class Repair:
@@ -40,7 +31,9 @@ class Repair:
     def _exact_energy(self):
         return float(
             nonperiodic_correlation_energy(
-                nonperiodic_autocorrelation_state(self.seq, lengths=self.lengths, weights=WEIGHTS_I)
+                nonperiodic_autocorrelation_state(
+                    self.seq, lengths=self.lengths, weights=TURYN_WEIGHTS_I
+                )
             )
         )
 
@@ -54,8 +47,10 @@ class Repair:
         batch = xp.repeat(self.seq_f[None, ...], B, axis=0)
         for i, (r, c) in enumerate(self.positions):
             batch[i, r, c] *= -1
-        residuals = _residual_gpu(batch, self.lengths)
-        r0 = _residual_gpu(self.seq_f[None, ...], self.lengths)[0]
+        residuals = _npa_f_residual(batch, lengths=self.lengths, weights=TURYN_WEIGHTS_F, module=xp)
+        r0 = _npa_f_residual(
+            self.seq_f[None, ...], lengths=self.lengths, weights=TURYN_WEIGHTS_F, module=xp
+        )[0]
         return np.array(
             [xp.asnumpy(residuals[i] - r0) for i in range(B)], dtype=np.float64
         ), xp.asnumpy(r0)
@@ -73,8 +68,10 @@ class Repair:
             r2, c2 = self.positions[top_indices[pj]]
             batch[idx, r1, c1] *= -1
             batch[idx, r2, c2] *= -1
-        residuals = _residual_gpu(batch, self.lengths)
-        r0 = _residual_gpu(self.seq_f[None, ...], self.lengths)[0]
+        residuals = _npa_f_residual(batch, lengths=self.lengths, weights=TURYN_WEIGHTS_F, module=xp)
+        r0 = _npa_f_residual(
+            self.seq_f[None, ...], lengths=self.lengths, weights=TURYN_WEIGHTS_F, module=xp
+        )[0]
         Q = np.zeros((K, K, self.n - 1), dtype=np.float64)
         for idx, (pi, pj) in enumerate(pairs):
             q = xp.asnumpy(residuals[idx]) - xp.asnumpy(r0) - deltas_top[pi] - deltas_top[pj]
@@ -110,7 +107,14 @@ class Repair:
                 top_idx = np.argsort(energies)[:pair_top]
                 Q = self._pair_interactions(top_idx, deltas[top_idx])
                 # Refresh residual for scoring
-                r0_now = xp.asnumpy(_residual_gpu(self.seq_f[None, ...], self.lengths)[0])
+                r0_now = xp.asnumpy(
+                    _npa_f_residual(
+                        self.seq_f[None, ...],
+                        lengths=self.lengths,
+                        weights=TURYN_WEIGHTS_F,
+                        module=xp,
+                    )[0]
+                )
                 best_pair_e = best_e
                 best_pair = None
                 for i in range(len(top_idx)):
@@ -172,7 +176,9 @@ if __name__ == "__main__":
                 # Greedy
                 g_seq = p.copy()
                 t0 = time.perf_counter()
-                corr = nonperiodic_autocorrelation_state(g_seq, lengths=lengths, weights=WEIGHTS_I)
+                corr = nonperiodic_autocorrelation_state(
+                    g_seq, lengths=lengths, weights=TURYN_WEIGHTS_I
+                )
                 best_e = nonperiodic_correlation_energy(corr)
                 imp = True
                 while imp and best_e > 0:
@@ -180,14 +186,24 @@ if __name__ == "__main__":
                     for row in range(4):
                         for col in range(int(lengths[row])):
                             ne = apply_nonperiodic_flip(
-                                g_seq, corr, row, col, lengths=lengths, weight=int(WEIGHTS_I[row])
+                                g_seq,
+                                corr,
+                                row,
+                                col,
+                                lengths=lengths,
+                                weight=int(TURYN_WEIGHTS_I[row]),
                             )
                             if ne < best_e:
                                 best_e = ne
                                 imp = True
                                 break
                             apply_nonperiodic_flip(
-                                g_seq, corr, row, col, lengths=lengths, weight=int(WEIGHTS_I[row])
+                                g_seq,
+                                corr,
+                                row,
+                                col,
+                                lengths=lengths,
+                                weight=int(TURYN_WEIGHTS_I[row]),
                             )
                         if imp:
                             break

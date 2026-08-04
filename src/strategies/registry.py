@@ -22,6 +22,7 @@ _TURYN_CLASSES: set[type[SearchStrategy]] = {
     TurynGreedySearch,
     TurynSpectralDescentSearch,
     PocsSearch,
+    RepairSearch,
 }
 
 

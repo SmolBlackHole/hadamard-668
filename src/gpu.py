@@ -53,11 +53,6 @@ def _scalar(value: Any) -> int:
     return int(value.item())
 
 
-def gram_backend() -> str:
-    """Describe the exact Gram-matrix computation selected for this process."""
-    return "numpy-float32-to-int32" if xp is np else "cupy-float32-to-int32"
-
-
 def gram_matrix(matrix: Any, *, backend=None):
     """Return a zero-diagonal Gram matrix on the active or requested backend."""
     module = xp if backend is None else backend
