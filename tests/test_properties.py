@@ -173,9 +173,11 @@ def test_sequence_repair_finds_known_solution():
     rng = np.random.default_rng(42)
     seq = strategy.seed(rng)
     from correlations import nonperiodic_autocorrelation_state, nonperiodic_correlation_energy
+
     w = np.array((1, 1, 2, 2), dtype=np.int64)
     energy = nonperiodic_correlation_energy(
-        nonperiodic_autocorrelation_state(seq, lengths=strategy.LENGTHS, weights=w))
+        nonperiodic_autocorrelation_state(seq, lengths=strategy.LENGTHS, weights=w)
+    )
     assert energy > 0  # random seed always has some energy
 
 

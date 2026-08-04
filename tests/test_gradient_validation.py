@@ -1,4 +1,4 @@
-"""Numerical validation of the continuous TT gradient used for POCS ranking."""
+"""Numerical validation of the continuous TT gradient used for L-BFGS repair."""
 
 from __future__ import annotations
 
@@ -6,11 +6,12 @@ import numpy as np
 import pytest
 
 from correlations import (
+    TURYN_WEIGHTS,
     apply_nonperiodic_flip,
     nonperiodic_autocorrelation_state,
     nonperiodic_correlation_energy,
+    npa_f_gradient,
 )
-from strategies.spectral_descent import TurynSpectralDescentSearch as SFDS
 
 
 def _continuous_energy(values: np.ndarray, lengths: np.ndarray, weights: np.ndarray) -> float:
@@ -22,20 +23,20 @@ def _continuous_energy(values: np.ndarray, lengths: np.ndarray, weights: np.ndar
 
 
 @pytest.mark.parametrize("n", (4, 6, 8))
-def test_pocs_gradient_matches_finite_differences_and_directional_derivative(n: int) -> None:
-    strategy = SFDS(n=n, sieve=False)
+def test_gradient_matches_finite_differences_and_directional_derivative(n: int) -> None:
+    lengths = np.array((n, n, n, n - 1), dtype=np.int64)
     rng = np.random.default_rng(n)
     values = rng.normal(size=(4, n))
     values[3, -1] = 0.0
-    gradient = strategy.gradient(values)
+    gradient = npa_f_gradient(values, lengths=lengths, weights=TURYN_WEIGHTS)
     finite_difference = np.zeros_like(values)
     epsilon = 1e-6
-    for row, length in enumerate(strategy.LENGTHS):
+    for row, length in enumerate(lengths):
         for column in range(int(length)):
             values[row, column] += epsilon
-            upper = _continuous_energy(values, strategy.LENGTHS, strategy.WEIGHTS)
+            upper = _continuous_energy(values, lengths, TURYN_WEIGHTS)
             values[row, column] -= 2 * epsilon
-            lower = _continuous_energy(values, strategy.LENGTHS, strategy.WEIGHTS)
+            lower = _continuous_energy(values, lengths, TURYN_WEIGHTS)
             values[row, column] += epsilon
             finite_difference[row, column] = (upper - lower) / (2 * epsilon)
     active = np.ones_like(values, dtype=bool)
@@ -46,26 +47,32 @@ def test_pocs_gradient_matches_finite_differences_and_directional_derivative(n: 
     direction = rng.normal(size=values.shape)
     direction[~active] = 0.0
     numerical_direction = (
-        _continuous_energy(values + epsilon * direction, strategy.LENGTHS, strategy.WEIGHTS)
-        - _continuous_energy(values - epsilon * direction, strategy.LENGTHS, strategy.WEIGHTS)
+        _continuous_energy(values + epsilon * direction, lengths, TURYN_WEIGHTS)
+        - _continuous_energy(values - epsilon * direction, lengths, TURYN_WEIGHTS)
     ) / (2 * epsilon)
     assert relative_error < 1e-6
     assert np.isclose(numerical_direction, np.sum(gradient * direction), rtol=1e-6)
 
 
-def test_pocs_gradient_ranks_exact_single_flip_deltas() -> None:
+def test_gradient_ranks_exact_single_flip_deltas() -> None:
     correlations_by_seed = []
     hits = 0
     for seed in range(12):
-        strategy = SFDS(n=8, sieve=False)
-        sequences = strategy.seed(np.random.default_rng(seed))
-        state = nonperiodic_autocorrelation_state(
-            sequences, lengths=strategy.LENGTHS, weights=strategy.WEIGHTS
-        )
+        n = 8
+        lengths = np.array((n, n, n, n - 1), dtype=np.int64)
+        rng = np.random.default_rng(seed)
+        sequences = np.zeros((4, n), dtype=np.int8)
+        for i, L in enumerate(lengths):
+            sequences[i, : int(L)] = rng.choice((-1, 1), size=int(L)).astype(np.int8)
+        sequences[3, -1] = 0
+
+        state = nonperiodic_autocorrelation_state(sequences, lengths=lengths, weights=TURYN_WEIGHTS)
         energy = nonperiodic_correlation_energy(state)
-        gradient = strategy.gradient(sequences)
+        gradient = npa_f_gradient(
+            sequences.astype(np.float64), lengths=lengths, weights=TURYN_WEIGHTS
+        )
         proxies, deltas = [], []
-        for row, length in enumerate(strategy.LENGTHS):
+        for row, length in enumerate(lengths):
             for column in range(int(length)):
                 candidate, candidate_state = sequences.copy(), state.copy()
                 updated = apply_nonperiodic_flip(
@@ -73,8 +80,8 @@ def test_pocs_gradient_ranks_exact_single_flip_deltas() -> None:
                     candidate_state,
                     row,
                     column,
-                    lengths=strategy.LENGTHS,
-                    weight=int(strategy.WEIGHTS[row]),
+                    lengths=lengths,
+                    weight=int(TURYN_WEIGHTS[row]),
                 )
                 proxies.append(-2.0 * sequences[row, column] * gradient[row, column])
                 deltas.append(updated - energy)

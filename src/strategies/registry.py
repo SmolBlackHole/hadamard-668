@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from .base import Pipeline, SearchStrategy
 from .greedy import TurynGreedySearch
+from .hierarchical import HierarchicalConstruction
+from .kflip import KFlipRepair
 from .pocs import PocsSearch
 from .repair import RepairSearch
 from .spectral_descent import TurynSpectralDescentSearch
@@ -13,12 +15,24 @@ try:
 except ImportError:
     RepairExperiment = None  # type: ignore[assignment]
 
+try:
+    from experiments.strategies import HybridRepair, PhaseRetrievalRepair, RelaxRepair
+except ImportError:
+    RelaxRepair = None  # type: ignore[assignment]
+    PhaseRetrievalRepair = None  # type: ignore[assignment]
+    HybridRepair = None  # type: ignore[assignment]
+
 _CLASSES: dict[str, type[SearchStrategy] | None] = {
+    "hierarchical": HierarchicalConstruction,
     "greedy": TurynGreedySearch,
     "spectral_descent": TurynSpectralDescentSearch,
     "pocs": PocsSearch,
     "repair": RepairSearch,
     "repair-exp": RepairExperiment,
+    "kflip": KFlipRepair,
+    "relax": RelaxRepair,
+    "phase-ret": PhaseRetrievalRepair,
+    "hybrid": HybridRepair,
 }
 
 GPU = frozenset({"pocs", "spectral_descent"})
@@ -26,13 +40,28 @@ DEFAULT = "spectral_descent"
 
 _TURYN_CLASSES: set[type[SearchStrategy] | None] = {
     TurynGreedySearch,
+    HierarchicalConstruction,
     TurynSpectralDescentSearch,
     PocsSearch,
     RepairSearch,
     RepairExperiment,
+    KFlipRepair,
+    RelaxRepair,
+    PhaseRetrievalRepair,
+    HybridRepair,
 }
 
-_KNOWN_N: set[str] = {"greedy", "spectral_descent", "pocs", "repair", "repair-exp"}
+_KNOWN_N: set[str] = {
+    "greedy",
+    "spectral_descent",
+    "pocs",
+    "repair",
+    "repair-exp",
+    "kflip",
+    "hybrid",
+    "relax",
+    "phase-ret",
+}
 
 
 def _turyn_n(order: int) -> int:

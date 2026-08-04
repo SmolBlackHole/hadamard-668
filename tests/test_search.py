@@ -131,7 +131,9 @@ def test_pipeline_short_circuits_only_after_exact_verification() -> None:
         def search(self, steps: int, seed: int):
             raise AssertionError("later stages use refine")
 
-        def refine(self, matrix: np.ndarray, steps: int, seed: int, sequences: np.ndarray | None = None):
+        def refine(
+            self, matrix: np.ndarray, steps: int, seed: int, sequences: np.ndarray | None = None
+        ):
             calls.append(seed)
             candidate = sylvester(4)
             return Result(candidate, check_orthogonality(candidate), 0.0)

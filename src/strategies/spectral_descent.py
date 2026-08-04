@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import time
 
-import numpy as np
-
 from correlations import TURYN_WEIGHTS, npa_f_residual
 from gpu import to_numpy, xp
 
@@ -46,19 +44,6 @@ class TurynSpectralDescentSearch(TurynStrategy):
     @property
     def name(self) -> str:
         return "spectral_descent"
-
-    def gradient(self, sequences: np.ndarray) -> np.ndarray:
-        """FFT gradient of the weighted NPAF energy. O(n log n)."""
-        fft_size = 2 * self.N - 1
-        spectrum = np.fft.fft(sequences, n=fft_size, axis=1)
-        autoco = np.fft.ifft(spectrum * spectrum.conj(), axis=1).real
-        w = self.WEIGHTS.astype(np.float64)
-        total = np.tensordot(w, autoco, axes=1)
-        coeffs = np.zeros(fft_size, dtype=np.float64)
-        coeffs[1 : self.N] = total[1 : self.N]
-        coeffs[-(self.N - 1) :] = total[1 : self.N][::-1]
-        grad = 2.0 * w[:, None] * np.fft.ifft(np.fft.fft(coeffs)[None, :] * spectrum, axis=1).real
-        return grad[:, : self.N]
 
     def search(self, steps: int, seed: int) -> Result:
         started = time.perf_counter()

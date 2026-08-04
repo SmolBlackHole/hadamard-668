@@ -71,6 +71,27 @@ def nonperiodic_correlation_energy(correlations: np.ndarray) -> int:
     return int(np.dot(values, values))
 
 
+def npa_f_gradient(
+    sequences: np.ndarray, *, lengths: np.ndarray, weights: np.ndarray
+) -> np.ndarray:
+    """FFT gradient of the weighted NPAF energy. O(n log n).
+
+    ``sequences``: (4, n) float64 array. Returns same shape.
+    """
+    n = int(lengths[0])
+    fft_size = 2 * n - 1
+    spectrum = np.fft.fft(sequences, n=fft_size, axis=1)
+    autoco = np.fft.ifft(spectrum * spectrum.conj(), axis=1).real
+    w = weights.astype(np.float64)
+    total = w[0] * autoco[0] + w[1] * autoco[1] + w[2] * autoco[2] + w[3] * autoco[3]
+    coeffs = np.zeros(fft_size, dtype=np.float64)
+    coeffs[1:n] = total[1:n]
+    coeffs[-(n - 1) :] = total[1:n][::-1]
+    return (
+        2.0 * w[:, None] * np.fft.ifft(np.fft.fft(coeffs)[None, :] * spectrum, axis=1).real[:, :n]
+    )
+
+
 def apply_nonperiodic_flip(
     sequences: np.ndarray,
     correlations: np.ndarray,

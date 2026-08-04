@@ -65,6 +65,8 @@ class RepairExperiment(TurynStrategy):
         plateau_threshold: int = 8,
         plateau_noise: int = 4,
         verbose: bool = True,
+        temperature: float = 0.0,
+        cooling: float = 1.0,
     ):
         super().__init__(n=n, sieve=sieve)
         self.pair_interval = pair_interval
@@ -75,6 +77,8 @@ class RepairExperiment(TurynStrategy):
         self.plateau_threshold = plateau_threshold
         self.plateau_noise = plateau_noise
         self.verbose = verbose
+        self.temperature = temperature
+        self.cooling = cooling
         self.ORDER = 4 * (3 * n - 1)
 
     @property
@@ -157,6 +161,14 @@ class RepairExperiment(TurynStrategy):
             )
         )
 
+    def _should_accept(self, cpu_e: float, current_e: float, metro_rng) -> bool:
+        """Accept if energy improves, or via Metropolis if temperature > 0."""
+        return cpu_e < current_e or (
+            self.temperature > 0
+            and cpu_e > current_e
+            and metro_rng.random() < np.exp(-(cpu_e - current_e) / self.temperature)
+        )
+
     # ── Search ──────────────────────────────────────────────────────────────
 
     def search(self, steps: int, seed: int, sequences: np.ndarray | None = None) -> Result:
@@ -182,7 +194,9 @@ class RepairExperiment(TurynStrategy):
         pairs_used = 0
         triples_used = 0
         kicks_used = 0
+        metro_used = 0
         plateau_strikes = 0
+        metro_rng = np.random.default_rng(seed + 2) if self.temperature > 0 else None
 
         for step in range(steps):
             if best_e == 0:
@@ -200,13 +214,15 @@ class RepairExperiment(TurynStrategy):
                 sequences[r, c] *= -1
                 seq_f[r, c] *= -1
                 cpu_e = self._exact_energy(sequences)
-                if cpu_e < best_e:
+                if self._should_accept(cpu_e, best_e, metro_rng):
                     key = self._state_key(sequences)
                     if key in tabu:
                         sequences[r, c] *= -1
                         seq_f[r, c] *= -1
                     else:
                         tabu.append(key)
+                        if cpu_e >= best_e:
+                            metro_used += 1
                         best_e = cpu_e
                         singles_used += 1
                         single_accepted = True
@@ -218,7 +234,6 @@ class RepairExperiment(TurynStrategy):
                         if best_e == 0:
                             break
                 else:
-                    # CPU check failed — tabu this direction to prevent re-proposal
                     key = self._state_key(sequences)
                     tabu.append(key)
                     sequences[r, c] *= -1
@@ -260,7 +275,7 @@ class RepairExperiment(TurynStrategy):
                         seq_f[r, c] *= -1
                     cpu_e = self._exact_energy(sequences)
                     key = self._state_key(sequences)
-                    if cpu_e < best_e:
+                    if self._should_accept(cpu_e, best_e, metro_rng):
                         if key in tabu:
                             for pi in best_pair:
                                 r, c = positions[pi]
@@ -268,6 +283,8 @@ class RepairExperiment(TurynStrategy):
                                 seq_f[r, c] *= -1
                         else:
                             tabu.append(key)
+                            if cpu_e >= best_e:
+                                metro_used += 1
                             best_e = cpu_e
                             pairs_used += 1
                             if best_e < best_e_ever:
@@ -278,7 +295,6 @@ class RepairExperiment(TurynStrategy):
                             if best_e == 0:
                                 break
                     else:
-                        # CPU check failed — tabu
                         tabu.append(key)
                         for pi in best_pair:
                             r, c = positions[pi]
@@ -300,7 +316,7 @@ class RepairExperiment(TurynStrategy):
                             seq_f[r, c] *= -1
                         cpu_e = self._exact_energy(sequences)
                         key = self._state_key(sequences)
-                        if cpu_e < best_e:
+                        if self._should_accept(cpu_e, best_e, metro_rng):
                             if key in tabu:
                                 for ti in triple_indices:
                                     r, c = positions[triple_candidates[ti]]
@@ -308,6 +324,8 @@ class RepairExperiment(TurynStrategy):
                                     seq_f[r, c] *= -1
                             else:
                                 tabu.append(key)
+                                if cpu_e >= best_e:
+                                    metro_used += 1
                                 best_e = cpu_e
                                 triples_used += 1
                                 if best_e < best_e_ever:
@@ -318,7 +336,6 @@ class RepairExperiment(TurynStrategy):
                                 if best_e == 0:
                                     break
                         else:
-                            # CPU check failed — tabu
                             tabu.append(key)
                             for ti in triple_indices:
                                 r, c = positions[triple_candidates[ti]]
@@ -338,6 +355,9 @@ class RepairExperiment(TurynStrategy):
                     best_seq = sequences.copy()
                     best_at = step
 
+            if self.cooling < 1.0:
+                self.temperature *= self.cooling
+
         matrix, metrics = self.build(best_seq)
         elapsed = time.perf_counter() - started
         stats_parts = [f"singles={singles_used}"]
@@ -347,6 +367,8 @@ class RepairExperiment(TurynStrategy):
             stats_parts.append(f"triples={triples_used}")
         if kicks_used:
             stats_parts.append(f"kicks={kicks_used}")
+        if metro_used:
+            stats_parts.append(f"metro={metro_used}")
         stats_parts.append(f"plateau_strikes={plateau_strikes}")
         if self.verbose:
             print(
