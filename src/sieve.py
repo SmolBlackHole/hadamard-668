@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
+from functools import cache
 
 import numpy as np
 
@@ -14,7 +14,7 @@ def turyn_lengths(n: int) -> np.ndarray:
     return np.array((n, n, n, n - 1), dtype=np.int64)
 
 
-@lru_cache(maxsize=None)
+@cache
 def turyn_sum_patterns(n: int) -> np.ndarray:
     """Return signed TT(n) row-sum patterns satisfying the DC power constraint."""
     lengths = turyn_lengths(n)

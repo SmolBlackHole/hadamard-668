@@ -15,7 +15,7 @@ from strategies.spectral_descent import TurynSpectralDescentSearch as SFDS
 
 def _continuous_energy(values: np.ndarray, lengths: np.ndarray, weights: np.ndarray) -> float:
     correlations = np.zeros(len(values[0]), dtype=np.float64)
-    for sequence, length, weight in zip(values, lengths, weights):
+    for sequence, length, weight in zip(values, lengths, weights, strict=False):
         for lag in range(1, int(length)):
             correlations[lag] += weight * np.dot(sequence[: length - lag], sequence[lag:length])
     return float(np.dot(correlations[1:], correlations[1:]))

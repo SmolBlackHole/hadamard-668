@@ -111,7 +111,7 @@ class Pipeline(SearchStrategy):
         if not stages:
             raise ValueError("a pipeline needs at least one stage")
         order = stages[0][0].ORDER
-        if any(s.ORDER != order for s, _ in stages):
+        if any(order != s.ORDER for s, _ in stages):
             raise ValueError("all pipeline stages must use the same order")
         for s, _ in stages[1:]:
             if type(s).refine is SearchStrategy.refine:

@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Sequence, cast
+from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 import pytest
 
 from constructions import sylvester
 from strategies.greedy import TurynGreedySearch
-from verifier.verify import (
+from verify import (
     InvalidMatrix,
     build_turyn_reference,
     independent_audit,

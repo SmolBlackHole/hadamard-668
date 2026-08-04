@@ -28,8 +28,22 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
-ignore = ["E501", "E741"]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "W",      # pycodestyle warnings
+    "I",      # isort
+    "C4",     # comprehensions
+    "C90",    # mccabe complexity
+    "SIM",    # simplify
+    "B",      # bugbear
+    "UP",     # pyupgrade
+    "RUF",    # ruff-specific
+    "PIE",    # pie (unnecessary pass, etc.)
+    "PERF",   # performance
+    "RET",    # return checks
+]
+ignore = ["E501", "E741", "C901", "PERF401"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["src"]
@@ -53,8 +67,8 @@ exclude = [
 typeCheckingMode = "strict"
 reportMissingModuleSource = false
 reportMissingTypeStubs = false
-reportPrivateUsage = false
-reportUnknownParameterType = false
-reportUnknownArgumentType = false
-reportUnknownVariableType = false
-reportUnknownMemberType = false
+reportPrivateUsage = "warning"
+reportUnknownParameterType = "warning"
+reportUnknownArgumentType = "warning"
+reportUnknownVariableType = "warning"
+reportUnknownMemberType = "warning"

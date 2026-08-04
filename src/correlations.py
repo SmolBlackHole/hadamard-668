@@ -31,7 +31,7 @@ def nonperiodic_autocorrelation_state(
         raise ValueError("weights must contain one value per sequence")
     n = int(actual_lengths.max())
     total = np.zeros(n, dtype=np.int64)
-    for seq, L, w in zip(matrix, actual_lengths, actual_weights):
+    for seq, L, w in zip(matrix, actual_lengths, actual_weights, strict=False):
         for s in range(1, int(L)):
             total[s] += int(w) * int(np.dot(seq[: L - s], seq[s:L]))
     return total

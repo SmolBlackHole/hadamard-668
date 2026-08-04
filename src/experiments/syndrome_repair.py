@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import sys
 import time
-from pathlib import Path
 
 import numpy as np
 
@@ -14,9 +12,6 @@ from correlations import (
     nonperiodic_correlation_energy,
 )
 from gpu import xp
-
-sys.path.insert(0, str(Path(__file__).parent))
-
 
 WEIGHTS_I = np.array((1, 1, 2, 2), dtype=np.int64)
 WEIGHTS_F = np.array((1, 1, 2, 2), dtype=np.float64)
@@ -167,7 +162,7 @@ if __name__ == "__main__":
             n_flips = max(1, int(total_bits * noise_pct / 100))
             g_rec, gp_rec = 0, 0
             g_t, gp_t = 0.0, 0.0
-            for trial in range(10):
+            for _trial in range(10):
                 p = sol.copy()
                 for _ in range(n_flips):
                     ri = int(rng.integers(0, 4))

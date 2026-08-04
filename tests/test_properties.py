@@ -155,7 +155,7 @@ def test_batched_entry_flip_deltas_match_full_recomputation():
     gram = gram_matrix(matrix, backend=np)
     columns = np.array([0, 3, 5], dtype=np.int64)
     deltas = entry_flip_deltas(matrix, gram, 1, columns)
-    for col, d in zip(columns, deltas):
+    for col, d in zip(columns, deltas, strict=False):
         assert d == entry_flip_delta(matrix, gram, 1, int(col))
 
 
@@ -179,7 +179,7 @@ def test_repair_violation_cache_tracks_exact_global_maximum():
     order = matrix.shape[0]
     ra = np.argmax(np.abs(gram), axis=1)
     rm = np.abs(gram[np.arange(order), ra])
-    row, other, val = RepairSearch._most_violated_pair(gram, ra, rm)
+    _row, _other, val = RepairSearch._most_violated_pair(gram, ra, rm)
     assert val == int(np.abs(gram).max())
 
 

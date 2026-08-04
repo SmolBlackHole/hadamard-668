@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from verifier.verify import independent_audit
+from verify import independent_audit
 
 
 def save(

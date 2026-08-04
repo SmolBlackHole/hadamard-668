@@ -90,7 +90,10 @@ class RepairSearch(SearchStrategy):
         moves: list[tuple[int, int, int]] = []
         for row in rows:
             deltas = entry_flip_deltas(matrix, gram, row, columns)
-            moves.extend((int(delta), row, int(column)) for delta, column in zip(deltas, columns))
+            moves.extend(
+                (int(delta), row, int(column))
+                for delta, column in zip(deltas, columns, strict=False)
+            )
         return moves
 
     def _improve(self, matrix: np.ndarray, steps: int, seed: int) -> Result:

@@ -37,7 +37,9 @@ def turyn_to_base(
     w: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Convert TT(n) sign sequences to base sequences of lengths 2n-1,2n-1,n,n."""
-    x, y, z, w = (_sign_sequence(values, name) for values, name in zip((x, y, z, w), "XYZW"))
+    x, y, z, w = (
+        _sign_sequence(values, name) for values, name in zip((x, y, z, w), "XYZW", strict=False)
+    )
     size = len(x)
     if len(y) != size or len(z) != size or len(w) != size - 1:
         raise ValueError("Turyn sequences must have lengths (n, n, n, n-1)")
@@ -56,7 +58,9 @@ def base_to_t_sequences(
     d: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Convert compatible base sequences to four disjoint T-sequences."""
-    a, b, c, d = (_sign_sequence(values, name) for values, name in zip((a, b, c, d), "ABCD"))
+    a, b, c, d = (
+        _sign_sequence(values, name) for values, name in zip((a, b, c, d), "ABCD", strict=False)
+    )
     if len(a) != len(b) or len(c) != len(d) or len(a) != 2 * len(c) - 1:
         raise ValueError("base sequences must have lengths (2n-1, 2n-1, n, n)")
     zero_short = np.zeros(len(c), dtype=np.int8)
