@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import numpy as np
+from numba import njit
 
-TURYN_WEIGHTS_I = np.array((1, 1, 2, 2), dtype=np.int64)
-TURYN_WEIGHTS_F = np.array((1.0, 1.0, 2.0, 2.0), dtype=np.float64)
+from gpu import xp
+
+TURYN_WEIGHTS = np.array((1.0, 1.0, 2.0, 2.0), dtype=np.float64)
 
 
-def _npa_f_residual(sequences, *, lengths, weights, module=np):
-    """Weighted NPAF residual via FFT. O(n log n).
+def npa_f_residual(sequences, *, lengths, weights):
+    """Weighted NPAF residual via FFT on the active GPU backend. O(n log n).
 
     Returns (batch, n-1) — correlations at shifts 1..n-1.
     """
-    seqs = module.asarray(sequences, dtype=module.float32)
+    seqs = xp.asarray(sequences, dtype=xp.float32)
     if seqs.ndim not in (2, 3):
         raise ValueError("sequences must be (4, n) or (batch, 4, n)")
     had_batch = seqs.ndim == 3
@@ -21,45 +23,46 @@ def _npa_f_residual(sequences, *, lengths, weights, module=np):
         seqs = seqs[None, ...]
     n = seqs.shape[2]
     fft_size = 2 * n - 1
-    spectrum = module.fft.fft(seqs, n=fft_size, axis=2)
+    spectrum = xp.fft.fft(seqs, n=fft_size, axis=2)
     power = spectrum.real**2 + spectrum.imag**2
-    w = module.asarray(weights, dtype=module.float32)
-    total = module.sum(w[None, :, None] * power, axis=1)
-    result = module.fft.ifft(total, axis=1).real[:, 1:n]
+    w = xp.asarray(weights, dtype=xp.float32)
+    total = xp.sum(w[None, :, None] * power, axis=1)
+    result = xp.fft.ifft(total, axis=1).real[:, 1:n]
     return result[0] if not had_batch else result
+
+
+@njit
+def _npa_f_core(sequences, lengths, weights):
+    """Weighted NPAF for ragged sequences. JIT-compiled O(n^2)."""
+    m = sequences.astype(np.int64)
+    n = int(lengths.max())
+    total = np.zeros(n, dtype=np.int64)
+    for si in range(len(sequences)):
+        L = int(lengths[si])
+        w = int(weights[si])
+        for shift in range(1, L):
+            acc = np.int64(0)
+            for k in range(L - shift):
+                acc += m[si, k] * m[si, k + shift]
+            total[shift] += w * acc
+    return total
 
 
 def nonperiodic_autocorrelation_state(
     sequences: np.ndarray,
     *,
-    lengths: np.ndarray | None = None,
-    weights: np.ndarray | None = None,
+    lengths: np.ndarray,
+    weights: np.ndarray,
 ) -> np.ndarray:
     """Weighted NPAF for ragged sequences. Exact integer arithmetic."""
     matrix = np.asarray(sequences, dtype=np.int8)
     if matrix.ndim != 2 or matrix.shape[0] == 0:
         raise ValueError("sequences must be a non-empty two-dimensional array")
-    actual_lengths = (
-        np.full(matrix.shape[0], matrix.shape[1], dtype=np.int64)
-        if lengths is None
-        else np.asarray(lengths, dtype=np.int64)
-    )
-    if actual_lengths.shape != (matrix.shape[0],) or np.any(actual_lengths < 1):
+    if lengths.shape != (matrix.shape[0],) or np.any(lengths < 1):
         raise ValueError("lengths must contain one positive value per sequence")
-    actual_weights = (
-        np.ones(matrix.shape[0], dtype=np.int64)
-        if weights is None
-        else np.asarray(weights, dtype=np.int64)
-    )
-    if actual_weights.shape != actual_lengths.shape:
+    if weights.shape != lengths.shape:
         raise ValueError("weights must contain one value per sequence")
-    n = int(actual_lengths.max())
-    total = np.zeros(n, dtype=np.int64)
-    for seq, L, w in zip(matrix, actual_lengths, actual_weights, strict=False):
-        s64 = seq.astype(np.int64)
-        for s in range(1, int(L)):
-            total[s] += int(w) * int(np.dot(s64[: L - s], s64[s:L]))
-    return total
+    return _npa_f_core(matrix, lengths, weights)
 
 
 def nonperiodic_correlation_energy(correlations: np.ndarray) -> int:

@@ -30,7 +30,7 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO / "src"))
 
 from correlations import (  # noqa: E402
-    TURYN_WEIGHTS_I,
+    TURYN_WEIGHTS,
     nonperiodic_autocorrelation_state,
     nonperiodic_correlation_energy,
 )
@@ -51,20 +51,24 @@ RESULTS_DIR = _REPO / "results"
 
 def _exact_residual(seq: np.ndarray, lengths: np.ndarray) -> np.ndarray:
     """Exact int64 NPAF residual at shifts 1..n-1."""
-    return nonperiodic_autocorrelation_state(seq, lengths=lengths, weights=TURYN_WEIGHTS_I)[1:]
+    return nonperiodic_autocorrelation_state(seq, lengths=lengths, weights=TURYN_WEIGHTS)[1:]
 
 
 def _exact_energy(seq: np.ndarray, lengths: np.ndarray) -> float:
-    return float(nonperiodic_correlation_energy(
-        nonperiodic_autocorrelation_state(seq, lengths=lengths, weights=TURYN_WEIGHTS_I)))
+    return float(
+        nonperiodic_correlation_energy(
+            nonperiodic_autocorrelation_state(seq, lengths=lengths, weights=TURYN_WEIGHTS)
+        )
+    )
 
 
 def _all_positions(lengths: np.ndarray) -> list[tuple[int, int]]:
     return [(r, c) for r in range(4) for c in range(int(lengths[r]))]
 
 
-def _damage_random(rng: np.random.Generator, sol: np.ndarray,
-                   positions: list[tuple[int, int]], d: int) -> np.ndarray:
+def _damage_random(
+    rng: np.random.Generator, sol: np.ndarray, positions: list[tuple[int, int]], d: int
+) -> np.ndarray:
     """Return ``sol`` with exactly ``d`` randomly chosen bits flipped."""
     damaged = sol.copy()
     chosen = rng.choice(len(positions), size=d, replace=False)
@@ -78,6 +82,13 @@ def _emit(path: Path, row: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
+
+
+def _result_sequences(result) -> np.ndarray:
+    """Type-safe accessor for result.sequences (always non-None in tests)."""
+    seq = result.sequences
+    assert seq is not None
+    return seq
 
 
 # ── Test 1: Model correctness ────────────────────────────────────────────────
@@ -115,7 +126,7 @@ def test1_correctness(n_values: list[int], out_dir: Path) -> None:
             err = float(np.max(np.abs(gpu_res - exact_res)))
             if err > max_err:
                 max_err = err
-            exact_energies[idx] = float(np.sum(exact_res ** 2))
+            exact_energies[idx] = float(np.sum(exact_res**2))
             if abs(gpu_energies[idx] - exact_energies[idx]) > max_energy_diff:
                 max_energy_diff = abs(gpu_energies[idx] - exact_energies[idx])
             gpu_rank = np.sum(gpu_energies <= gpu_energies[idx])
@@ -129,7 +140,8 @@ def test1_correctness(n_values: list[int], out_dir: Path) -> None:
 
         if n_rank_mismatch > 0:
             print(
-                f"    rank ties (float32 vs exact): {n_rank_mismatch}/{B} (expected at solution states)")
+                f"    rank ties (float32 vs exact): {n_rank_mismatch}/{B} (expected at solution states)"
+            )
 
         # 1b: Pairs — GPU Q model vs exact double-flip residual
         print(f"  TT({n}) — pairs")
@@ -164,18 +176,16 @@ def test1_correctness(n_values: list[int], out_dir: Path) -> None:
             rng = np.random.default_rng(1)
             for k_size in [25]:
                 sampled = rng.choice(B, size=k_size, replace=False).tolist()
-                Q = rp._q_pair_model(
-                    seq_f, positions, sampled, deltas[sampled])
+                Q = rp._q_pair_model(seq_f, positions, sampled, deltas[sampled])
                 max_q_err = 0.0
                 for idx_i, i in enumerate(sampled):
-                    for idx_j, j in enumerate(sampled[idx_i + 1:], start=idx_i + 1):
+                    for idx_j, j in enumerate(sampled[idx_i + 1 :], start=idx_i + 1):
                         dp = sol.copy()
                         ri, ci = positions[i]
                         rj, cj = positions[j]
                         dp[ri, ci] *= -1
                         dp[rj, cj] *= -1
-                        exact_res = _exact_residual(
-                            dp, lengths).astype(np.float64)
+                        exact_res = _exact_residual(dp, lengths).astype(np.float64)
                         gpu_res = r0 + deltas[i] + deltas[j] + Q[idx_i, idx_j]
                         err = float(np.max(np.abs(gpu_res - exact_res)))
                         if err > max_q_err:
@@ -212,26 +222,32 @@ def test2_sensitivity_singles(n_values: list[int], out_dir: Path) -> None:
             max_res = int(np.abs(corr).max())
 
             # Repair with singles-only (should always recover)
-            rp = RepairExperiment(n=n, sieve=False, pair_top=0, triple_top=0,
-                                  plateau_threshold=10 ** 9, verbose=False)
+            rp = RepairExperiment(
+                n=n, sieve=False, pair_top=0, triple_top=0, plateau_threshold=10**9, verbose=False
+            )
             t0 = time.perf_counter()
             result = rp.search(steps=60, seed=idx, sequences=damaged)
             wall = time.perf_counter() - t0
             success = result.metrics["energy"] == 0
             dist_to_edge = min(c, int(lengths[r]) - 1 - c)
-            weight = int(TURYN_WEIGHTS_I[r])
+            weight = int(TURYN_WEIGHTS[r])
 
             row = {
-                "test": 2, "n": n, "seq": SEQ_NAMES[r], "pos": int(c),
-                "dist_to_edge": dist_to_edge, "weight": weight,
-                "energy_after_flip": e0, "violated_lags": violated,
-                "max_residual": max_res, "repair_success": success,
+                "test": 2,
+                "n": n,
+                "seq": SEQ_NAMES[r],
+                "pos": int(c),
+                "dist_to_edge": dist_to_edge,
+                "weight": weight,
+                "energy_after_flip": e0,
+                "violated_lags": violated,
+                "max_residual": max_res,
+                "repair_success": success,
                 "repair_moves": 1 if success else 0,
                 "wall_s": wall,
             }
             # Determine exact recovery by direct hamming
-            row["hamming_to_original"] = hamming_distance(
-                result.sequences, sol, lengths)
+            row["hamming_to_original"] = hamming_distance(_result_sequences(result), sol, lengths)
             row["exact_recovery"] = row["hamming_to_original"] == 0
             _emit(out, row)
 
@@ -260,8 +276,7 @@ def test3_sensitivity_pairs(n_values: list[int], quick: bool, out_dir: Path) -> 
         else:
             # Sample for TT(36): 1200 random pairs
             rng = np.random.default_rng(3)
-            all_pairs = [tuple(sorted(rng.choice(B, size=2, replace=False)))
-                         for _ in range(1200)]
+            all_pairs = [tuple(sorted(rng.choice(B, size=2, replace=False))) for _ in range(1200)]
 
         print(f"  TT({n}) — {len(all_pairs)} pairs")
         if quick and n > 8:
@@ -281,31 +296,36 @@ def test3_sensitivity_pairs(n_values: list[int], quick: bool, out_dir: Path) -> 
             dist = abs(ci - cj) if same_seq else -1
 
             # Test: singles-only vs pairs-full vs pairs-top-64
-            row = {"test": 3, "n": n, "i": i, "j": j,
-                   "i_seq": SEQ_NAMES[ri], "i_pos": int(ci),
-                   "j_seq": SEQ_NAMES[rj], "j_pos": int(cj),
-                   "same_seq": same_seq, "distance": dist,
-                   "energy_after_flip": e0, "category": cat}
+            row = {
+                "test": 3,
+                "n": n,
+                "i": i,
+                "j": j,
+                "i_seq": SEQ_NAMES[ri],
+                "i_pos": int(ci),
+                "j_seq": SEQ_NAMES[rj],
+                "j_pos": int(cj),
+                "same_seq": same_seq,
+                "distance": dist,
+                "energy_after_flip": e0,
+                "category": cat,
+            }
 
             for cfg_name, cfg_kw in [
-                ("singles", {"pair_top": 0, "triple_top": 0,
-                 "plateau_threshold": 10 ** 9}),
-                ("pairs_full", {"pair_top": B, "triple_top": 0,
-                 "plateau_threshold": 10 ** 9}),
-                ("pairs_top64", {"pair_top": 64,
-                 "triple_top": 0, "plateau_threshold": 10 ** 9}),
+                ("singles", {"pair_top": 0, "triple_top": 0, "plateau_threshold": 10**9}),
+                ("pairs_full", {"pair_top": B, "triple_top": 0, "plateau_threshold": 10**9}),
+                ("pairs_top64", {"pair_top": 64, "triple_top": 0, "plateau_threshold": 10**9}),
             ]:
-                rp = RepairExperiment(
-                    n=n, sieve=False, verbose=False, **cfg_kw)
+                rp = RepairExperiment(n=n, sieve=False, verbose=False, **cfg_kw)
                 t0 = time.perf_counter()
-                result = rp.search(steps=min(200, 30 * B),
-                                   seed=pi, sequences=damaged)
+                result = rp.search(steps=min(200, 30 * B), seed=pi, sequences=damaged)
                 wall = time.perf_counter() - t0
                 row[f"{cfg_name}_success"] = result.metrics["energy"] == 0
                 row[f"{cfg_name}_energy"] = result.metrics["energy"]
                 row[f"{cfg_name}_wall"] = wall
                 row[f"{cfg_name}_hamming"] = hamming_distance(
-                    result.sequences, sol, lengths)
+                    _result_sequences(result), sol, lengths
+                )
 
             _emit(out, row)
             if (pi + 1) % 200 == 0:
@@ -333,8 +353,7 @@ def test4_repair_radius(n_values: list[int], quick: bool, seed: int, out_dir: Pa
         B = len(positions)
         out = out_dir / f"repair_test4_TT{n}.jsonl"
         rng = np.random.default_rng(seed)
-        print(
-            f"  TT({n}) — {B} bits, {n_trials} trials x {len(d_values)} distances")
+        print(f"  TT({n}) — {B} bits, {n_trials} trials x {len(d_values)} distances")
 
         for d in d_values:
             if d > B:
@@ -347,39 +366,40 @@ def test4_repair_radius(n_values: list[int], quick: bool, seed: int, out_dir: Pa
                 e0 = _exact_energy(damaged, lengths)
 
                 configs = [
-                    ("A_singles", {"pair_top": 0, "triple_top": 0,
-                     "plateau_threshold": 10 ** 9}),
+                    ("A_singles", {"pair_top": 0, "triple_top": 0, "plateau_threshold": 10**9}),
                 ]
                 if n <= 16:
                     configs += [
-                        ("B_pairs_full", {
-                         "pair_top": B, "triple_top": 0, "plateau_threshold": 10 ** 9}),
+                        (
+                            "B_pairs_full",
+                            {"pair_top": B, "triple_top": 0, "plateau_threshold": 10**9},
+                        ),
                     ]
                 configs += [
-                    ("C_top16", {"pair_top": 16, "triple_top": 0,
-                     "plateau_threshold": 10 ** 9}),
-                    ("D_top32", {"pair_top": 32, "triple_top": 0,
-                     "plateau_threshold": 10 ** 9}),
-                    ("E_top64", {"pair_top": 64, "triple_top": 0,
-                     "plateau_threshold": 10 ** 9}),
-                    ("F_top128", {"pair_top": 128, "triple_top": 0,
-                     "plateau_threshold": 10 ** 9}),
+                    ("C_top16", {"pair_top": 16, "triple_top": 0, "plateau_threshold": 10**9}),
+                    ("D_top32", {"pair_top": 32, "triple_top": 0, "plateau_threshold": 10**9}),
+                    ("E_top64", {"pair_top": 64, "triple_top": 0, "plateau_threshold": 10**9}),
+                    ("F_top128", {"pair_top": 128, "triple_top": 0, "plateau_threshold": 10**9}),
                 ]
 
                 for cfg_name, cfg_kw in configs:
-                    rp = RepairExperiment(
-                        n=n, sieve=False, verbose=False, **cfg_kw)
+                    rp = RepairExperiment(n=n, sieve=False, verbose=False, **cfg_kw)
                     t0 = time.perf_counter()
-                    result = rp.search(steps=step_budget, seed=trial_seed,
-                                       sequences=damaged)
+                    result = rp.search(steps=step_budget, seed=trial_seed, sequences=damaged)
                     wall = time.perf_counter() - t0
                     row = {
-                        "test": 4, "n": n, "d": d, "trial": trial,
-                        "start_energy": e0, "end_energy": result.metrics["energy"],
+                        "test": 4,
+                        "n": n,
+                        "d": d,
+                        "trial": trial,
+                        "start_energy": e0,
+                        "end_energy": result.metrics["energy"],
                         "success": result.metrics["energy"] == 0,
-                        "strategy": cfg_name, "wall_s": wall,
+                        "strategy": cfg_name,
+                        "wall_s": wall,
                         "hamming_to_original": hamming_distance(
-                            result.sequences, sol, lengths),
+                            _result_sequences(result), sol, lengths
+                        ),
                     }
                     _emit(out, row)
 
@@ -419,43 +439,44 @@ def test5_structured(n_values: list[int], quick: bool, seed: int, out_dir: Path)
 
                     if ptype == "one_seq_A":
                         # All flips in sequence A (spill to B if needed)
-                        a_pos = [i for i, (r, c) in enumerate(
-                            positions) if r == 0]
+                        a_pos = [i for i, (r, c) in enumerate(positions) if r == 0]
                         if d <= len(a_pos):
                             idxs = rng.choice(a_pos, size=d, replace=False)
                         else:
-                            idxs = list(rng.choice(
-                                a_pos, size=len(a_pos), replace=False))
-                            b_pos = [i for i, (r, c) in enumerate(
-                                positions) if r == 1]
-                            idxs += list(rng.choice(b_pos, size=d -
-                                         len(a_pos), replace=False))
+                            idxs = list(rng.choice(a_pos, size=len(a_pos), replace=False))
+                            b_pos = [i for i, (r, c) in enumerate(positions) if r == 1]
+                            idxs += list(rng.choice(b_pos, size=d - len(a_pos), replace=False))
                     elif ptype == "bunched_A":
                         # d consecutive bits in sequence A
                         start = rng.integers(0, int(lengths[0]) - d)
-                        idxs = [i for i, (r, c) in enumerate(
-                            positions) if r == 0 and start <= c < start + d]
+                        idxs = [
+                            i
+                            for i, (r, c) in enumerate(positions)
+                            if r == 0 and start <= c < start + d
+                        ]
                     elif ptype == "edges":
                         # Half at start of A, half at end of D
                         n_half = d // 2
-                        a_start = [i for i, (r, c) in enumerate(
-                            positions) if r == 0 and c < n_half]
-                        d_end = [i for i, (r, c) in enumerate(
-                            positions) if r == 3 and c >= int(lengths[3]) - (d - n_half)]
-                        idxs = list(rng.choice(a_start, size=min(
-                            n_half, len(a_start)), replace=False))
-                        idxs += list(rng.choice(d_end, size=min(d -
-                                     n_half, len(d_end)), replace=False))
+                        a_start = [i for i, (r, c) in enumerate(positions) if r == 0 and c < n_half]
+                        d_end = [
+                            i
+                            for i, (r, c) in enumerate(positions)
+                            if r == 3 and c >= int(lengths[3]) - (d - n_half)
+                        ]
+                        idxs = list(
+                            rng.choice(a_start, size=min(n_half, len(a_start)), replace=False)
+                        )
+                        idxs += list(
+                            rng.choice(d_end, size=min(d - n_half, len(d_end)), replace=False)
+                        )
                     else:  # spread
                         # Evenly across all 4 sequences
                         per_seq = max(1, d // 4)
                         idxs = []
                         for seq in range(4):
-                            s_pos = [i for i, (r, c) in enumerate(
-                                positions) if r == seq]
+                            s_pos = [i for i, (r, c) in enumerate(positions) if r == seq]
                             n_pick = min(per_seq, len(s_pos))
-                            idxs += list(rng.choice(s_pos,
-                                         size=n_pick, replace=False))
+                            idxs += list(rng.choice(s_pos, size=n_pick, replace=False))
                         # Top up to exact d
                         while len(idxs) < d:
                             extra = rng.choice(B, size=1, replace=False)
@@ -467,21 +488,30 @@ def test5_structured(n_values: list[int], quick: bool, seed: int, out_dir: Path)
                         damaged[r, c] *= -1
 
                     e0 = _exact_energy(damaged, lengths)
-                    rp = RepairExperiment(n=n, sieve=False, pair_top=64,
-                                          triple_top=0, plateau_threshold=10 ** 9,
-                                          verbose=False)
+                    rp = RepairExperiment(
+                        n=n,
+                        sieve=False,
+                        pair_top=64,
+                        triple_top=0,
+                        plateau_threshold=10**9,
+                        verbose=False,
+                    )
                     t0 = time.perf_counter()
-                    result = rp.search(steps=step_budget, seed=seed + trial,
-                                       sequences=damaged)
+                    result = rp.search(steps=step_budget, seed=seed + trial, sequences=damaged)
                     wall = time.perf_counter() - t0
                     row = {
-                        "test": 5, "n": n, "d": d, "trial": trial,
-                        "perturbation_type": ptype, "start_energy": e0,
+                        "test": 5,
+                        "n": n,
+                        "d": d,
+                        "trial": trial,
+                        "perturbation_type": ptype,
+                        "start_energy": e0,
                         "end_energy": result.metrics["energy"],
                         "success": result.metrics["energy"] == 0,
                         "wall_s": wall,
                         "hamming_to_original": hamming_distance(
-                            result.sequences, sol, lengths),
+                            _result_sequences(result), sol, lengths
+                        ),
                     }
                     _emit(out, row)
 
@@ -517,25 +547,33 @@ def test6_pair_utility(n_values: list[int], quick: bool, seed: int, out_dir: Pat
                 # Damage and run singles-only to stall
                 damaged = _damage_random(rng, sol, positions, d)
 
-                rp = RepairExperiment(n=n, sieve=False, pair_top=0, triple_top=0,
-                                      plateau_threshold=10 ** 9, verbose=False)
+                rp = RepairExperiment(
+                    n=n,
+                    sieve=False,
+                    pair_top=0,
+                    triple_top=0,
+                    plateau_threshold=10**9,
+                    verbose=False,
+                )
                 t0 = time.perf_counter()
-                result_singles = rp.search(steps=100, seed=seed + probe,
-                                           sequences=damaged)
+                result_singles = rp.search(steps=100, seed=seed + probe, sequences=damaged)
                 stall_e = result_singles.metrics["energy"]
-                stall_seq = result_singles.sequences
-                stall_state = stall_seq if result_singles.metrics.get(
-                    "energy", 0) > 0 else damaged
 
                 if stall_e == 0:
-                    row = {"test": 6, "n": n, "d": d, "probe": probe,
-                           "singles_solved": True, "wall_s": time.perf_counter() - t0}
+                    row = {
+                        "test": 6,
+                        "n": n,
+                        "d": d,
+                        "probe": probe,
+                        "singles_solved": True,
+                        "wall_s": time.perf_counter() - t0,
+                    }
                     _emit(out, row)
                     continue
 
                 # Compute full exact pair scan at stall state
-                stall_f = xp.asarray(stall_state.astype(
-                    np.float32), dtype=xp.float32)
+                stall_state_arr = _result_sequences(result_singles) if stall_e > 0 else damaged
+                stall_f = xp.asarray(stall_state_arr.astype(np.float32), dtype=xp.float32)
                 deltas, r0_cpu = rp._single_deltas(stall_f, positions)
                 stall_energies = np.sum((r0_cpu + deltas) ** 2, axis=1)
                 top16 = np.argsort(stall_energies)[:16]
@@ -546,14 +584,13 @@ def test6_pair_utility(n_values: list[int], quick: bool, seed: int, out_dir: Pat
                 if n <= 16:
                     all_pairs = list(combinations(range(B), 2))
                 else:
-                    all_pairs = list(combinations(rng.choice(
-                        B, size=min(B, 50), replace=False), 2))
+                    all_pairs = list(combinations(rng.choice(B, size=min(B, 50), replace=False), 2))
 
                 n_improving = 0
                 best_pair_energy = stall_e
                 best_pair_tuple = None
                 for i, j in all_pairs:
-                    dp = stall_state.copy()
+                    dp = stall_state_arr.copy()
                     ri, ci = positions[i]
                     rj, cj = positions[j]
                     dp[ri, ci] *= -1
@@ -576,22 +613,32 @@ def test6_pair_utility(n_values: list[int], quick: bool, seed: int, out_dir: Pat
                 pairs_escape = False
                 pairs_energy = None
                 if best_pair_tuple is not None:
-                    escaped_seq = stall_state.copy()
+                    escaped_seq = stall_state_arr.copy()
                     for idx in best_pair_tuple:
                         r, c = positions[idx]
                         escaped_seq[r, c] *= -1
-                    rp2 = RepairExperiment(n=n, sieve=False, pair_top=0, triple_top=0,
-                                           plateau_threshold=10 ** 9, verbose=False)
-                    result2 = rp2.search(steps=100, seed=seed + probe + 1000,
-                                         sequences=escaped_seq)
+                    rp2 = RepairExperiment(
+                        n=n,
+                        sieve=False,
+                        pair_top=0,
+                        triple_top=0,
+                        plateau_threshold=10**9,
+                        verbose=False,
+                    )
+                    result2 = rp2.search(steps=100, seed=seed + probe + 1000, sequences=escaped_seq)
                     pairs_escape = result2.metrics["energy"] == 0
                     pairs_energy = result2.metrics["energy"]
 
                 row = {
-                    "test": 6, "n": n, "d": d, "probe": probe,
-                    "singles_solved": False, "stall_energy": stall_e,
+                    "test": 6,
+                    "n": n,
+                    "d": d,
+                    "probe": probe,
+                    "singles_solved": False,
+                    "stall_energy": stall_e,
                     "n_improving_pairs": n_improving,
-                    "pair_in_top16": in_top16, "pair_in_top32": in_top32,
+                    "pair_in_top16": in_top16,
+                    "pair_in_top32": in_top32,
                     "pair_in_top64": in_top64,
                     "pair_energy_drop": stall_e - best_pair_energy if best_pair_tuple else 0,
                     "pair_leads_to_solution": pairs_escape,
@@ -610,12 +657,13 @@ def test6_pair_utility(n_values: list[int], quick: bool, seed: int, out_dir: Pat
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Repair tests 1-6")
-    parser.add_argument("test", type=int, choices=[1, 2, 3, 4, 5, 6], nargs="*",
-                        default=[1, 2, 3, 4, 5, 6])
-    parser.add_argument("--tt", type=str, default="8,16",
-                        help="Comma-separated n values (default: 8,16)")
-    parser.add_argument("--quick", action="store_true",
-                        help="Fewer trials for faster runs")
+    parser.add_argument(
+        "test", type=int, choices=[1, 2, 3, 4, 5, 6], nargs="*", default=[1, 2, 3, 4, 5, 6]
+    )
+    parser.add_argument(
+        "--tt", type=str, default="8,16", help="Comma-separated n values (default: 8,16)"
+    )
+    parser.add_argument("--quick", action="store_true", help="Fewer trials for faster runs")
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--out", type=str, default=str(RESULTS_DIR))
     args = parser.parse_args()

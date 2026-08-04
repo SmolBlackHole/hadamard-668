@@ -33,10 +33,7 @@ _INDEX_PATH = _os.path.join(_os.path.dirname(__file__), "..", "data", "tt_index.
 @_cache
 def _load_index() -> dict[str, list[str]]:
     if not _os.path.isfile(_INDEX_PATH):
-        raise FileNotFoundError(
-            f"TT index not found: {_INDEX_PATH}\n"
-            "Run: python data/setup.py"
-        )
+        raise FileNotFoundError(f"TT index not found: {_INDEX_PATH}\nRun: python data/setup.py")
     with open(_INDEX_PATH, encoding="utf-8") as _f:
         return _json.load(_f)
 
@@ -148,7 +145,9 @@ def known_solution(n: int) -> tuple[np.ndarray, np.ndarray] | None:
 
 
 def hamming_distance(
-    seq_a: np.ndarray, seq_b: np.ndarray, lengths: np.ndarray,
+    seq_a: np.ndarray,
+    seq_b: np.ndarray,
+    lengths: np.ndarray,
 ) -> int:
     """Count bits that differ between two padded TT(n) sequence arrays."""
     if seq_a.shape != seq_b.shape or seq_a.shape[0] != 4:

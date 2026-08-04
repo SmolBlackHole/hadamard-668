@@ -21,11 +21,10 @@ from itertools import combinations
 import numpy as np
 
 from correlations import (
-    TURYN_WEIGHTS_F,
-    TURYN_WEIGHTS_I,
-    _npa_f_residual,
+    TURYN_WEIGHTS,
     nonperiodic_autocorrelation_state,
     nonperiodic_correlation_energy,
+    npa_f_residual,
 )
 from gpu import to_numpy, xp
 from strategies.base import Result, TurynStrategy
@@ -89,10 +88,8 @@ class RepairExperiment(TurynStrategy):
         batch = xp.repeat(seq_f[None, ...], B, axis=0)
         for idx, (r, c) in enumerate(positions):
             batch[idx, r, c] *= -1
-        residuals = _npa_f_residual(
-            batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
-        r0 = _npa_f_residual(
-            seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
+        residuals = npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS)
+        r0 = npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS)[0]
         r0_cpu = to_numpy(r0)
         residuals_cpu = to_numpy(residuals)
         return residuals_cpu - r0_cpu[None, :], r0_cpu
@@ -107,10 +104,8 @@ class RepairExperiment(TurynStrategy):
             for t in (pi, pj):
                 r, c = positions[top_indices[t]]
                 batch[idx, r, c] *= -1
-        residuals = _npa_f_residual(
-            batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
-        r0 = _npa_f_residual(
-            seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
+        residuals = npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS)
+        r0 = npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS)[0]
         residuals_cpu = to_numpy(residuals)
         r0_cpu = to_numpy(r0)
         Q = np.zeros((K, K, self.N - 1), dtype=np.float64)
@@ -130,9 +125,8 @@ class RepairExperiment(TurynStrategy):
             for t in (ti, tj, tk):
                 r, c = positions[top_indices[t]]
                 batch[idx, r, c] *= -1
-        residuals = _npa_f_residual(
-            batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
-        energies = xp.sum(residuals ** 2, axis=1)
+        residuals = npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS)
+        energies = xp.sum(residuals**2, axis=1)
         best_idx = int(xp.argmin(energies))
         return (triples[best_idx], float(energies[best_idx]))
 
@@ -142,7 +136,9 @@ class RepairExperiment(TurynStrategy):
         """Fast 64-bit hash of the full (4, n) sequence array."""
         return hash(sequences.tobytes())
 
-    def _random_kick(self, sequences: np.ndarray, seq_f, positions, rng: np.random.Generator, k: int):
+    def _random_kick(
+        self, sequences: np.ndarray, seq_f, positions, rng: np.random.Generator, k: int
+    ):
         """Flip k random bits to escape a plateau."""
         indices = rng.choice(len(positions), size=k, replace=False)
         for idx in indices:
@@ -156,7 +152,10 @@ class RepairExperiment(TurynStrategy):
         return float(
             nonperiodic_correlation_energy(
                 nonperiodic_autocorrelation_state(
-                    sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
+                    sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS
+                )
+            )
+        )
 
     # ── Search ──────────────────────────────────────────────────────────────
 
@@ -168,8 +167,7 @@ class RepairExperiment(TurynStrategy):
             sequences = self.seed(rng_seed)
         else:
             sequences = sequences.copy()
-        positions = [(r, c) for r in range(4)
-                     for c in range(int(self.LENGTHS[r]))]
+        positions = [(r, c) for r in range(4) for c in range(int(self.LENGTHS[r]))]
         seq_f = xp.asarray(sequences.astype(np.float32), dtype=xp.float32)
 
         best_e = self._exact_energy(sequences)
@@ -221,6 +219,7 @@ class RepairExperiment(TurynStrategy):
                             break
                 else:
                     # CPU check failed — tabu this direction to prevent re-proposal
+                    key = self._state_key(sequences)
                     tabu.append(key)
                     sequences[r, c] *= -1
                     seq_f[r, c] *= -1
@@ -237,18 +236,20 @@ class RepairExperiment(TurynStrategy):
                 # Recompute deltas for current state (not stale)
                 deltas, r0 = self._single_deltas(seq_f, positions)
                 energies = np.sum((r0 + deltas) ** 2, axis=1)
-                top_idx = np.argsort(energies)[:self.pair_top]
-                Q = self._q_pair_model(
-                    seq_f, positions, top_idx, deltas[top_idx])
+                top_idx = np.argsort(energies)[: self.pair_top]
+                Q = self._q_pair_model(seq_f, positions, top_idx, deltas[top_idx])
                 r0_now = to_numpy(
-                    _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS,
-                                    weights=TURYN_WEIGHTS_F, module=xp)[0])
+                    npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS)[0]
+                )
                 best_pair_e = best_e
                 best_pair = None
                 for i in range(len(top_idx)):
                     for j in range(i + 1, len(top_idx)):
-                        e = float(np.sum(
-                            (r0_now + deltas[top_idx[i]] + deltas[top_idx[j]] + Q[i, j]) ** 2))
+                        e = float(
+                            np.sum(
+                                (r0_now + deltas[top_idx[i]] + deltas[top_idx[j]] + Q[i, j]) ** 2
+                            )
+                        )
                         if e < best_pair_e:
                             best_pair_e = e
                             best_pair = (top_idx[i], top_idx[j])
@@ -258,8 +259,8 @@ class RepairExperiment(TurynStrategy):
                         sequences[r, c] *= -1
                         seq_f[r, c] *= -1
                     cpu_e = self._exact_energy(sequences)
+                    key = self._state_key(sequences)
                     if cpu_e < best_e:
-                        key = self._state_key(sequences)
                         if key in tabu:
                             for pi in best_pair:
                                 r, c = positions[pi]
@@ -288,7 +289,7 @@ class RepairExperiment(TurynStrategy):
 
             # Phase 3: triples
             if step % self.triple_interval == self.triple_interval - 1 and best_e > 0:
-                triple_candidates = np.argsort(energies)[:self.triple_top]
+                triple_candidates = np.argsort(energies)[: self.triple_top]
                 result = self._triple_scan(seq_f, positions, triple_candidates)
                 if result is not None:
                     triple_indices, triple_energy = result
@@ -298,8 +299,8 @@ class RepairExperiment(TurynStrategy):
                             sequences[r, c] *= -1
                             seq_f[r, c] *= -1
                         cpu_e = self._exact_energy(sequences)
+                        key = self._state_key(sequences)
                         if cpu_e < best_e:
-                            key = self._state_key(sequences)
                             if key in tabu:
                                 for ti in triple_indices:
                                     r, c = positions[triple_candidates[ti]]
@@ -328,8 +329,7 @@ class RepairExperiment(TurynStrategy):
 
             # Phase 4: plateau escape
             if plateau_strikes >= self.plateau_threshold and best_e > 0:
-                self._random_kick(sequences, seq_f, positions,
-                                  rng, self.plateau_noise)
+                self._random_kick(sequences, seq_f, positions, rng, self.plateau_noise)
                 best_e = self._exact_energy(sequences)
                 kicks_used += 1
                 plateau_strikes = 0
@@ -357,8 +357,9 @@ class RepairExperiment(TurynStrategy):
             )
         return Result(matrix, metrics, elapsed, best_seq)
 
-    def refine(self, matrix: np.ndarray, steps: int, seed: int,
-               sequences: np.ndarray | None = None) -> Result:
+    def refine(
+        self, matrix: np.ndarray, steps: int, seed: int, sequences: np.ndarray | None = None
+    ) -> Result:
         if sequences is not None:
             return self.search(steps, seed, sequences)
         return self.search(steps, seed)
@@ -366,9 +367,14 @@ class RepairExperiment(TurynStrategy):
 
 # ── Controlled-noise benchmark ─────────────────────────────────────────────────
 
-def _benchmark(tt_name: str, sol: np.ndarray, lengths: np.ndarray,
-               noise_levels: tuple[float, ...] = (1, 2, 5, 10, 15, 20),
-               trials: int = 10) -> None:
+
+def _benchmark(
+    tt_name: str,
+    sol: np.ndarray,
+    lengths: np.ndarray,
+    noise_levels: tuple[float, ...] = (1, 2, 5, 10, 15, 20),
+    trials: int = 10,
+) -> None:
     """Flip ``noise%`` of bits in a known solution and measure repair success."""
     from fixtures import equiv_hamming
 
@@ -392,31 +398,37 @@ def _benchmark(tt_name: str, sol: np.ndarray, lengths: np.ndarray,
         total_time = 0.0
         for trial in range(trials):
             damaged = sol.copy()
-            chosen = rng.choice(len(all_positions),
-                                size=n_flips, replace=False)
+            chosen = rng.choice(len(all_positions), size=n_flips, replace=False)
             for idx in chosen:
                 r, c = all_positions[int(idx)]
                 damaged[r, c] *= -1
 
             rp = RepairExperiment(
-                n=n, sieve=False,
-                pair_interval=5, pair_top=64,
-                triple_interval=25, triple_top=20,
-                tabu_size=256, plateau_threshold=8, plateau_noise=4,
+                n=n,
+                sieve=False,
+                pair_interval=5,
+                pair_top=64,
+                triple_interval=25,
+                triple_top=20,
+                tabu_size=256,
+                plateau_threshold=8,
+                plateau_noise=4,
             )
             t0 = time.perf_counter()
-            result = rp.search(steps=steps_budget, seed=2026 + trial,
-                               sequences=damaged)
+            result = rp.search(steps=steps_budget, seed=2026 + trial, sequences=damaged)
             total_time += time.perf_counter() - t0
-            h = equiv_hamming(result.sequences, lengths, n)
+            h = (
+                equiv_hamming(result.sequences, lengths, n)
+                if result.sequences is not None
+                else None
+            )
             if result.metrics["energy"] == 0:
                 repaired += 1
             if h is not None and h < best_h:
                 best_h = h
 
         avg_t = total_time / trials
-        print(
-            f"  {pct:>4}% {n_flips:>6} {repaired:>8}/{trials} {best_h:>8} {avg_t:>7.1f}s")
+        print(f"  {pct:>4}% {n_flips:>6} {repaired:>8}/{trials} {best_h:>8} {avg_t:>7.1f}s")
 
 
 if __name__ == "__main__":

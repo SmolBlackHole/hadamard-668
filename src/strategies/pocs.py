@@ -6,7 +6,7 @@ import time
 
 import numpy as np
 
-from correlations import _npa_f_residual
+from correlations import npa_f_residual
 from gpu import to_numpy, xp
 
 from .base import Result, TurynStrategy
@@ -72,13 +72,13 @@ class PocsSearch(TurynStrategy):
         rng = xp.random.default_rng(seed)
         batch_size = 1 if xp is np else self.batch_size  # single trajectory on CPU
         state = (
-            self.seed_batch(batch_size, rng, module=xp).astype(xp.float32)
+            self.seed_batch(batch_size, rng).astype(xp.float32)
             if self.sieve
             else rng.standard_normal((batch_size, 4, self.N)).astype(xp.float32)
         )
         best = _project_sign(state)
         best_energy = xp.sum(
-            _npa_f_residual(best, lengths=self.LENGTHS, weights=self.WEIGHTS, module=xp) ** 2,
+            npa_f_residual(best, lengths=self.LENGTHS, weights=self.WEIGHTS) ** 2,
             axis=1,
         )
         for _ in range(steps):
@@ -90,8 +90,7 @@ class PocsSearch(TurynStrategy):
                 _project_fourier(state, lengths=self.LENGTHS, weights=self.WEIGHTS)
             )
             energy = xp.sum(
-                _npa_f_residual(candidate, lengths=self.LENGTHS, weights=self.WEIGHTS, module=xp)
-                ** 2,
+                npa_f_residual(candidate, lengths=self.LENGTHS, weights=self.WEIGHTS) ** 2,
                 axis=1,
             )
             improved = energy < best_energy

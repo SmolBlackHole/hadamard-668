@@ -6,7 +6,7 @@ import time
 
 import numpy as np
 
-from correlations import _npa_f_residual
+from correlations import TURYN_WEIGHTS, npa_f_residual
 from gpu import to_numpy, xp
 
 from .base import Result, TurynStrategy
@@ -14,7 +14,7 @@ from .base import Result, TurynStrategy
 
 def _apply_flips(batch, correlations, energies, seq_idx, col_idx, lengths):
     """Apply flips in-place. correlations shape is (batch, n-1): index k = shift k+1."""
-    weights = xp.asarray((1, 1, 2, 2), dtype=xp.int64)
+    weights = xp.asarray(TURYN_WEIGHTS, dtype=xp.int64)
     for i in range(len(batch)):
         si, ci = int(seq_idx[i]), int(col_idx[i])
         wgt, old = int(weights[si]), int(batch[i, si, ci])
@@ -64,7 +64,7 @@ class TurynSpectralDescentSearch(TurynStrategy):
         started = time.perf_counter()
         rng = xp.random.default_rng(seed)
         batch = self.seed_batch(self.batch_size, rng, module=xp)
-        correlations = _npa_f_residual(batch, lengths=self.LENGTHS, weights=self.WEIGHTS, module=xp)
+        correlations = npa_f_residual(batch, lengths=self.LENGTHS, weights=self.WEIGHTS)
         energies = xp.sum(correlations**2, axis=1)
 
         for _ in range(steps):

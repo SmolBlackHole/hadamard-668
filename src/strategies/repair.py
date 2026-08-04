@@ -7,11 +7,10 @@ import time
 import numpy as np
 
 from correlations import (
-    TURYN_WEIGHTS_F,
-    TURYN_WEIGHTS_I,
-    _npa_f_residual,
+    TURYN_WEIGHTS,
     nonperiodic_autocorrelation_state,
     nonperiodic_correlation_energy,
+    npa_f_residual,
 )
 from gpu import to_numpy, xp
 
@@ -21,8 +20,14 @@ from .base import Result, TurynStrategy
 class RepairSearch(TurynStrategy):
     """GPU singles scan + pair model on TT(n) sequences. Pipeline stage."""
 
-    def __init__(self, *, n: int = TurynStrategy.DEFAULT_N, sieve: bool = True,
-                 pair_interval: int = 5, pair_top: int = 64):
+    def __init__(
+        self,
+        *,
+        n: int = TurynStrategy.DEFAULT_N,
+        sieve: bool = True,
+        pair_interval: int = 5,
+        pair_top: int = 64,
+    ):
         super().__init__(n=n, sieve=sieve)
         self.pair_interval = pair_interval
         self.pair_top = pair_top
@@ -40,11 +45,12 @@ class RepairSearch(TurynStrategy):
         pairs = [(i, j) for i in range(K) for j in range(i + 1, K)]
         batch = xp.repeat(seq_f[None, ...], len(pairs), axis=0)
         for idx, (pi, pj) in enumerate(pairs):
-            for _pos_idx, (r, c) in enumerate([positions[top_indices[pi]],
-                                              positions[top_indices[pj]]]):
+            for _pos_idx, (r, c) in enumerate(
+                [positions[top_indices[pi]], positions[top_indices[pj]]]
+            ):
                 batch[idx, r, c] *= -1
-        residuals = _npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
-        r0 = _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
+        residuals = npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS)
+        r0 = npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS)[0]
         residuals_cpu = to_numpy(residuals)
         r0_cpu = to_numpy(r0)
         Q = np.zeros((K, K, self.N - 1), dtype=np.float64)
@@ -60,8 +66,8 @@ class RepairSearch(TurynStrategy):
         batch = xp.repeat(seq_f[None, ...], B, axis=0)
         for idx, (r, c) in enumerate(positions):
             batch[idx, r, c] *= -1
-        residuals = _npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)
-        r0 = _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS_F, module=xp)[0]
+        residuals = npa_f_residual(batch, lengths=self.LENGTHS, weights=TURYN_WEIGHTS)
+        r0 = npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS)[0]
         r0_cpu = to_numpy(r0)
         return to_numpy(residuals) - r0_cpu[None, :], r0_cpu
 
@@ -78,7 +84,10 @@ class RepairSearch(TurynStrategy):
         best_e = float(
             nonperiodic_correlation_energy(
                 nonperiodic_autocorrelation_state(
-                    sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
+                    sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS
+                )
+            )
+        )
 
         for step in range(steps):
             if best_e == 0:
@@ -95,22 +104,28 @@ class RepairSearch(TurynStrategy):
                 best_e = float(
                     nonperiodic_correlation_energy(
                         nonperiodic_autocorrelation_state(
-                            sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
+                            sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS
+                        )
+                    )
+                )
                 if best_e == 0:
                     break
 
             if step % self.pair_interval == self.pair_interval - 1 and best_e > 0:
-                top_idx = np.argsort(energies)[:self.pair_top]
+                top_idx = np.argsort(energies)[: self.pair_top]
                 Q = self._q_pair_model(seq_f, positions, top_idx, deltas[top_idx])
                 r0_now = to_numpy(
-                    _npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS,
-                                    weights=TURYN_WEIGHTS_F, module=xp)[0])
+                    npa_f_residual(seq_f[None, ...], lengths=self.LENGTHS, weights=TURYN_WEIGHTS)[0]
+                )
                 best_pair_e = best_e
                 best_pair = None
                 for i in range(len(top_idx)):
                     for j in range(i + 1, len(top_idx)):
-                        e = float(np.sum(
-                            (r0_now + deltas[top_idx[i]] + deltas[top_idx[j]] + Q[i, j]) ** 2))
+                        e = float(
+                            np.sum(
+                                (r0_now + deltas[top_idx[i]] + deltas[top_idx[j]] + Q[i, j]) ** 2
+                            )
+                        )
                         if e < best_pair_e:
                             best_pair_e = e
                             best_pair = (top_idx[i], top_idx[j])
@@ -122,7 +137,10 @@ class RepairSearch(TurynStrategy):
                     best_e = float(
                         nonperiodic_correlation_energy(
                             nonperiodic_autocorrelation_state(
-                                sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS_I)))
+                                sequences, lengths=self.LENGTHS, weights=TURYN_WEIGHTS
+                            )
+                        )
+                    )
                     if best_e == 0:
                         break
 
@@ -131,7 +149,9 @@ class RepairSearch(TurynStrategy):
         print(f"  seed={seed} best_energy={best_e:.0f} {elapsed:.1f}s")
         return Result(matrix, metrics, elapsed, sequences)
 
-    def refine(self, matrix: np.ndarray, steps: int, seed: int, sequences: np.ndarray | None = None) -> Result:
+    def refine(
+        self, matrix: np.ndarray, steps: int, seed: int, sequences: np.ndarray | None = None
+    ) -> Result:
         if sequences is not None:
             return self.search(steps, seed, sequences)
         return self.search(steps, seed)

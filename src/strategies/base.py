@@ -9,6 +9,7 @@ from typing import NamedTuple
 import numpy as np
 
 from builders import build_turyn
+from correlations import TURYN_WEIGHTS
 from gpu import check_orthogonality
 from sieve import seed_turyn_batch
 
@@ -50,7 +51,9 @@ class SearchStrategy(ABC):
     def hamming(self) -> int | None:
         return None
 
-    def refine(self, matrix: np.ndarray, steps: int, seed: int, sequences: np.ndarray | None = None) -> Result:
+    def refine(
+        self, matrix: np.ndarray, steps: int, seed: int, sequences: np.ndarray | None = None
+    ) -> Result:
         raise NotImplementedError(f"{self.name} cannot refine")
 
     def seed(self, rng: np.random.Generator) -> np.ndarray:
@@ -75,7 +78,7 @@ class TurynStrategy(SearchStrategy):
             raise ValueError("Turyn type requires n >= 2")
         self.N = n
         self.LENGTHS = np.array((n, n, n, n - 1), dtype=np.int64)
-        self.WEIGHTS = np.array((1, 1, 2, 2), dtype=np.int64)
+        self.WEIGHTS = TURYN_WEIGHTS
         self.ORDER = 4 * (3 * n - 1)
         self.sieve = sieve
 
@@ -137,9 +140,9 @@ class Pipeline(SearchStrategy):
         from fixtures import equiv_hamming
 
         first = self._stages[0][0]
-        if not hasattr(self, '_last_seq') or not hasattr(first, 'N'):
+        if not hasattr(self, "_last_seq") or not hasattr(first, "N"):
             return None
-        return equiv_hamming(self._last_seq, first.LENGTHS, first.N)
+        return equiv_hamming(self._last_seq, first.LENGTHS, first.N)  # type: ignore[attr-defined]
 
     def search(self, steps: int, seed: int) -> Result:
         s, steps_s = self._stages[0]
