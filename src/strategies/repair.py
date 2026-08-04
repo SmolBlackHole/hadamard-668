@@ -1,6 +1,6 @@
 """Greedy-Reparatur anhand des stärksten Gram-Matrix-Verstoßes."""
-from __future__ import annotations
 
+from __future__ import annotations
 
 import time
 
@@ -13,7 +13,8 @@ from gpu import (
     gram_matrix,
     metrics_from_gram,
 )
-from .base import SearchStrategy
+
+from .base import Result, SearchStrategy
 
 
 class RepairSearch(SearchStrategy):
@@ -41,7 +42,9 @@ class RepairSearch(SearchStrategy):
 
     @staticmethod
     def _most_violated_pair(
-        gram: np.ndarray, row_argmax: np.ndarray, row_max: np.ndarray,
+        gram: np.ndarray,
+        row_argmax: np.ndarray,
+        row_max: np.ndarray,
     ) -> tuple[int, int, int]:
         row = int(np.argmax(row_max))
         other = int(row_argmax[row])
@@ -68,7 +71,11 @@ class RepairSearch(SearchStrategy):
 
     @staticmethod
     def _candidate_columns(
-        matrix, row: int, other: int, dot_product: int, rng: np.random.Generator,
+        matrix,
+        row: int,
+        other: int,
+        dot_product: int,
+        rng: np.random.Generator,
     ) -> np.ndarray:
         same_sign = matrix[row] == matrix[other]
         eligible = np.flatnonzero(same_sign if dot_product > 0 else ~same_sign)
@@ -83,11 +90,10 @@ class RepairSearch(SearchStrategy):
         moves: list[tuple[int, int, int]] = []
         for row in rows:
             deltas = entry_flip_deltas(matrix, gram, row, columns)
-            moves.extend((int(delta), row, int(column))
-                         for delta, column in zip(deltas, columns))
+            moves.extend((int(delta), row, int(column)) for delta, column in zip(deltas, columns))
         return moves
 
-    def _improve(self, matrix: np.ndarray, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
+    def _improve(self, matrix: np.ndarray, steps: int, seed: int) -> Result:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
         matrix = np.asarray(matrix, dtype=np.int8).copy()
@@ -100,21 +106,16 @@ class RepairSearch(SearchStrategy):
         with tqdm(total=steps, desc=self.name, unit="steps", dynamic_ncols=True) as bar:
             for step in range(steps):
                 bar.update(1)
-                row, other, dot_product = self._most_violated_pair(
-                    gram, row_argmax, row_max)
+                row, other, dot_product = self._most_violated_pair(gram, row_argmax, row_max)
                 if dot_product == 0:
                     break
-                columns = self._candidate_columns(
-                    matrix, row, other, dot_product, rng)
-                moves = self._candidate_moves(
-                    matrix, gram, (row, other), columns)
+                columns = self._candidate_columns(matrix, row, other, dot_product, rng)
+                moves = self._candidate_moves(matrix, gram, (row, other), columns)
                 if moves:
                     delta, move_row, column = min(moves)
                     if delta < 0:
-                        apply_entry_flip(
-                            matrix, gram, move_row, column, known_delta=delta)
-                        self._refresh_violations(
-                            gram, move_row, row_argmax, row_max)
+                        apply_entry_flip(matrix, gram, move_row, column, known_delta=delta)
+                        self._refresh_violations(gram, move_row, row_argmax, row_max)
                         energy += delta
                         best_energy = energy
                         best_at = step
@@ -125,18 +126,17 @@ class RepairSearch(SearchStrategy):
                     break
         elapsed = time.perf_counter() - started
         print(
-            f"  seed={seed} best_energy={best_energy} found@step={best_at} accepted={accepted} {elapsed:.1f}s")
+            f"  seed={seed} best_energy={best_energy} found@step={best_at} accepted={accepted} {elapsed:.1f}s"
+        )
         metrics = metrics_from_gram(gram)
-        return matrix, metrics, elapsed
+        return Result(matrix, metrics, elapsed)
 
-    def search(self, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
+    def search(self, steps: int, seed: int) -> Result:
         rng = np.random.default_rng(seed)
-        matrix = rng.choice(
-            [-1, 1], size=(self.ORDER, self.ORDER)).astype(np.int8)
+        matrix = rng.choice([-1, 1], size=(self.ORDER, self.ORDER)).astype(np.int8)
         return self._improve(matrix, steps, seed)
 
-    def refine(self, matrix: np.ndarray, steps: int, seed: int) -> tuple[np.ndarray, dict[str, int], float]:
+    def refine(self, matrix: np.ndarray, steps: int, seed: int) -> Result:
         if matrix.shape != (self.ORDER, self.ORDER):
-            raise ValueError(
-                f"{self.name} needs a {self.ORDER}x{self.ORDER} matrix")
+            raise ValueError(f"{self.name} needs a {self.ORDER}x{self.ORDER} matrix")
         return self._improve(matrix.copy(), steps, seed)

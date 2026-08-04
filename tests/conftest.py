@@ -1,11 +1,15 @@
 """Pytest fixtures for the Hadamard test suite."""
+
 from __future__ import annotations
-from fixtures import tt_sequences, tt_lengths
-from constructions import sylvester, paley
-import pytest
 
 import sys
 from pathlib import Path
+
+import pytest
+
+from constructions import paley, sylvester
+from fixtures import tt_lengths, tt_sequences
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 

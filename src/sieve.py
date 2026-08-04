@@ -1,4 +1,5 @@
 """Necessary spectral and sum constraints for Turyn-type sequence seeds."""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -70,8 +71,7 @@ def seed_turyn_batch(
         keys = rng.random((size, 4, n))
         keys[:, 3, -1] = module.inf
         ranks = module.argsort(module.argsort(keys, axis=2), axis=2)
-        batch = module.where(
-            ranks < plus[:, :, None], 1, -1).astype(module.int8)
+        batch = module.where(ranks < plus[:, :, None], 1, -1).astype(module.int8)
         batch[:, 3, -1] = 0
         valid = batch[turyn_psd_mask(batch, n=n, module=module)]
         if len(valid):

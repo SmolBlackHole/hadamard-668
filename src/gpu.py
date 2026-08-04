@@ -1,4 +1,5 @@
 """The shared GPU backend and Hadamard matrix metrics."""
+
 from __future__ import annotations
 
 import os
@@ -20,13 +21,16 @@ def _setup() -> None:
         import warnings
 
         os.environ.setdefault(
-            "CUPY_CACHE_DIR", os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "..", ".cupy-cache")))
+            "CUPY_CACHE_DIR",
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".cupy-cache")),
+        )
         nvidia = os.path.join(site.getsitepackages()[0], "nvidia")
         if os.path.isdir(nvidia):
-            for directory in {os.path.dirname(path) for path in glob.glob(os.path.join(nvidia, "**", "*.dll"), recursive=True)}:
-                os.environ["PATH"] = directory + \
-                    ";" + os.environ.get("PATH", "")
+            for directory in {
+                os.path.dirname(path)
+                for path in glob.glob(os.path.join(nvidia, "**", "*.dll"), recursive=True)
+            }:
+                os.environ["PATH"] = directory + ";" + os.environ.get("PATH", "")
             os.environ.setdefault("CUDA_PATH", nvidia)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -122,11 +126,9 @@ def apply_entry_flip(
     known_delta: int | None = None,
 ) -> int:
     """Flip one sign entry and update the affected Gram row and column in O(n)."""
-    delta = (entry_flip_delta(matrix, gram, row, column)
-             if known_delta is None else known_delta)
+    delta = entry_flip_delta(matrix, gram, row, column) if known_delta is None else known_delta
     old_value = matrix[row, column]
-    change = (-2 * old_value * matrix[:, column]).astype(
-        gram.dtype, copy=False)
+    change = (-2 * old_value * matrix[:, column]).astype(gram.dtype, copy=False)
     change[row] = 0
     updated = gram[row] + change
     matrix[row, column] = -old_value

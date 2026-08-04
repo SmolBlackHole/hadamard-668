@@ -1,16 +1,21 @@
 """Hadamard search entry point."""
+
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent / "src"))
+
+import argparse
+import datetime
+import time
+from concurrent.futures import ProcessPoolExecutor
 
 from output import save
 from strategies.base import RunResult
-from strategies.registry import DEFAULT, GPU, parse as parse_strategy
-
-import numpy as np
-from concurrent.futures import ProcessPoolExecutor
-import time, datetime, argparse
+from strategies.registry import DEFAULT, GPU
+from strategies.registry import parse as parse_strategy
 
 
 def select_best_run(results: list[RunResult]) -> RunResult:
@@ -25,16 +30,16 @@ def derive_seeds(seed: int, runs: int) -> list[int]:
 
 def worker_count(spec: str, runs: int, workers: int) -> int:
     names = {p.rsplit(":", 1)[0] if ":" in p else p for p in spec.split(",")}
-    if names & GPU:
-        return 1
-    return min(runs, workers)
+    return 1 if names & GPU else min(runs, workers)
 
 
-def _execute_run(spec: str, steps: int, seed: int, order: int,
-                 time_budget: float = 0.0) -> RunResult:
+def _execute_run(
+    spec: str, steps: int, seed: int, order: int, time_budget: float = 0.0
+) -> RunResult:
     strategy = parse_strategy(spec, order)
     started = time.perf_counter()
-    matrix, metrics = None, None
+    matrix = None
+    metrics: dict[str, int] = {"energy": 2**63, "orthogonal_pairs": 0, "max_abs_correlation": 0}
     if time_budget > 0:
         t0 = time.perf_counter()
         strategy.search(steps=50, seed=seed)
@@ -47,12 +52,15 @@ def _execute_run(spec: str, steps: int, seed: int, order: int,
     if matrix is None:
         matrix, metrics, _ = strategy.search(steps, seed)
     wall = time.perf_counter() - started
-    h = strategy.hamming() if hasattr(strategy, 'hamming') else None
-    return RunResult(seed=seed, matrix=matrix,
-                     energy=metrics["energy"],
-                     orthogonal_pairs=metrics["orthogonal_pairs"],
-                     max_off_diagonal=metrics["max_abs_correlation"],
-                     wall=wall, hamming=h)
+    return RunResult(
+        seed=seed,
+        matrix=matrix,
+        energy=metrics["energy"],
+        orthogonal_pairs=metrics["orthogonal_pairs"],
+        max_off_diagonal=metrics["max_abs_correlation"],
+        wall=wall,
+        hamming=strategy.hamming(),
+    )
 
 
 def main() -> None:
@@ -75,29 +83,39 @@ def main() -> None:
         parser.error(str(e))
 
     if workers == 1:
-        results = [_execute_run(args.strategy, args.steps, s, args.order, args.time)
-                   for s in seeds]
+        results = [_execute_run(args.strategy, args.steps, s, args.order, args.time) for s in seeds]
     else:
         with ProcessPoolExecutor(max_workers=workers) as e:
-            results = list(e.map(
-                _execute_run,
-                [args.strategy] * len(seeds),
-                [args.steps] * len(seeds),
-                seeds,
-                [args.order] * len(seeds),
-                [args.time] * len(seeds),
-            ))
+            results = list(
+                e.map(
+                    _execute_run,
+                    [args.strategy] * len(seeds),
+                    [args.steps] * len(seeds),
+                    seeds,
+                    [args.order] * len(seeds),
+                    [args.time] * len(seeds),
+                )
+            )
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     for r in results:
         out = Path(args.runs_dir) / f"{strategy.name}_{r.seed}_{timestamp}"
-        save(r.matrix,
-             {"energy": r.energy, "orthogonal_pairs": r.orthogonal_pairs,
-              "max_abs_correlation": r.max_off_diagonal},
-             out,
-             strategy=args.strategy, seed=r.seed, steps=args.steps,
-             wall=r.wall, order=r.matrix.shape[0],
-             construction=strategy.construction, hamming=r.hamming)
+        save(
+            r.matrix,
+            {
+                "energy": r.energy,
+                "orthogonal_pairs": r.orthogonal_pairs,
+                "max_abs_correlation": r.max_off_diagonal,
+            },
+            out,
+            strategy=args.strategy,
+            seed=r.seed,
+            steps=args.steps,
+            wall=r.wall,
+            order=r.matrix.shape[0],
+            construction=strategy.construction,
+            hamming=r.hamming,
+        )
 
     best = select_best_run(results)
     print("\nRun summary")

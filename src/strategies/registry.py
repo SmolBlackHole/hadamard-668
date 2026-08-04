@@ -1,11 +1,12 @@
 """Strategy lookup — map CLI name to SearchStrategy for a given order."""
+
 from __future__ import annotations
 
-from .base import Pipeline, SearchStrategy, TurynStrategy
+from .base import Pipeline, SearchStrategy
 from .greedy import TurynGreedySearch
-from .spectral_descent import TurynSpectralDescentSearch
 from .pocs import PocsSearch
 from .repair import RepairSearch
+from .spectral_descent import TurynSpectralDescentSearch
 
 _CLASSES: dict[str, type[SearchStrategy]] = {
     "greedy": TurynGreedySearch,
@@ -17,6 +18,12 @@ _CLASSES: dict[str, type[SearchStrategy]] = {
 GPU = frozenset({"pocs", "spectral_descent"})
 DEFAULT = "spectral_descent"
 
+_TURYN_CLASSES: set[type[SearchStrategy]] = {
+    TurynGreedySearch,
+    TurynSpectralDescentSearch,
+    PocsSearch,
+}
+
 
 def _turyn_n(order: int) -> int:
     n = (order // 4 + 1) // 3
@@ -27,9 +34,9 @@ def _turyn_n(order: int) -> int:
 
 def build(name: str, order: int) -> SearchStrategy:
     cls = _CLASSES[name]
-    if issubclass(cls, TurynStrategy):
-        return cls(n=_turyn_n(order))
-    return cls(order=order)
+    if cls in _TURYN_CLASSES:
+        return cls(n=_turyn_n(order))  # type: ignore[call-arg]
+    return cls(order=order)  # type: ignore[call-arg]
 
 
 def parse(spec: str, order: int) -> SearchStrategy:
@@ -41,4 +48,3 @@ def parse(spec: str, order: int) -> SearchStrategy:
         n, st = part.rsplit(":", 1)
         stages.append((build(n, order), int(st)))
     return Pipeline(stages)
-

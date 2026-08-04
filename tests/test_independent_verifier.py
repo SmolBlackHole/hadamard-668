@@ -1,12 +1,14 @@
 """Reference checks that deliberately avoid the solver construction path."""
+
 from __future__ import annotations
+
+from typing import Sequence, cast
 
 import numpy as np
 import pytest
-from typing import Sequence, cast
 
-from strategies.greedy import TurynGreedySearch
 from constructions import sylvester
+from strategies.greedy import TurynGreedySearch
 from verifier.verify import (
     InvalidMatrix,
     build_turyn_reference,
@@ -15,7 +17,6 @@ from verifier.verify import (
     verify_turyn_candidate,
     verify_turyn_sequences,
 )
-
 
 TT8 = (
     (1, 1, -1, 1, -1, 1, -1, 1),
@@ -42,7 +43,8 @@ def test_known_small_hadamard_passes_pure_python_audit() -> None:
 
 @pytest.mark.parametrize("sequences,order", [(TT8, 92), (_tt36(), 428)])
 def test_known_turyn_sequences_pass_every_independent_layer(
-    sequences: tuple[Sequence[int], Sequence[int], Sequence[int], Sequence[int]], order: int,
+    sequences: tuple[Sequence[int], Sequence[int], Sequence[int], Sequence[int]],
+    order: int,
 ) -> None:
     verify_turyn_sequences(sequences)
     matrix = verify_turyn_candidate(sequences)
@@ -59,18 +61,22 @@ def test_bit_flip_breaks_the_matrix_audit() -> None:
 
 
 def test_random_turyn_sequences_fail_the_sequence_condition() -> None:
-    random_sequences = np.random.default_rng(42).choice(
-        (-1, 1), size=(4, 8)).tolist()
+    random_sequences = np.random.default_rng(42).choice((-1, 1), size=(4, 8)).tolist()
     with pytest.raises(InvalidMatrix, match="autocorrelation"):
         verify_turyn_sequences(
-            (random_sequences[0], random_sequences[1], random_sequences[2], random_sequences[3][:-1]))
+            (
+                random_sequences[0],
+                random_sequences[1],
+                random_sequences[2],
+                random_sequences[3][:-1],
+            )
+        )
 
 
 def test_solver_builder_agrees_with_the_reference_construction() -> None:
     strategy = TurynGreedySearch(n=8, sieve=False)
     sequences = strategy.seed(np.random.default_rng(3))
-    compact = tuple(sequences[row, :length].tolist()
-                    for row, length in enumerate(strategy.LENGTHS))
+    compact = tuple(sequences[row, :length].tolist() for row, length in enumerate(strategy.LENGTHS))
     solver_matrix, solver_metrics = strategy.build(sequences)
     reference_matrix = build_turyn_reference(compact)
     assert np.array_equal(solver_matrix, np.asarray(reference_matrix, dtype=np.int8))
@@ -79,7 +85,11 @@ def test_solver_builder_agrees_with_the_reference_construction() -> None:
     else:
         with pytest.raises(InvalidMatrix):
             independent_audit(reference_matrix)
-    verify_goethals_seidel_sequences((
-        (1, 1, 1, -1), (1, -1, 1, 1),
-        (1, 1, -1, 1), (1, -1, -1, -1),
-    ))
+    verify_goethals_seidel_sequences(
+        (
+            (1, 1, 1, -1),
+            (1, -1, 1, 1),
+            (1, 1, -1, 1),
+            (1, -1, -1, -1),
+        )
+    )

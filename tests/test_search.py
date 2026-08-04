@@ -1,4 +1,5 @@
 """Smoke tests against known matrices and the search-engine API."""
+
 from __future__ import annotations
 
 import os
@@ -10,13 +11,13 @@ import numpy as np
 import pytest
 
 from builders import build_goethals_seidel
+from constructions import get_known, paley, sylvester
 from gpu import check_orthogonality
 from run import derive_seeds, select_best_run, worker_count
+from strategies.base import Pipeline, Result, SearchStrategy
 from strategies.base import RunResult as RR
-from strategies.base import Pipeline, SearchStrategy
 from strategies.greedy import TurynGreedySearch
 from strategies.repair import RepairSearch
-from constructions import get_known, paley, sylvester
 
 
 @pytest.mark.parametrize("order", [1, 2, 4, 8, 12, 16, 20])
@@ -29,10 +30,12 @@ def test_known_matrices_are_orthogonal(order: int) -> None:
 
 
 def test_goethals_seidel_builds_order_four_hadamard() -> None:
-    matrix = build_goethals_seidel(
-        *(np.ones(1, dtype=np.int8) for _ in range(4)))
+    matrix = build_goethals_seidel(*(np.ones(1, dtype=np.int8) for _ in range(4)))
     assert check_orthogonality(matrix) == {
-        "energy": 0, "orthogonal_pairs": 6, "max_abs_correlation": 0}
+        "energy": 0,
+        "orthogonal_pairs": 6,
+        "max_abs_correlation": 0,
+    }
 
 
 def test_run_help_works_without_pythonpath() -> None:
@@ -54,12 +57,18 @@ def test_run_writes_each_parallel_seed_separately(tmp_path) -> None:
         [
             sys.executable,
             "run.py",
-            "--strategy", "greedy",
-            "--steps", "0",
-            "--seed", "7",
-            "--runs", "2",
-            "--workers", "2",
-            "--runs-dir", str(tmp_path),
+            "--strategy",
+            "greedy",
+            "--steps",
+            "0",
+            "--seed",
+            "7",
+            "--runs",
+            "2",
+            "--workers",
+            "2",
+            "--runs-dir",
+            str(tmp_path),
         ],
         cwd=Path(__file__).parents[1],
         capture_output=True,
@@ -71,8 +80,7 @@ def test_run_writes_each_parallel_seed_separately(tmp_path) -> None:
     assert result.returncode == 0, result.stderr
     outputs = sorted(tmp_path.iterdir())
     assert len(outputs) == 2
-    assert all((directory / "matrix.csv").is_file()
-               for directory in outputs)
+    assert all((directory / "matrix.csv").is_file() for directory in outputs)
     assert all((directory / "run.json").is_file() for directory in outputs)
     assert "Run summary" in result.stdout
     assert "best seed=" in result.stdout
@@ -103,11 +111,15 @@ def test_pipeline_short_circuits_only_after_exact_verification() -> None:
             return "source"
 
         def search(self, steps: int, seed: int):
-            return np.ones((4, 4), dtype=np.int8), {
-                "energy": 0,
-                "orthogonal_pairs": 6,
-                "max_abs_correlation": 0,
-            }, 0.0
+            return Result(
+                np.ones((4, 4), dtype=np.int8),
+                {
+                    "energy": 0,
+                    "orthogonal_pairs": 6,
+                    "max_abs_correlation": 0,
+                },
+                0.0,
+            )
 
     class Sink(SearchStrategy):
         ORDER = 4
@@ -122,7 +134,7 @@ def test_pipeline_short_circuits_only_after_exact_verification() -> None:
         def refine(self, matrix: np.ndarray, steps: int, seed: int):
             calls.append(seed)
             candidate = sylvester(4)
-            return candidate, check_orthogonality(candidate), 0.0
+            return Result(candidate, check_orthogonality(candidate), 0.0)
 
     _, metrics, _ = Pipeline([(Source(), 1), (Sink(), 1)]).search(0, 10)
 
@@ -132,10 +144,12 @@ def test_pipeline_short_circuits_only_after_exact_verification() -> None:
 
 def test_pipeline_rejects_non_refining_followup() -> None:
     with pytest.raises(ValueError, match="cannot refine"):
-        Pipeline([
-            (TurynGreedySearch(n=8), 1),
-            (TurynGreedySearch(n=8), 1),
-        ])
+        Pipeline(
+            [
+                (TurynGreedySearch(n=8), 1),
+                (TurynGreedySearch(n=8), 1),
+            ]
+        )
 
 
 def test_parallel_run_helpers_are_deterministic_and_gpu_safe() -> None:
@@ -147,10 +161,8 @@ def test_parallel_run_helpers_are_deterministic_and_gpu_safe() -> None:
 
     matrix = sylvester(4)
     results = [
-        RR(seed=40, matrix=matrix, energy=8, orthogonal_pairs=0,
-           max_off_diagonal=0, wall=0.2),
-        RR(seed=41, matrix=matrix, energy=0, orthogonal_pairs=0,
-           max_off_diagonal=0, wall=0.3),
+        RR(seed=40, matrix=matrix, energy=8, orthogonal_pairs=0, max_off_diagonal=0, wall=0.2),
+        RR(seed=41, matrix=matrix, energy=0, orthogonal_pairs=0, max_off_diagonal=0, wall=0.3),
     ]
     assert select_best_run(results).seed == 41
 

@@ -1,5 +1,7 @@
 """Non-periodic autocorrelation (NPAF) — the core math for Turyn search."""
+
 from __future__ import annotations
+
 import numpy as np
 
 
@@ -13,19 +15,25 @@ def nonperiodic_autocorrelation_state(
     matrix = np.asarray(sequences, dtype=np.int8)
     if matrix.ndim != 2 or matrix.shape[0] == 0:
         raise ValueError("sequences must be a non-empty two-dimensional array")
-    actual_lengths = (np.full(matrix.shape[0], matrix.shape[1], dtype=np.int64)
-                      if lengths is None else np.asarray(lengths, dtype=np.int64))
+    actual_lengths = (
+        np.full(matrix.shape[0], matrix.shape[1], dtype=np.int64)
+        if lengths is None
+        else np.asarray(lengths, dtype=np.int64)
+    )
     if actual_lengths.shape != (matrix.shape[0],) or np.any(actual_lengths < 1):
         raise ValueError("lengths must contain one positive value per sequence")
-    actual_weights = (np.ones(matrix.shape[0], dtype=np.int64) if weights is None
-                      else np.asarray(weights, dtype=np.int64))
+    actual_weights = (
+        np.ones(matrix.shape[0], dtype=np.int64)
+        if weights is None
+        else np.asarray(weights, dtype=np.int64)
+    )
     if actual_weights.shape != actual_lengths.shape:
         raise ValueError("weights must contain one value per sequence")
     n = int(actual_lengths.max())
     total = np.zeros(n, dtype=np.int64)
     for seq, L, w in zip(matrix, actual_lengths, actual_weights):
         for s in range(1, int(L)):
-            total[s] += int(w) * int(np.dot(seq[:L - s], seq[s:L]))
+            total[s] += int(w) * int(np.dot(seq[: L - s], seq[s:L]))
     return total
 
 
@@ -51,7 +59,7 @@ def nonperiodic_batch_energy(
     corr = module.fft.ifft(module.abs(spectrum) ** 2, axis=2).real
     w = module.asarray(weights, dtype=values.dtype)
     total = module.sum(w[None, :, None] * corr, axis=1)
-    return module.sum(total[:, 1:values.shape[2]] ** 2, axis=1)
+    return module.sum(total[:, 1 : values.shape[2]] ** 2, axis=1)
 
 
 def apply_nonperiodic_flip(

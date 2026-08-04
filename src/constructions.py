@@ -1,5 +1,7 @@
 """Classical Hadamard constructions for solver calibration."""
+
 from __future__ import annotations
+
 import numpy as np
 
 
@@ -41,8 +43,9 @@ def paley(order: int) -> np.ndarray:
             Q[i, j] = _legendre((j - i) % q, q)
     row = np.ones(order, dtype=np.int8)
     col = np.ones(order, dtype=np.int8)
-    return np.block([[np.eye(1, dtype=np.int8), row[None, 1:]],
-                     [col[1:, None], Q - np.eye(q, dtype=np.int8)]]).astype(np.int8)
+    return np.block(
+        [[np.eye(1, dtype=np.int8), row[None, 1:]], [col[1:, None], Q - np.eye(q, dtype=np.int8)]]
+    ).astype(np.int8)
 
 
 def get_known(order: int) -> np.ndarray:

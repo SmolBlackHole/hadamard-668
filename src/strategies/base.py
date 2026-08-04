@@ -1,8 +1,9 @@
 """Shared contract and pipeline for search strategies."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
@@ -38,9 +39,15 @@ class SearchStrategy(ABC):
     @abstractmethod
     def name(self) -> str: ...
     @property
-    def construction(self) -> str: return "unknown"
+    def construction(self) -> str:
+        return "unknown"
+
     @property
-    def order(self) -> int: return self.ORDER
+    def order(self) -> int:
+        return self.ORDER
+
+    def hamming(self) -> int | None:
+        return None
 
     def refine(self, matrix: np.ndarray, steps: int, seed: int) -> Result:
         raise NotImplementedError(f"{self.name} cannot refine")
@@ -56,8 +63,10 @@ class SearchStrategy(ABC):
 
 # ── Turyn shared base ─────────────────────────────────────────────────────────
 
+
 class TurynStrategy(SearchStrategy):
     """Shared seed + build for all Turyn-type sequence solvers."""
+
     WEIGHTS = np.array((1, 1, 2, 2), dtype=np.int64)
     DEFAULT_N = 56
 
@@ -82,16 +91,16 @@ class TurynStrategy(SearchStrategy):
         return seq
 
     def build(self, sequences: np.ndarray) -> tuple[np.ndarray, dict[str, int]]:
-        matrix = build_turyn(*(
-            sequences[i, :self.LENGTHS[i]] for i in range(4)))
+        matrix = build_turyn(*(sequences[i, : self.LENGTHS[i]] for i in range(4)))
         self._last_seq = sequences
         return matrix, check_orthogonality(matrix)
 
     def hamming(self) -> int | None:
         """Bits differing from the known TT(N) solution, or None if unknown."""
-        from fixtures import known_solution, hamming_distance
+        from fixtures import hamming_distance, known_solution
+
         sol = known_solution(self.N)
-        if sol is None or not hasattr(self, '_last_seq'):
+        if sol is None or not hasattr(self, "_last_seq"):
             return None
         ref, lengths = sol
         return hamming_distance(self._last_seq, ref, lengths)
@@ -120,12 +129,14 @@ class Pipeline(SearchStrategy):
 
     def search(self, steps: int, seed: int) -> Result:
         matrix = np.empty((1, 1), dtype=np.int8)
-        metrics = {"energy": 2**63, "orthogonal_pairs": 0,
-                   "max_abs_correlation": 0}
+        metrics = {"energy": 2**63, "orthogonal_pairs": 0, "max_abs_correlation": 0}
         elapsed = 0.0
         for idx, (strategy, steps_s) in enumerate(self._stages):
-            matrix, metrics, step_elapsed = (strategy.search(steps_s, seed + idx) if idx == 0
-                                             else strategy.refine(matrix, steps_s, seed + idx))
+            matrix, metrics, step_elapsed = (
+                strategy.search(steps_s, seed + idx)
+                if idx == 0
+                else strategy.refine(matrix, steps_s, seed + idx)
+            )
             elapsed += step_elapsed
             if metrics["energy"] == 0:
                 metrics = check_orthogonality(matrix)

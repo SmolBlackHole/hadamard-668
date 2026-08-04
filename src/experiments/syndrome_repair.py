@@ -1,14 +1,22 @@
 """GPU-parallel repair: exact single-flip scan + CPU pair model via Q[i,j]."""
+
 from __future__ import annotations
-import sys, time
+
+import sys
+import time
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent))
 
 import numpy as np
+
+from correlations import (
+    apply_nonperiodic_flip,
+    nonperiodic_autocorrelation_state,
+    nonperiodic_correlation_energy,
+)
 from gpu import xp
-from correlations import (nonperiodic_autocorrelation_state,
-                           nonperiodic_correlation_energy,
-                           apply_nonperiodic_flip)
+
+sys.path.insert(0, str(Path(__file__).parent))
+
 
 WEIGHTS_I = np.array((1, 1, 2, 2), dtype=np.int64)
 WEIGHTS_F = np.array((1, 1, 2, 2), dtype=np.float64)
@@ -35,9 +43,11 @@ class Repair:
         self.seq_f = xp.asarray(self.seq.astype(np.float32), dtype=xp.float32)
 
     def _exact_energy(self):
-        return float(nonperiodic_correlation_energy(
-            nonperiodic_autocorrelation_state(
-                self.seq, lengths=self.lengths, weights=WEIGHTS_I)))
+        return float(
+            nonperiodic_correlation_energy(
+                nonperiodic_autocorrelation_state(self.seq, lengths=self.lengths, weights=WEIGHTS_I)
+            )
+        )
 
     def _apply(self, idx):
         r, c = self.positions[idx]
@@ -51,8 +61,9 @@ class Repair:
             batch[i, r, c] *= -1
         residuals = _residual_gpu(batch, self.lengths)
         r0 = _residual_gpu(self.seq_f[None, ...], self.lengths)[0]
-        return np.array([xp.asnumpy(residuals[i] - r0) for i in range(B)],
-                        dtype=np.float64), xp.asnumpy(r0)
+        return np.array(
+            [xp.asnumpy(residuals[i] - r0) for i in range(B)], dtype=np.float64
+        ), xp.asnumpy(r0)
 
     def _pair_interactions(self, top_indices, deltas_top):
         """GPU batch: compute Q[i][j] = residual(i,j) - r0 - delta_i - delta_j."""
@@ -109,8 +120,11 @@ class Repair:
                 best_pair = None
                 for i in range(len(top_idx)):
                     for j in range(i + 1, len(top_idx)):
-                        e = float(np.sum((r0_now + deltas[top_idx[i]]
-                                          + deltas[top_idx[j]] + Q[i, j]) ** 2))
+                        e = float(
+                            np.sum(
+                                (r0_now + deltas[top_idx[i]] + deltas[top_idx[j]] + Q[i, j]) ** 2
+                            )
+                        )
                         if e < best_pair_e:
                             best_pair_e = e
                             best_pair = (top_idx[i], top_idx[j])
@@ -145,9 +159,9 @@ if __name__ == "__main__":
         n_val = lengths[0]
         total_bits = int(lengths.sum())
         order = 4 * (3 * n_val - 1)
-        print(f"\n{'='*55}")
+        print(f"\n{'=' * 55}")
         print(f"  {name}  n={n_val}  order={order}  bits={total_bits}  ({backend})")
-        print(f"{'='*55}")
+        print(f"{'=' * 55}")
 
         for noise_pct in [1, 2, 5, 10, 20]:
             n_flips = max(1, int(total_bits * noise_pct / 100))
@@ -171,23 +185,31 @@ if __name__ == "__main__":
                     for row in range(4):
                         for col in range(int(lengths[row])):
                             ne = apply_nonperiodic_flip(
-                                g_seq, corr, row, col, lengths=lengths,
-                                weight=int(WEIGHTS_I[row]))
-                            if ne < best_e: best_e = ne; imp = True; break
+                                g_seq, corr, row, col, lengths=lengths, weight=int(WEIGHTS_I[row])
+                            )
+                            if ne < best_e:
+                                best_e = ne
+                                imp = True
+                                break
                             apply_nonperiodic_flip(
-                                g_seq, corr, row, col, lengths=lengths,
-                                weight=int(WEIGHTS_I[row]))
-                        if imp: break
-                if best_e == 0: g_rec += 1
+                                g_seq, corr, row, col, lengths=lengths, weight=int(WEIGHTS_I[row])
+                            )
+                        if imp:
+                            break
+                if best_e == 0:
+                    g_rec += 1
                 g_t += time.perf_counter() - t0
 
                 # GPU repair
                 t0 = time.perf_counter()
                 rp = Repair(p.copy(), lengths)
                 flips, e = rp.repair()
-                if rp._exact_energy() == 0: gp_rec += 1
+                if rp._exact_energy() == 0:
+                    gp_rec += 1
                 gp_t += time.perf_counter() - t0
 
-            print(f"  {noise_pct:>3}% ({n_flips:>2}f) | "
-                  f"greedy: {g_rec:>2}/10 ({g_t:.1f}s) | "
-                  f"gpu: {gp_rec:>2}/10 ({gp_t:.1f}s)")
+            print(
+                f"  {noise_pct:>3}% ({n_flips:>2}f) | "
+                f"greedy: {g_rec:>2}/10 ({g_t:.1f}s) | "
+                f"gpu: {gp_rec:>2}/10 ({gp_t:.1f}s)"
+            )

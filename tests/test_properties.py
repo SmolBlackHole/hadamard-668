@@ -1,21 +1,31 @@
 """Property tests for builders, correlations, and result contracts."""
+
 from __future__ import annotations
-import hashlib, json
+
+import json
+
 import numpy as np
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from builders import build_goethals_seidel, build_turyn
-from correlations import (
-    apply_nonperiodic_flip, nonperiodic_autocorrelation_state,
-    nonperiodic_correlation_energy,
-)
-from gpu import (apply_entry_flip, check_orthogonality, entry_flip_delta,
-                 entry_flip_deltas, gram_matrix, metrics_from_gram, to_numpy, xp)
-from output import save
-from strategies.base import Pipeline, SearchStrategy
-from strategies.repair import RepairSearch
 from constructions import paley, sylvester
+from correlations import (
+    apply_nonperiodic_flip,
+    nonperiodic_autocorrelation_state,
+)
+from gpu import (
+    apply_entry_flip,
+    check_orthogonality,
+    entry_flip_delta,
+    entry_flip_deltas,
+    gram_matrix,
+    metrics_from_gram,
+)
+from output import save
+from strategies.base import Pipeline, Result, SearchStrategy
+from strategies.repair import RepairSearch
 
 
 @st.composite
@@ -41,12 +51,15 @@ def sign_matrices(draw: st.DrawFn) -> np.ndarray:
 def _reference_metrics(matrix: np.ndarray) -> dict[str, int]:
     gram = matrix.astype(np.int64) @ matrix.astype(np.int64).T
     upper = gram[np.triu_indices(matrix.shape[0], k=1)]
-    return {"energy": int(np.dot(upper, upper)),
-            "orthogonal_pairs": int(np.count_nonzero(upper == 0)),
-            "max_abs_correlation": int(np.abs(upper).max(initial=0))}
+    return {
+        "energy": int(np.dot(upper, upper)),
+        "orthogonal_pairs": int(np.count_nonzero(upper == 0)),
+        "max_abs_correlation": int(np.abs(upper).max(initial=0)),
+    }
 
 
 # ── Builder property tests ────────────────────────────────────────────────────
+
 
 @settings(max_examples=30, deadline=None)
 @given(four_sign_sequences())
@@ -59,28 +72,35 @@ def test_goethals_seidel_builds_valid_matrix(seqs):
 
 def test_goethals_seidel_slicing_matches_permutation_matrix_reference():
     from builders import build_goethals_seidel
-    a, b, c, d = (np.array([1, -1, 1, -1, 1], dtype=np.int8),
-                  np.array([1, 1, 1, -1, 1], dtype=np.int8),
-                  np.array([-1, 1, -1, 1, 1], dtype=np.int8),
-                  np.array([-1, -1, 1, -1, 1], dtype=np.int8))
+
+    a, b, c, d = (
+        np.array([1, -1, 1, -1, 1], dtype=np.int8),
+        np.array([1, 1, 1, -1, 1], dtype=np.int8),
+        np.array([-1, 1, -1, 1, 1], dtype=np.int8),
+        np.array([-1, -1, 1, -1, 1], dtype=np.int8),
+    )
     matrix = build_goethals_seidel(a, b, c, d)
     assert matrix.shape == (20, 20)
     assert np.all(np.isin(matrix, (-1, 1)))
 
 
 def test_turyn_type_eight_builds_order_ninety_two_hadamard():
-    tt8 = tuple(np.array(s, dtype=np.int8) for s in (
-        (1, 1, -1, 1, -1, 1, -1, 1),
-        (1, -1, -1, -1, -1, -1, -1, 1),
-        (1, -1, -1, 1, 1, 1, 1, -1),
-        (1, 1, 1, -1, 1, 1, -1),
-    ))
+    tt8 = tuple(
+        np.array(s, dtype=np.int8)
+        for s in (
+            (1, 1, -1, 1, -1, 1, -1, 1),
+            (1, -1, -1, -1, -1, -1, -1, 1),
+            (1, -1, -1, 1, 1, 1, 1, -1),
+            (1, 1, 1, -1, 1, 1, -1),
+        )
+    )
     matrix = build_turyn(*tt8)
     assert check_orthogonality(matrix)["energy"] == 0
     assert matrix.shape == (92, 92)
 
 
 # ── NPAF state tests ────────────────────────────────────────────────────────
+
 
 def test_nonperiodic_flip_state_matches_recomputation():
     rng = np.random.default_rng(42)
@@ -98,6 +118,7 @@ def test_nonperiodic_flip_state_matches_recomputation():
 
 # ── GPU/gpu matrix tests ─────────────────────────────────────────────────────
 
+
 @settings(max_examples=30, deadline=None)
 @given(sign_matrices())
 def test_metrics_match_independent_reference(matrix):
@@ -114,9 +135,9 @@ def test_gram_primitives_match_independent_reference(matrix):
 @given(sign_matrices(), st.integers(0, 0))
 def test_incremental_entry_flips_match_full_recomputation(matrix, _row):
     order = matrix.shape[0]
-    if order == 0: return
+    if order == 0:
+        return
     row = abs(_row) % order
-    initial = matrix.copy()
     gram = gram_matrix(matrix, backend=np)
     energy = metrics_from_gram(gram)["energy"]
     for _ in range(min(3, order)):
@@ -139,6 +160,7 @@ def test_batched_entry_flip_deltas_match_full_recomputation():
 
 
 # ── Repair tests ─────────────────────────────────────────────────────────────
+
 
 def test_repair_selects_columns_for_correlation_sign():
     matrix = np.ones((4, 4), dtype=np.int8)
@@ -177,18 +199,32 @@ def test_incremental_repair_search_returns_exact_metrics():
 def test_pipeline_passes_matrix_and_incremented_seed():
     class Source(SearchStrategy):
         ORDER = 4
+
         @property
-        def name(self): return "source"
+        def name(self):
+            return "source"
+
         def search(self, steps, seed):
-            return np.array([[1, 1], [1, -1]], dtype=np.int8), {"energy": 1, "orthogonal_pairs": 0, "max_abs_correlation": 2}, 0.1
+            return Result(
+                np.array([[1, 1], [1, -1]], dtype=np.int8),
+                {"energy": 1, "orthogonal_pairs": 0, "max_abs_correlation": 2},
+                0.1,
+            )
 
     class Sink(SearchStrategy):
         ORDER = 4
+
         @property
-        def name(self): return "sink"
-        def search(self, steps, seed): raise AssertionError
+        def name(self):
+            return "sink"
+
+        def search(self, steps, seed):
+            raise AssertionError
+
         def refine(self, matrix, steps, seed):
-            return matrix, {"energy": 1, "orthogonal_pairs": 0, "max_abs_correlation": 2}, 0.2
+            return Result(
+                matrix, {"energy": 1, "orthogonal_pairs": 0, "max_abs_correlation": 2}, 0.2
+            )
 
     _, metrics, _ = Pipeline([(Source(), 3), (Sink(), 5)]).search(steps=0, seed=20)
     assert metrics["energy"] == 1
@@ -196,11 +232,21 @@ def test_pipeline_passes_matrix_and_incremented_seed():
 
 # ── Output tests ─────────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize("matrix", [sylvester(4), paley(12)])
 def test_output_saves_and_audits(matrix, tmp_path):
     metrics = check_orthogonality(matrix)
-    sha = save(matrix, metrics, tmp_path, strategy="test", seed=0, steps=1, wall=0.0,
-               order=len(matrix), construction="test")
+    sha = save(
+        matrix,
+        metrics,
+        tmp_path,
+        strategy="test",
+        seed=0,
+        steps=1,
+        wall=0.0,
+        order=len(matrix),
+        construction="test",
+    )
     info = json.loads((tmp_path / "run.json").read_text())
     assert info["is_solution"] is True
     assert info["sha256"] == sha
@@ -209,8 +255,15 @@ def test_output_saves_and_audits(matrix, tmp_path):
 
 def test_output_rejects_an_invalid_claimed_solution(tmp_path):
     with pytest.raises(ValueError, match="other than -1 or 1"):
-        save(np.array([[2, 0], [0, 2]], dtype=np.int8),
-             {"energy": 0, "orthogonal_pairs": 1, "max_abs_correlation": 0},
-             tmp_path / "invalid", strategy="test", seed=0, steps=1, wall=0.0,
-             order=2, construction="test")
+        save(
+            np.array([[2, 0], [0, 2]], dtype=np.int8),
+            {"energy": 0, "orthogonal_pairs": 1, "max_abs_correlation": 0},
+            tmp_path / "invalid",
+            strategy="test",
+            seed=0,
+            steps=1,
+            wall=0.0,
+            order=2,
+            construction="test",
+        )
     assert not (tmp_path / "invalid").exists()

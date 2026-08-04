@@ -1,0 +1,59 @@
+[project]
+name = "hadamard-668"
+version = "0.1.0"
+description = "GPU-accelerated heuristic search for Hadamard matrices"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.24,<3",
+    "numba>=0.60",
+    "tqdm>=4",
+    "pytest>=8",
+    "hypothesis>=6",
+    "python-sat>=1.9",
+    "cupy-cuda12x",
+    "nvidia-cublas-cu12",
+    "nvidia-cusparse-cu12",
+    "nvidia-cusolver-cu12",
+    "nvidia-cuda-nvrtc-cu12",
+    "nvidia-cuda-runtime-cu12",
+    "nvidia-cufft-cu12",
+    "nvidia-curand-cu12",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.11"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501", "E741"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.pyright]
+include = ["src", "run.py"]
+exclude = [
+    ".venv",
+    ".git",
+    "runs",
+    ".pytest-tmp",
+    "**/__pycache__",
+    "**/.*",
+    "**/node_modules",
+]
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+reportPrivateUsage = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnknownMemberType = false

@@ -1,18 +1,24 @@
 """Known Turyn TT(n) solutions for experiments and testing."""
+
 from __future__ import annotations
+
 import numpy as np
 
 TT_KNOWN: dict[int, tuple[tuple[int, ...], ...]] = {
     2: ((1, -1), (1, -1), (-1, -1), (-1,)),
     4: ((1, -1, 1, -1), (1, -1, -1, -1), (-1, 1, 1, -1), (-1, -1, -1)),
-    6: ((-1, 1, -1, -1, 1, -1),
+    6: (
+        (-1, 1, -1, -1, 1, -1),
         (-1, 1, 1, -1, -1, -1),
         (1, -1, -1, -1, 1, -1),
-        (1, -1, -1, -1, -1)),
-    8: ((1, 1, -1, 1, -1, 1, -1, 1),
+        (1, -1, -1, -1, -1),
+    ),
+    8: (
+        (1, 1, -1, 1, -1, 1, -1, 1),
         (1, -1, -1, -1, -1, -1, -1, 1),
         (1, -1, -1, 1, 1, 1, 1, -1),
-        (1, 1, 1, -1, 1, 1, -1)),
+        (1, 1, 1, -1, 1, 1, -1),
+    ),
 }
 
 TT36_HEX = "060989975b685d8fc80750b21c0212eceb26"
@@ -21,9 +27,9 @@ TT36_HEX = "060989975b685d8fc80750b21c0212eceb26"
 def _parse_hex(hex_str: str):
     seqs = [[], [], [], []]
     for d in hex_str[:-1]:
-        for i, b in enumerate(f"{int(d,16):04b}"):
+        for i, b in enumerate(f"{int(d, 16):04b}"):
             seqs[i].append(1 if b == "0" else -1)
-    for i, b in enumerate(f"{int(hex_str[-1],16):03b}"):
+    for i, b in enumerate(f"{int(hex_str[-1], 16):03b}"):
         seqs[i].append(1 if b == "0" else -1)
     return tuple(tuple(s) for s in seqs)
 
@@ -54,5 +60,5 @@ def hamming_distance(seq_a: np.ndarray, seq_b: np.ndarray, lengths: np.ndarray) 
         raise ValueError("sequences must have shape (4, n)")
     mask = np.zeros(seq_a.shape, dtype=bool)
     for i, L in enumerate(lengths):
-        mask[i, :int(L)] = True
+        mask[i, : int(L)] = True
     return int(np.sum((seq_a != seq_b) & mask))
