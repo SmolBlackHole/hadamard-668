@@ -12,6 +12,7 @@ import pytest
 from builders import build_goethals_seidel
 from gpu import check_orthogonality
 from run import derive_seeds, select_best_run, worker_count
+from strategies.base import RunResult as RR
 from strategies.base import Pipeline, SearchStrategy
 from strategies.greedy import TurynGreedySearch
 from strategies.repair import RepairSearch
@@ -146,10 +147,12 @@ def test_parallel_run_helpers_are_deterministic_and_gpu_safe() -> None:
 
     matrix = sylvester(4)
     results = [
-        (40, matrix, {"energy": 8}, 0.2),
-        (41, matrix, {"energy": 0}, 0.3),
+        RR(seed=40, matrix=matrix, energy=8, orthogonal_pairs=0,
+           max_off_diagonal=0, wall=0.2),
+        RR(seed=41, matrix=matrix, energy=0, orthogonal_pairs=0,
+           max_off_diagonal=0, wall=0.3),
     ]
-    assert select_best_run(results)[0] == 41
+    assert select_best_run(results).seed == 41
 
 
 @pytest.mark.parametrize("matrix", [sylvester(4), paley(8), paley(12)])

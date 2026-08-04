@@ -5,37 +5,33 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from output import save
+from strategies.base import RunResult
 from strategies.registry import DEFAULT, GPU, parse as parse_strategy
 
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor
-import time
-import datetime
-import argparse
+import time, datetime, argparse
 
 
-def select_best_run(
-    results: list[tuple[int, np.ndarray, dict[str, int], float]],
-) -> tuple[int, np.ndarray, dict[str, int], float]:
+def select_best_run(results: list[RunResult]) -> RunResult:
     if not results:
         raise ValueError("at least one run result is required")
-    return min(results, key=lambda r: r[2]["energy"])
+    return min(results, key=lambda r: r.energy)
 
 
 def derive_seeds(seed: int, runs: int) -> list[int]:
     return [seed + offset for offset in range(runs)]
 
 
-def worker_count(specification: str, runs: int, workers: int) -> int:
-    names = {p.rsplit(":", 1)[0] if ":" in p else p
-             for p in specification.split(",")}
+def worker_count(spec: str, runs: int, workers: int) -> int:
+    names = {p.rsplit(":", 1)[0] if ":" in p else p for p in spec.split(",")}
     if names & GPU:
         return 1
     return min(runs, workers)
 
 
 def _execute_run(spec: str, steps: int, seed: int, order: int,
-                 time_budget: float = 0.0):
+                 time_budget: float = 0.0) -> RunResult:
     strategy = parse_strategy(spec, order)
     started = time.perf_counter()
     matrix, metrics = None, None
@@ -51,13 +47,17 @@ def _execute_run(spec: str, steps: int, seed: int, order: int,
     if matrix is None:
         matrix, metrics, _ = strategy.search(steps, seed)
     wall = time.perf_counter() - started
-    return seed, matrix, metrics, wall
+    h = strategy.hamming() if hasattr(strategy, 'hamming') else None
+    return RunResult(seed=seed, matrix=matrix,
+                     energy=metrics["energy"],
+                     orthogonal_pairs=metrics["orthogonal_pairs"],
+                     max_off_diagonal=metrics["max_abs_correlation"],
+                     wall=wall, hamming=h)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hadamard search")
-    parser.add_argument("--strategy", default=DEFAULT,
-                        help="strategy name or s1:steps,s2:steps")
+    parser.add_argument("--strategy", default=DEFAULT)
     parser.add_argument("--steps", type=int, default=200_000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--runs", type=int, default=1)
@@ -89,21 +89,25 @@ def main() -> None:
             ))
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    for seed, matrix, metrics, wall in results:
-        out = Path(args.runs_dir) / f"{strategy.name}_{seed}_{timestamp}"
-        save(matrix, metrics, out,
-             strategy=args.strategy, seed=seed, steps=args.steps,
-             wall=wall, order=matrix.shape[0], construction=strategy.construction)
+    for r in results:
+        out = Path(args.runs_dir) / f"{strategy.name}_{r.seed}_{timestamp}"
+        save(r.matrix,
+             {"energy": r.energy, "orthogonal_pairs": r.orthogonal_pairs,
+              "max_abs_correlation": r.max_off_diagonal},
+             out,
+             strategy=args.strategy, seed=r.seed, steps=args.steps,
+             wall=r.wall, order=r.matrix.shape[0],
+             construction=strategy.construction, hamming=r.hamming)
 
-    best = min(results, key=lambda r: r[2]["energy"])
+    best = select_best_run(results)
     print("\nRun summary")
-    for seed, _, m, wall in results:
-        star = " *" if seed == best[0] else ""
-        print(f"  seed={seed} energy={m['energy']} elapsed={wall:.1f}s{star}")
-    if best[2]["energy"] == 0:
+    for r in results:
+        star = " *" if r.seed == best.seed else ""
+        extra = f" hamming={r.hamming}" if r.hamming is not None else ""
+        print(f"  seed={r.seed} energy={r.energy} elapsed={r.wall:.1f}s{extra}{star}")
+    if best.energy == 0:
         print("*** HADAMARD! ***")
-    print(
-        f"best seed={best[0]} energy={best[2]['energy']} elapsed={best[3]:.1f}s")
+    print(f"best seed={best.seed} energy={best.energy} elapsed={best.wall:.1f}s")
 
 
 if __name__ == "__main__":

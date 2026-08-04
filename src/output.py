@@ -12,7 +12,7 @@ from verifier.verify import independent_audit
 
 def save(matrix: np.ndarray, metrics: dict[str, int], directory: Path,
          *, strategy: str, seed: int, steps: int, wall: float,
-         order: int, construction: str) -> str:
+         order: int, construction: str, hamming: int | None = None) -> str:
     """Write matrix.csv and run.json. Audits via pure Python if energy==0."""
     if metrics["energy"] == 0:
         independent_audit(matrix.tolist())
@@ -36,6 +36,7 @@ def save(matrix: np.ndarray, metrics: dict[str, int], directory: Path,
         "max_off_diagonal": metrics["max_abs_correlation"],
         "is_solution": metrics["energy"] == 0,
         "sha256": sha,
+        **({"hamming": hamming} if hamming is not None else {}),
     }
     (directory / "run.json").write_text(
         json.dumps(info, indent=2) + "\n", encoding="utf-8")

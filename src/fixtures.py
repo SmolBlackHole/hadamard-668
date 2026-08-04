@@ -46,3 +46,13 @@ def known_solution(n: int) -> tuple[np.ndarray, np.ndarray] | None:
     if n in TT_KNOWN:
         return tt_sequences(n), tt_lengths(n)
     return None
+
+
+def hamming_distance(seq_a: np.ndarray, seq_b: np.ndarray, lengths: np.ndarray) -> int:
+    """Count bits that differ between two padded TT(n) sequence arrays."""
+    if seq_a.shape != seq_b.shape or seq_a.shape[0] != 4:
+        raise ValueError("sequences must have shape (4, n)")
+    mask = np.zeros(seq_a.shape, dtype=bool)
+    for i, L in enumerate(lengths):
+        mask[i, :int(L)] = True
+    return int(np.sum((seq_a != seq_b) & mask))

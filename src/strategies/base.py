@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 import numpy as np
@@ -15,6 +16,17 @@ class Result(NamedTuple):
     matrix: np.ndarray
     metrics: dict[str, int]
     elapsed: float
+
+
+@dataclass
+class RunResult:
+    seed: int
+    matrix: np.ndarray
+    energy: int
+    orthogonal_pairs: int
+    max_off_diagonal: int
+    wall: float
+    hamming: int | None = None
 
 
 class SearchStrategy(ABC):
@@ -70,9 +82,19 @@ class TurynStrategy(SearchStrategy):
         return seq
 
     def build(self, sequences: np.ndarray) -> tuple[np.ndarray, dict[str, int]]:
-        matrix = build_turyn(
-            *(sequences[i, :self.LENGTHS[i]] for i in range(4)))
+        matrix = build_turyn(*(
+            sequences[i, :self.LENGTHS[i]] for i in range(4)))
+        self._last_seq = sequences
         return matrix, check_orthogonality(matrix)
+
+    def hamming(self) -> int | None:
+        """Bits differing from the known TT(N) solution, or None if unknown."""
+        from fixtures import known_solution, hamming_distance
+        sol = known_solution(self.N)
+        if sol is None or not hasattr(self, '_last_seq'):
+            return None
+        ref, lengths = sol
+        return hamming_distance(self._last_seq, ref, lengths)
 
 
 class Pipeline(SearchStrategy):
