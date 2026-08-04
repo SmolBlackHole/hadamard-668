@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 import numpy as np
-from tqdm import tqdm
+from tqdm import tqdm  # pyright: ignore[reportMissingModuleSource]
 
 from correlations import (
     apply_nonperiodic_flip,

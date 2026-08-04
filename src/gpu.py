@@ -34,7 +34,7 @@ def _setup() -> None:
             os.environ.setdefault("CUDA_PATH", nvidia)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            import cupy as cp
+            import cupy as cp  # pyright: ignore[reportMissingImports]
         cp.dot(cp.array([1]), cp.array([1]))
         xp = cp
     except Exception:

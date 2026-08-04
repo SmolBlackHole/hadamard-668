@@ -51,6 +51,7 @@ exclude = [
     "**/node_modules",
 ]
 typeCheckingMode = "strict"
+reportMissingModuleSource = false
 reportMissingTypeStubs = false
 reportPrivateUsage = false
 reportUnknownParameterType = false
