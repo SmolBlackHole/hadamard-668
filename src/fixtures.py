@@ -101,8 +101,8 @@ def _all_transforms_hex(seq: np.ndarray, lengths: np.ndarray, n: int) -> frozens
                     sr = sn.copy()
                     for i in range(4):
                         if rev_mask & (1 << i):
-                            L = int(lengths[i])
-                            sr[i, :L] = sr[i, L - 1 :: -1]
+                            l = int(lengths[i])
+                            sr[i, :l] = sr[i, l - 1 :: -1]
                     results.add(_seq_to_hex(sr, lengths, n))
     return frozenset(results)
 
@@ -175,8 +175,8 @@ def equiv_hamming(seq: np.ndarray, lengths: np.ndarray, n: int) -> int | None:
                 st = s.copy()
                 if apply_t3:
                     for i2 in range(4):
-                        L2 = int(lengths[i2])
-                        st[i2, :L2] = st[i2, :L2] * alt[:L2]
+                        l2 = int(lengths[i2])
+                        st[i2, :l2] = st[i2, :l2] * alt[:l2]
                 for neg_mask in range(16):
                     sn = st.copy()
                     for i2 in range(4):
@@ -186,8 +186,8 @@ def equiv_hamming(seq: np.ndarray, lengths: np.ndarray, n: int) -> int | None:
                         sr = sn.copy()
                         for i2 in range(4):
                             if rev_mask & (1 << i2):
-                                L2 = int(lengths[i2])
-                                sr[i2, :L2] = sr[i2, L2 - 1 :: -1]
+                                l2 = int(lengths[i2])
+                                sr[i2, :l2] = sr[i2, l2 - 1 :: -1]
                         dist = int(np.sum((sr != ref) & mask))
                         if dist < best:
                             best = dist

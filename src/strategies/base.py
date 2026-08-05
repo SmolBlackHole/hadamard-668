@@ -1,42 +1,35 @@
-"""Shared contract and pipeline for search strategies."""
+"""Shared contract: Result, Metrics, SearchStrategy, Pipeline."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import NamedTuple
 
 import numpy as np
 
 from builders import build_turyn
 from correlations import TURYN_WEIGHTS
-from gpu import check_orthogonality
+from gpu import Metrics, check_orthogonality
 from sieve import seed_turyn_batch
 
 
-class Result(NamedTuple):
-    matrix: np.ndarray
-    metrics: dict[str, int]
-    elapsed: float
-    sequences: np.ndarray | None = None
-
-
 @dataclass
-class RunResult:
-    seed: int
+class Result:
     matrix: np.ndarray
-    energy: int
-    orthogonal_pairs: int
-    max_off_diagonal: int
-    wall: float
+    metrics: Metrics
+    elapsed: float
+    seed: int
+    sequences: np.ndarray | None = None
     hamming: int | None = None
 
 
 class SearchStrategy(ABC):
     ORDER = 668
+    gpu_exclusive: bool = False
 
     @abstractmethod
     def search(self, steps: int, seed: int) -> Result: ...
+
     @property
     @abstractmethod
     def name(self) -> str: ...
@@ -52,29 +45,17 @@ class SearchStrategy(ABC):
     def hamming(self) -> int | None:
         return None
 
-    def refine(
-        self, matrix: np.ndarray, steps: int, seed: int, sequences: np.ndarray | None = None
-    ) -> Result:
+    def refine(self, matrix, steps, seed, sequences=None):
         raise NotImplementedError(f"{self.name} cannot refine")
 
-    def seed(self, rng: np.random.Generator) -> np.ndarray:
-        """Generate a starting candidate. Override for custom seeding."""
-        raise NotImplementedError(f"{self.name} has no seed method")
 
-    def build(self, sequences: np.ndarray) -> tuple[np.ndarray, dict[str, int]]:
-        """Build matrix from sequences and compute metrics."""
-        raise NotImplementedError(f"{self.name} has no build method")
-
-
-# ── Turyn shared base ─────────────────────────────────────────────────────────
+# ── Turyn base (shared by PocsSearch and SpectralDescent) ──────────────────────
 
 
 class TurynStrategy(SearchStrategy):
-    """Shared seed + build for all Turyn-type sequence solvers."""
+    """Shared seed + build for Turyn-type sequence solvers."""
 
-    DEFAULT_N = 56
-
-    def __init__(self, *, n: int = DEFAULT_N, sieve: bool = True):
+    def __init__(self, *, n: int, sieve: bool = True):
         if n < 2:
             raise ValueError("Turyn type requires n >= 2")
         self.N = n
@@ -90,9 +71,7 @@ class TurynStrategy(SearchStrategy):
     def seed(self, rng: np.random.Generator) -> np.ndarray:
         return self.seed_batch(1, rng)[0]
 
-    def seed_batch(self, size: int, rng: np.random.Generator, *, module=np) -> np.ndarray:
-        """Generate ``size`` starting sequences. Returns (size, 4, N)."""
-        # fall back to numpy if cupy RNG is passed (cupy Generator lacks `choice` / `seed_turyn_batch` internals)
+    def seed_batch(self, size: int, rng: np.random.Generator, *, module=np):
         if module is not np and not hasattr(rng, "choice"):
             rng = np.random.default_rng()
         if self.sieve:
@@ -100,24 +79,24 @@ class TurynStrategy(SearchStrategy):
         else:
             batch = np.zeros((size, 4, self.N), dtype=np.int8)
             for i, L in enumerate(self.LENGTHS):
-                batch[:, i, : int(L)] = rng.choice(
-                    (-1, 1), size=(size, int(L))).astype(np.int8)
+                batch[:, i, : int(L)] = rng.choice((-1, 1), size=(size, int(L))).astype(np.int8)
         batch[:, 3, -1] = 0
         return batch
 
-    def build(self, sequences: np.ndarray) -> tuple[np.ndarray, dict[str, int]]:
-        matrix = build_turyn(
-            *(sequences[i, : self.LENGTHS[i]] for i in range(4)))
+    def build(self, sequences: np.ndarray) -> tuple[np.ndarray, Metrics]:
+        matrix = build_turyn(*(sequences[i, : self.LENGTHS[i]] for i in range(4)))
         self._last_seq = sequences
         return matrix, check_orthogonality(matrix)
 
     def hamming(self) -> int | None:
-        """Minimal bits differing from ANY known TT(N) equivalence class."""
         from fixtures import equiv_hamming
 
         if not hasattr(self, "_last_seq"):
             return None
         return equiv_hamming(self._last_seq, self.LENGTHS, self.N)
+
+
+# ── Pipeline ──────────────────────────────────────────────────────────────────
 
 
 class Pipeline(SearchStrategy):
@@ -142,13 +121,7 @@ class Pipeline(SearchStrategy):
         return self._stages[0][0].construction
 
     def hamming(self) -> int | None:
-        """Minimal bits differing from ANY known TT(N) equivalence class."""
-        from fixtures import equiv_hamming
-
-        first = self._stages[0][0]
-        if not hasattr(self, "_last_seq") or not hasattr(first, "N"):
-            return None
-        return equiv_hamming(self._last_seq, first.LENGTHS, first.N)  # type: ignore[attr-defined]
+        return self._stages[0][0].hamming()
 
     def search(self, steps: int, seed: int) -> Result:
         s, steps_s = self._stages[0]
@@ -156,18 +129,19 @@ class Pipeline(SearchStrategy):
         total_elapsed = carry.elapsed
         if carry.sequences is not None:
             self._last_seq = carry.sequences
-        if carry.metrics["energy"] == 0:
+        if carry.metrics.energy == 0:
             m = check_orthogonality(carry.matrix)
-            if m["energy"] == 0:
-                return Result(carry.matrix, m, total_elapsed, carry.sequences)
+            if m.energy == 0:
+                return Result(carry.matrix, m, total_elapsed, seed, carry.sequences)
+
         for idx, (s, steps_s) in enumerate(self._stages[1:], start=1):
-            carry = s.refine(carry.matrix, steps_s,
-                             seed + idx, carry.sequences)
+            carry = s.refine(carry.matrix, steps_s, seed + idx, carry.sequences)
             total_elapsed += carry.elapsed
             if carry.sequences is not None:
                 self._last_seq = carry.sequences
-            if carry.metrics["energy"] == 0:
+            if carry.metrics.energy == 0:
                 m = check_orthogonality(carry.matrix)
-                if m["energy"] == 0:
-                    return Result(carry.matrix, m, total_elapsed, carry.sequences)
-        return Result(carry.matrix, carry.metrics, total_elapsed, carry.sequences)
+                if m.energy == 0:
+                    return Result(carry.matrix, m, total_elapsed, seed, carry.sequences)
+
+        return Result(carry.matrix, carry.metrics, total_elapsed, seed, carry.sequences)

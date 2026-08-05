@@ -8,12 +8,13 @@ from pathlib import Path
 
 import numpy as np
 
+from gpu import Metrics
 from verify import independent_audit
 
 
 def save(
     matrix: np.ndarray,
-    metrics: dict[str, int],
+    metrics: Metrics,
     directory: Path,
     *,
     strategy: str,
@@ -25,13 +26,14 @@ def save(
     hamming: int | None = None,
 ) -> str:
     """Write matrix.csv and run.json. Audits via pure Python if energy==0."""
-    if metrics["energy"] == 0:
+    if metrics.energy == 0:
         independent_audit(matrix.tolist())
 
     directory.mkdir(parents=True, exist_ok=True)
     csv_path = directory / "matrix.csv"
     csv_path.write_text(
-        "\n".join(",".join(str(int(v)) for v in row) for row in matrix) + "\n", encoding="utf-8"
+        "\n".join(",".join(str(int(v)) for v in row) for row in matrix) + "\n",
+        encoding="utf-8",
     )
 
     sha = hashlib.sha256(csv_path.read_bytes()).hexdigest()
@@ -42,10 +44,10 @@ def save(
         "seed": seed,
         "steps": steps,
         "wall_seconds": round(wall, 3),
-        "energy": metrics["energy"],
-        "orthogonal_pairs": metrics["orthogonal_pairs"],
-        "max_off_diagonal": metrics["max_abs_correlation"],
-        "is_solution": metrics["energy"] == 0,
+        "energy": metrics.energy,
+        "orthogonal_pairs": metrics.orthogonal_pairs,
+        "max_off_diagonal": metrics.max_abs_correlation,
+        "is_solution": metrics.energy == 0,
         "sha256": sha,
         **({"hamming": hamming} if hamming is not None else {}),
     }

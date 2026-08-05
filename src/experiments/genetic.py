@@ -128,10 +128,12 @@ def _random_population_batch(n, size, rng):
 class BatchedGeneticSearch(TurynStrategy):
     """GPU genetic algorithm with RawKernel NPAF evaluation."""
 
+    gpu_exclusive = True
+
     def __init__(
         self,
         *,
-        n: int = TurynStrategy.DEFAULT_N,
+        n: int = 56,
         pop_size: int = 256,
         generations: int = 100,
         elite_count: int = 8,
@@ -147,6 +149,13 @@ class BatchedGeneticSearch(TurynStrategy):
         self.mutation_rate = mutation_rate
         self.mutation_strength = mutation_strength
         self.crossover_rate = crossover_rate
+
+    @classmethod
+    def from_order(cls, order: int) -> BatchedGeneticSearch:
+        n = (order // 4 + 1) // 3
+        if order != 4 * (3 * n - 1) or n < 2:
+            raise ValueError(f"order {order} has no TT(n) construction")
+        return cls(n=n)
 
     @property
     def name(self) -> str:
@@ -166,8 +175,7 @@ class BatchedGeneticSearch(TurynStrategy):
             splits = xp.asarray(rng.integers(1, L, size=size), dtype=xp.int32)
             cols = xp.arange(N, dtype=xp.int32)
             mask = cols[None, :] >= splits[:, None]
-            result[:, s, :] = xp.where(
-                mask, partners[:, s, :], result[:, s, :])
+            result[:, s, :] = xp.where(mask, partners[:, s, :], result[:, s, :])
 
         result[:, 3, -1] = 0
         return result
@@ -186,28 +194,30 @@ class BatchedGeneticSearch(TurynStrategy):
         for i in range(size):
             nf = int(n_flips[i])
             if nf:
-                flat_idx = np.concatenate([flat_idx, rng.choice(
-                    B, size=nf, replace=False).astype(np.int32)])
+                flat_idx = np.concatenate(
+                    [flat_idx, rng.choice(B, size=nf, replace=False).astype(np.int32)]
+                )
         s_idx = flat_idx // N
         c_idx = flat_idx % N
         valid = ~((s_idx == 3) & (c_idx == N - 1))
-        pop_gpu[xp.asarray(indiv_idx[valid]), xp.asarray(
-            s_idx[valid]), xp.asarray(c_idx[valid])] *= -1
+        pop_gpu[
+            xp.asarray(indiv_idx[valid]), xp.asarray(s_idx[valid]), xp.asarray(c_idx[valid])
+        ] *= -1
         pop_gpu[:, 3, -1] = 0
         return pop_gpu
 
     def search(self, steps: int, seed: int, sequences: np.ndarray | None = None) -> Result:
-        from strategies.kflip import KFlipRepair
-
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
         lengths = self.LENGTHS
 
         pop = _random_population_batch(self.N, self.pop_size, rng)
         pop_gpu = xp.asarray(pop, dtype=xp.int8)
+        from energy import turyn_energy
+        from strategies.kflip import search as kflip_search
+
         best_e = float("inf")
         best_ind = pop[0].copy()
-        kf_polisher = KFlipRepair(n=self.N, sieve=False, max_k=4)
 
         for gen in range(self.generations):
             # ── CUDA kernel: evaluate population ──
@@ -231,8 +241,7 @@ class BatchedGeneticSearch(TurynStrategy):
             # Replace worst with elite
             new_np = to_numpy(new_pop_gpu)
             new_energies = batch_npaf_energy(new_np, lengths)
-            worst_idx = xp.asarray(np.argsort(new_energies)[
-                                   ::-1][: self.elite_count])
+            worst_idx = xp.asarray(np.argsort(new_energies)[::-1][: self.elite_count])
             new_pop_gpu[worst_idx] = elite_gpu
 
             pop_gpu = new_pop_gpu
@@ -243,13 +252,12 @@ class BatchedGeneticSearch(TurynStrategy):
                 top_n = min(8, self.pop_size)
                 top_indices = np.argsort(energies)[:top_n]
                 for idx in top_indices:
-                    kr = kf_polisher.search(
-                        steps=300, seed=rng.integers(0, 2**31), sequences=pop[idx].copy()
-                    )
-                    if kr.metrics["energy"] < best_e:
-                        best_e = kr.metrics["energy"]
-                        best_ind = kr.sequences.copy(
-                        ) if kr.sequences is not None else pop[idx].copy()
+                    seq = pop[idx].copy()
+                    rng_kf = np.random.default_rng(rng.integers(0, 2**31))
+                    _, e = kflip_search(seq, turyn_energy, rng_kf)
+                    if e < best_e:
+                        best_e = e
+                        best_ind = seq.copy()
                     if best_e == 0:
                         break
 
@@ -259,20 +267,19 @@ class BatchedGeneticSearch(TurynStrategy):
                 hamm = np.zeros((8, 8), dtype=np.int32)
                 for i in range(8):
                     for j in range(i + 1, 8):
-                        hamm[i, j] = hamming_distance(
-                            top8[i], top8[j], lengths)
+                        hamm[i, j] = hamming_distance(top8[i], top8[j], lengths)
                 avg_dist = hamm.sum() / 28
                 if avg_dist < 3:
                     n_restart = self.pop_size // 2
                     fresh = _random_population_batch(self.N, n_restart, rng)
                     half_idx = self.pop_size // 2
-                    pop_gpu[xp.arange(half_idx, self.pop_size)
-                            ] = xp.asarray(fresh)
+                    pop_gpu[xp.arange(half_idx, self.pop_size)] = xp.asarray(fresh)
 
             if gen % 10 == 0 or gen == self.generations - 1 or best_e == 0:
                 avg_e = float(np.mean(energies))
                 print(
-                    f"  gen {gen:>3}: best={best_e:.0f} avg={avg_e:.0f} pop_best={pop_best_e:.0f}")
+                    f"  gen {gen:>3}: best={best_e:.0f} avg={avg_e:.0f} pop_best={pop_best_e:.0f}"
+                )
 
             if best_e == 0:
                 break
@@ -280,9 +287,10 @@ class BatchedGeneticSearch(TurynStrategy):
         matrix, metrics = self.build(best_ind)
         elapsed = time.perf_counter() - started
         h = equiv_hamming(best_ind, lengths, self.N)
-        print(
-            f"  seed={seed} best_e={metrics['energy']:.0f} hamming={h} {elapsed:.1f}s")
-        return Result(matrix, metrics, elapsed, best_ind)
+        print(f"  seed={seed} best_e={metrics.energy:.0f} hamming={h} {elapsed:.1f}s")
+        return Result(
+            matrix=matrix, metrics=metrics, elapsed=elapsed, seed=seed, sequences=best_ind
+        )
 
     def refine(self, matrix, steps, seed, sequences=None):
         if sequences is not None:
@@ -306,8 +314,8 @@ def main():
         elite_count=args.elite,
     )
     result = ga.search(steps=0, seed=args.seed)
-    print(f"\nFinal: E={result.metrics['energy']}")
-    return result.metrics["energy"] == 0
+    print(f"\nFinal: E={result.metrics.energy}")
+    return result.metrics.energy == 0
 
 
 if __name__ == "__main__":

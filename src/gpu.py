@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import contextlib
 import os
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+
+
+@dataclass
+class Metrics:
+    energy: int
+    orthogonal_pairs: int
+    max_abs_correlation: int
+
 
 xp: Any = np
 
@@ -23,8 +32,7 @@ def _setup() -> None:
 
         os.environ.setdefault(
             "CUPY_CACHE_DIR",
-            os.path.abspath(os.path.join(
-                os.path.dirname(__file__), "..", ".cupy-cache")),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".cupy-cache")),
         )
 
         nvidia_root = None
@@ -35,10 +43,12 @@ def _setup() -> None:
                 break
 
         if nvidia_root is not None:
-            for directory in sorted({
-                os.path.dirname(p)
-                for p in glob.glob(os.path.join(nvidia_root, "**", "*.dll"), recursive=True)
-            }):
+            for directory in sorted(
+                {
+                    os.path.dirname(p)
+                    for p in glob.glob(os.path.join(nvidia_root, "**", "*.dll"), recursive=True)
+                }
+            ):
                 with contextlib.suppress(OSError):
                     os.add_dll_directory(directory)
             os.environ["CUDA_PATH"] = nvidia_root
@@ -76,25 +86,21 @@ def gram_matrix(matrix: Any, *, backend=None):
     return gram
 
 
-def metrics_from_gram(gram: Any) -> dict[str, int]:
+def metrics_from_gram(gram: Any) -> Metrics:
     """Return exact off-diagonal metrics from a symmetric zero-diagonal Gram matrix."""
     module = np if isinstance(gram, np.ndarray) else xp
     size = gram.shape[0]
     pair_count = size * (size - 1) // 2
     if pair_count == 0:
-        return {"energy": 0, "orthogonal_pairs": 0, "max_abs_correlation": 0}
+        return Metrics(0, 0, 0)
     wide = gram.astype(module.int64, copy=False)
     energy = module.sum(wide * wide) // 2
     nonzero = module.count_nonzero(gram)
     orthogonal_pairs = pair_count - nonzero // 2
     maximum = module.abs(gram).max()
-    return {
-        "energy": _scalar(energy),
-        "orthogonal_pairs": _scalar(orthogonal_pairs),
-        "max_abs_correlation": _scalar(maximum),
-    }
+    return Metrics(_scalar(energy), _scalar(orthogonal_pairs), _scalar(maximum))
 
 
-def check_orthogonality(matrix: np.ndarray) -> dict[str, int]:
+def check_orthogonality(matrix: np.ndarray) -> Metrics:
     """Return exact off-diagonal Gram-matrix metrics for a sign matrix."""
     return metrics_from_gram(gram_matrix(matrix))

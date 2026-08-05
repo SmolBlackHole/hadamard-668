@@ -7,9 +7,10 @@ from typing import cast
 
 import numpy as np
 import pytest
+from test_constructions_helper import sylvester
 
-from constructions import sylvester
-from strategies.kflip import KFlipRepair
+from builders import build_turyn
+from gpu import check_orthogonality
 from verify import (
     InvalidMatrix,
     build_turyn_reference,
@@ -62,8 +63,7 @@ def test_bit_flip_breaks_the_matrix_audit() -> None:
 
 
 def test_random_turyn_sequences_fail_the_sequence_condition() -> None:
-    random_sequences = np.random.default_rng(
-        42).choice((-1, 1), size=(4, 8)).tolist()
+    random_sequences = np.random.default_rng(42).choice((-1, 1), size=(4, 8)).tolist()
     with pytest.raises(InvalidMatrix, match="autocorrelation"):
         verify_turyn_sequences(
             (
@@ -76,24 +76,16 @@ def test_random_turyn_sequences_fail_the_sequence_condition() -> None:
 
 
 def test_solver_builder_agrees_with_the_reference_construction() -> None:
-    strategy = KFlipRepair(n=8, sieve=False)
-    sequences = strategy.seed(np.random.default_rng(3))
-    compact = tuple(sequences[row, :length].tolist()
-                    for row, length in enumerate(strategy.LENGTHS))
-    solver_matrix, solver_metrics = strategy.build(sequences)
+    # Use builder directly, no strategy needed
+    ttx = [np.array(s, dtype=np.int8) for s in TT8]
+    compact = tuple(tuple(s.tolist()) for s in ttx)
+    solver_matrix = build_turyn(*ttx)
+    solver_metrics = check_orthogonality(solver_matrix)
     reference_matrix = build_turyn_reference(compact)
-    assert np.array_equal(solver_matrix, np.asarray(
-        reference_matrix, dtype=np.int8))
-    if solver_metrics["energy"] == 0:
+    assert np.array_equal(solver_matrix, np.asarray(reference_matrix, dtype=np.int8))
+    if solver_metrics.energy == 0:
         independent_audit(reference_matrix)
     else:
         with pytest.raises(InvalidMatrix):
             independent_audit(reference_matrix)
-    verify_goethals_seidel_sequences(
-        (
-            (1, 1, 1, -1),
-            (1, -1, 1, 1),
-            (1, 1, -1, 1),
-            (1, -1, -1, -1),
-        )
-    )
+    verify_goethals_seidel_sequences(((1, 1, 1, -1), (1, -1, 1, 1), (1, 1, -1, 1), (1, -1, -1, -1)))

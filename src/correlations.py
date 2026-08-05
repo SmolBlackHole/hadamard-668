@@ -59,18 +59,56 @@ def nonperiodic_autocorrelation_state(
     if matrix.ndim != 2 or matrix.shape[0] == 0:
         raise ValueError("sequences must be a non-empty two-dimensional array")
     if lengths.shape != (matrix.shape[0],) or np.any(lengths < 1):
-        raise ValueError(
-            "lengths must contain one positive value per sequence")
+        raise ValueError("lengths must contain one positive value per sequence")
     if weights.shape != lengths.shape:
         raise ValueError("weights must contain one value per sequence")
     return _npa_f_core(matrix, lengths, weights)
 
 
 @njit
-def nonperiodic_correlation_energy(correlations: np.ndarray):  # type: ignore[reportReturnType]
+# type: ignore[reportReturnType]
+def nonperiodic_correlation_energy(correlations: np.ndarray):
     """Squared NPAF energy without the zero shift."""
     values = correlations.astype(np.int64)[1:]
     acc = np.int64(0)
     for i in range(len(values)):
         acc += values[i] * values[i]
     return acc
+
+
+# ── Douglas-Rachford projections ──────────────────────────────────────────────
+
+_POWER_EPS = 1e-12
+
+
+def project_fourier(batch, *, lengths, weights):
+    """Project onto the weighted NPAF power shell (3D batch only)."""
+    from gpu import xp as _xp
+
+    state = _xp.asarray(batch, dtype=_xp.float32)
+    n = state.shape[2]
+    fft_size = 2 * n - 1
+    spectrum = _xp.fft.fft(state, n=fft_size, axis=-1)
+    target = float(
+        (_xp.asarray(lengths, dtype=_xp.float32) * _xp.asarray(weights, dtype=_xp.float32)).sum()
+    )
+    power = _xp.sum(
+        _xp.asarray(weights, dtype=_xp.float32).reshape(1, len(weights), 1)
+        * (spectrum.real**2 + spectrum.imag**2),
+        axis=-2,
+    )
+    projected = _xp.fft.ifft(
+        spectrum * _xp.sqrt(target / _xp.maximum(power, _POWER_EPS))[:, None, :], axis=-1
+    ).real[:, :, :n]
+    for idx, L in enumerate(lengths):
+        projected[:, idx, int(L) :] = 0.0
+    return projected
+
+
+def project_sign(state):
+    """Project onto {+-1}, zeroing the W-padding position."""
+    from gpu import xp as _xp
+
+    signs = _xp.where(state >= 0, _xp.float32(1), _xp.float32(-1))
+    signs[:, 3, -1] = 0.0
+    return signs

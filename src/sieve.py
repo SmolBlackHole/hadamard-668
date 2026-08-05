@@ -70,13 +70,13 @@ def _dr_project(
     batch: np.ndarray, lengths: np.ndarray, weights: np.ndarray, n_iter: int = 10
 ) -> np.ndarray:
     """Push a batch through DR towards the PSD power shell. Returns int8 array."""
-    from strategies.pocs import _project_fourier, _project_sign
+    from correlations import project_fourier, project_sign
 
     state = xp.asarray(batch, dtype=xp.float32)
     for _ in range(n_iter):
-        proj = _project_fourier(state, lengths=lengths, weights=weights)
+        proj = project_fourier(state, lengths=lengths, weights=weights)
         refl = 2 * proj - state
-        state = (state + _project_sign(refl) - proj).astype(xp.float32)
+        state = (state + project_sign(refl) - proj).astype(xp.float32)
     result = to_numpy(state)
     result[:, 3, -1] = 0
     dr_batch = np.where(result >= 0, 1, -1).astype(np.int8)
@@ -120,8 +120,7 @@ def seed_turyn_batch(
     remaining = count
     for _ in range(50):
         batch = _sum_seeds(n, batch_size, rng)
-        dr_batch = _dr_project(batch, lengths=lengths,
-                               weights=weights, n_iter=dr_iters)
+        dr_batch = _dr_project(batch, lengths=lengths, weights=weights, n_iter=dr_iters)
         mask = turyn_psd_mask(dr_batch, n=n)
         valid = dr_batch[mask]
         if len(valid):
@@ -130,5 +129,4 @@ def seed_turyn_batch(
             if not remaining:
                 result = np.concatenate(survivors, axis=0)
                 return module.asarray(result, dtype=module.int8) if module != np else result
-    raise RuntimeError(
-        f"DR sieve could not produce {count} TT({n}) candidates")
+    raise RuntimeError(f"DR sieve could not produce {count} TT({n}) candidates")
