@@ -1,4 +1,4 @@
-"""Iterated local search — singles scan + 2/3-bit rescue + kick, all with energy budget."""
+"""Iterated local search — singles scan + 2/3-bit rescue + kick, energy-budgeted."""
 
 from __future__ import annotations
 
@@ -14,15 +14,9 @@ def search(
     *,
     budget: int | None = None,
 ) -> tuple[np.ndarray, int]:
-    """Iterated local search. Stops when all phases fail to improve, or budget exhausted.
-
-    Default budget: B * 200 evaluations. Pass ``budget`` to override.
-    Returns (best_seq, best_energy).
-    """
+    """Iterated local search. Stops when all phases fail to improve, or budget exhausted."""
     n_seqs, n_cols = seqs.shape
-    positions = [
-        (s, c) for s in range(n_seqs) for c in range(n_cols) if not (s == 3 and c == n_cols - 1)
-    ]
+    positions = [(s, c) for s in range(n_seqs) for c in range(n_cols)]
     B = len(positions)
 
     if budget is None:
@@ -33,7 +27,6 @@ def search(
     budget -= 1
 
     while budget > 0 and best_e > 0:
-        # ── Phase 1: Full singles scan ──
         singles_e = np.full(B, np.inf)
         improved = False
         for idx, (s, c) in enumerate(positions):
@@ -52,8 +45,6 @@ def search(
         if improved:
             continue
 
-        # ── Phase 2: 2-bit rescue among top-K ──
-        # dynamic pool: larger for small B, smaller for large B
         K = min(B, max(12, B // 4))
         top = np.argsort(singles_e)[:K]
         for i in range(K):
@@ -78,7 +69,6 @@ def search(
         if improved:
             continue
 
-        # ── Phase 3: 3-bit rescue among narrower pool ──
         if best_e > 0:
             K3 = min(K // 2, 10)
             for i in range(K3):
@@ -109,28 +99,9 @@ def search(
         if improved:
             continue
 
-        # ── Phase 4: Kick — one random bit per sequence to escape basin ──
         if budget > 0 and best_e > 0:
             for s in range(n_seqs):
-                valid_cols = [c for c in range(n_cols) if not (s == 3 and c == n_cols - 1)]
-                c = int(rng.integers(0, len(valid_cols)))
-                best_seq[s, valid_cols[c]] *= -1
+                c = int(rng.integers(0, n_cols))
+                best_seq[s, c] *= -1
 
     return best_seq, best_e
-
-
-# ── Convenience ───────────────────────────────────────────────────────────────
-
-
-def singles_energies(seqs, energy_fn):
-    """Return energy after each possible single flip. For diagnostics."""
-    n_seqs, n_cols = seqs.shape
-    positions = [
-        (s, c) for s in range(n_seqs) for c in range(n_cols) if not (s == 3 and c == n_cols - 1)
-    ]
-    result = np.full(len(positions), np.inf)
-    for idx, (s, c) in enumerate(positions):
-        seqs[s, c] *= -1
-        result[idx] = energy_fn(seqs)
-        seqs[s, c] *= -1
-    return result

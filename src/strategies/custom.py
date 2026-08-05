@@ -1,4 +1,4 @@
-"""CustomSolver — konfigurierbare Hadamard-Suche via KFlip + Konstruktion."""
+"""CustomSolver — Negacyclic-GS4 Hadamard-Suche via KFlip."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import time
 
 import numpy as np
 
-from builders import build_goethals_seidel, build_group_gs4
-from energy import group_gs4_energy, npaf_energy_exact
+from builders import build_group_gs4, build_negacyclic_gs4
+from energy import group_gs4_energy, negacyclic_gs4_energy
 from gpu import check_orthogonality
 from strategies.base import Result, SearchStrategy
 
@@ -15,147 +15,130 @@ from .kflip import search as ils_search
 
 
 class CustomSolver(SearchStrategy):
-    """Konfiguriert NPAF-Suche, delegiert an kflip_search, baut Matrix.
+    """Negacyclic GS4 Hadamard search.
 
-    Classmethods: williamson(n), group(n), tensor(n1, n2), from_order(order).
+    ``CustomSolver.negacyclic(n)`` — negacyclic GS4 (default).
+    ``CustomSolver.group(n)`` — group-circulant GS4.
+    ``CustomSolver.tensor(n1, n2)`` — Kronecker product of two negacyclic.
     """
 
-    def __init__(
-        self,
-        *,
-        seq_lengths: tuple[int, ...],
-        weights: tuple[float, ...],
-        group_dims: list[int] | None = None,
-        order: int | None = None,
-    ):
-        if len(seq_lengths) != len(weights):
-            raise ValueError("seq_lengths and weights must have same length")
-        self.N_SEQS = len(seq_lengths)
-        self.LENGTHS = np.array(seq_lengths, dtype=np.int64)
-        self.WEIGHTS = np.array(weights, dtype=np.float64)
-        self.N = int(self.LENGTHS.max())
-        self.ORDER = order if order is not None else 4 * self.N
+    def __init__(self, *, n: int, mode: str = "negacyclic", group_dims: list[int] | None = None):
+        self._n = n
+        self._mode = mode
         self.group_dims = group_dims
-        self._last_seq: np.ndarray | None = None
+        self.tensor_n = None
         self.gpu_exclusive = False
+        self.ORDER = 4 * n
 
     @classmethod
-    def williamson(cls, *, n: int) -> CustomSolver:
-        """Williamson: 4 gleiche Sequenzen, unit weights, GS4-Matrix."""
-        return cls(
-            seq_lengths=(n, n, n, n),
-            weights=(1.0, 1.0, 1.0, 1.0),
-            order=4 * n,
-        )
+    def negacyclic(cls, *, n: int) -> CustomSolver:
+        return cls(n=n, mode="negacyclic")
 
     @classmethod
     def group(cls, *, n: int) -> CustomSolver:
-        """Group-based GS4 mit auto-detected factorisation."""
         dims = _best_factorization(n)
-        return cls(
-            seq_lengths=(n, n, n, n),
-            weights=(1.0, 1.0, 1.0, 1.0),
-            order=4 * n,
-            group_dims=dims,
-        )
+        return cls(n=n, mode="group", group_dims=dims)
+
+    @classmethod
+    def tensor(cls, *, n1: int, n2: int) -> CustomSolver:
+        cs = cls(n=max(n1, n2), mode="negacyclic")
+        cs.tensor_n = (n1, n2)
+        cs.ORDER = 16 * n1 * n2
+        return cs
 
     @classmethod
     def from_order(cls, order: int) -> CustomSolver:
-        n = order // 4
-        return cls.group(n=n)
+        return cls.negacyclic(n=order // 4)
 
     @property
     def name(self) -> str:
-        if self.group_dims is not None:
-            label = "x".join(map(str, self.group_dims))
-            return f"custom[{label}]"
+        if self._mode == "group" and self.group_dims:
+            return f"custom[{self.group_dims[0]}x{self.group_dims[1]}]"
         return "custom"
 
     @property
     def construction(self) -> str:
-        if self.group_dims is not None:
-            return f"group_gs4_{'x'.join(map(str, self.group_dims))}"
-        return "williamson"
+        return "negacyclic_gs4" if self._mode != "group" else "group_gs4"
 
-    def search(
-        self, steps: int | None = None, seed: int = 0, sequences: np.ndarray | None = None
-    ) -> Result:
+    def search(self, steps=None, seed=0, sequences=None) -> Result:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
 
-        if sequences is None:
-            sequences = np.zeros((self.N_SEQS, self.N), dtype=np.int8)
-            for i in range(self.N_SEQS):
-                sequences[i, : int(self.LENGTHS[i])] = rng.choice(
-                    (-1, 1), size=int(self.LENGTHS[i])
-                ).astype(np.int8)
-        else:
-            sequences = sequences.copy()
+        if self.tensor_n is not None:
+            return self._tensor_search(steps, seed, started)
 
-        if self.group_dims is not None:
+        budget = steps if steps is not None else None
+        n = self._n
+
+        if sequences is None:
+            sequences = np.zeros((4, n), dtype=np.int8)
+            for i in range(4):
+                sequences[i] = rng.choice((-1, 1), size=n).astype(np.int8)
+
+        if self._mode == "group" and self.group_dims is not None:
             dims = self.group_dims
 
-            def energy_fn(s):
+            def ef(s):
                 return group_gs4_energy(s, dims)
         else:
+            ef = negacyclic_gs4_energy
 
-            def energy_fn(s):
-                return npaf_energy_exact(s, self.LENGTHS, self.WEIGHTS)
-
-        budget = steps if steps is not None else None  # None = kflip decides, 0 = no search
-        best_seq, best_e = ils_search(sequences, energy_fn, rng, budget=budget)
+        best_seq, best_e = ils_search(sequences, ef, rng, budget=budget)
         elapsed = time.perf_counter() - started
 
-        # ── Build matrix ──
         dims_label = ""
         if best_e == 0:
-            if self.group_dims is not None:
+            if self._mode == "group" and self.group_dims is not None:
                 matrix = build_group_gs4(best_seq, self.group_dims)
                 dims_label = f" [{self.group_dims}]"
-            elif self.N_SEQS == 4 and all(w == 1.0 for w in self.WEIGHTS):
-                n = self.N
-                A = best_seq[0, :n].copy()
-                B = best_seq[1, :n].copy()
-                C = best_seq[2, :n].copy()
-                D = best_seq[3, :n].copy()
-                matrix = build_goethals_seidel(A, B, C, D)
             else:
-                matrix = np.ones((self.ORDER, self.ORDER), dtype=np.int8)
+                matrix = build_negacyclic_gs4(
+                    best_seq[0, :n], best_seq[1, :n], best_seq[2, :n], best_seq[3, :n]
+                )
         else:
             matrix = np.ones((self.ORDER, self.ORDER), dtype=np.int8)
 
         metrics = check_orthogonality(matrix)
         if best_e == 0 and metrics.energy == 0:
             print(
-                f"  seed={seed} VALID {matrix.shape[0]}x{matrix.shape[1]} Hadamard"
-                f"{dims_label} {elapsed:.1f}s"
+                f"  seed={seed} VALID {matrix.shape[0]}x{matrix.shape[1]}{dims_label} {elapsed:.1f}s"
             )
         else:
             print(f"  seed={seed} best_e={best_e}{dims_label} {elapsed:.1f}s")
 
         return Result(
-            matrix=matrix,
-            metrics=metrics,
-            elapsed=elapsed,
-            seed=seed,
-            sequences=best_seq,
+            matrix=matrix, metrics=metrics, elapsed=elapsed, seed=seed, sequences=best_seq
         )
 
-    def refine(self, matrix, steps, seed, sequences=None):
-        if sequences is not None:
-            return self.search(steps, seed, sequences)
-        return self.search(steps, seed)
-
-    def hamming(self) -> int | None:
-        if self._last_seq is None:
-            return None
-        from fixtures import equiv_hamming
-
-        return equiv_hamming(self._last_seq, self.LENGTHS, self.N)
+    def _tensor_search(self, steps, seed, started):
+        n1, n2 = self.tensor_n
+        r1 = CustomSolver.negacyclic(n=n1).search(steps=steps, seed=seed)
+        if r1.metrics.energy != 0:
+            return Result(
+                matrix=np.ones((self.ORDER, self.ORDER), dtype=np.int8),
+                metrics=check_orthogonality(np.ones((self.ORDER, self.ORDER), dtype=np.int8)),
+                elapsed=time.perf_counter() - started,
+                seed=seed,
+            )
+        r2 = CustomSolver.negacyclic(n=n2).search(steps=steps, seed=seed + 1)
+        if r2.metrics.energy != 0:
+            return Result(
+                matrix=np.ones((self.ORDER, self.ORDER), dtype=np.int8),
+                metrics=check_orthogonality(np.ones((self.ORDER, self.ORDER), dtype=np.int8)),
+                elapsed=time.perf_counter() - started,
+                seed=seed,
+            )
+        H = np.kron(r1.matrix, r2.matrix)
+        m = check_orthogonality(H)
+        elapsed = time.perf_counter() - started
+        if m.energy == 0:
+            print(
+                f"  seed={seed} VALID {H.shape[0]}x{H.shape[1]} [tensor {r1.matrix.shape[0]}x{r2.matrix.shape[0]}] {elapsed:.1f}s"
+            )
+        return Result(matrix=H, metrics=m, elapsed=elapsed, seed=seed)
 
 
 def _best_factorization(n: int) -> list[int]:
-    """Best group dims for n: factors closest to sqrt(n), both >= 3."""
     best = [n]
     best_diff = n
     for p in range(3, int(n**0.5) + 1):
@@ -167,19 +150,3 @@ def _best_factorization(n: int) -> list[int]:
                     best_diff = diff
                     best = sorted([p, q], reverse=True)
     return best
-
-
-# ── Quick CLI test ────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--n", type=int, default=12)
-    parser.add_argument("--steps", type=int, default=500)
-    parser.add_argument("--seed", type=int, default=42)
-    args = parser.parse_args()
-
-    cs = CustomSolver.group(n=args.n)
-    r = cs.search(seed=args.seed)
-    print(f"\n  RESULT: {r.matrix.shape[0]}x{r.matrix.shape[1]}  E={r.metrics.energy}")

@@ -68,11 +68,6 @@ def _setup() -> None:
 _setup()
 
 
-def to_numpy(values: Any) -> np.ndarray:
-    """Return a host array without copying when the NumPy backend is active."""
-    return values if isinstance(values, np.ndarray) else xp.asnumpy(values)
-
-
 def _scalar(value: Any) -> int:
     return int(value.item())
 
