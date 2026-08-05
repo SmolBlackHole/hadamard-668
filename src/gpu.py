@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 from typing import Any
 
@@ -22,20 +23,33 @@ def _setup() -> None:
 
         os.environ.setdefault(
             "CUPY_CACHE_DIR",
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".cupy-cache")),
+            os.path.abspath(os.path.join(
+                os.path.dirname(__file__), "..", ".cupy-cache")),
         )
-        nvidia = os.path.join(site.getsitepackages()[0], "nvidia")
-        if os.path.isdir(nvidia):
-            for directory in {
-                os.path.dirname(path)
-                for path in glob.glob(os.path.join(nvidia, "**", "*.dll"), recursive=True)
-            }:
-                os.environ["PATH"] = directory + ";" + os.environ.get("PATH", "")
-            os.environ.setdefault("CUDA_PATH", nvidia)
+
+        nvidia_root = None
+        for sp in site.getsitepackages():
+            candidate = os.path.join(sp, "nvidia")
+            if os.path.isdir(candidate):
+                nvidia_root = candidate
+                break
+
+        if nvidia_root is not None:
+            for directory in sorted({
+                os.path.dirname(p)
+                for p in glob.glob(os.path.join(nvidia_root, "**", "*.dll"), recursive=True)
+            }):
+                with contextlib.suppress(OSError):
+                    os.add_dll_directory(directory)
+            os.environ["CUDA_PATH"] = nvidia_root
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             import cupy as cp  # pyright: ignore[reportMissingImports]
-        cp.dot(cp.array([1]), cp.array([1]))
+        # Sanity check: element-wise op + FFT
+        _t = cp.array([1.0, 2.0])
+        _t = _t * _t
+        _t = cp.fft.fft(_t)
         xp = cp
     except Exception:
         pass
@@ -84,50 +98,3 @@ def metrics_from_gram(gram: Any) -> dict[str, int]:
 def check_orthogonality(matrix: np.ndarray) -> dict[str, int]:
     """Return exact off-diagonal Gram-matrix metrics for a sign matrix."""
     return metrics_from_gram(gram_matrix(matrix))
-
-
-def entry_flip_deltas(
-    matrix: Any,
-    gram: Any,
-    row: int,
-    columns: Any,
-) -> np.ndarray:
-    """Return exact energy deltas for flipping ``matrix[row, columns]``."""
-    module = np if isinstance(matrix, np.ndarray) else xp
-    selected = module.asarray(columns, dtype=module.int64)
-    if selected.ndim != 1:
-        raise ValueError("columns must be one-dimensional")
-    if selected.size == 0:
-        return np.empty(0, dtype=np.int64)
-    gram_row = gram[row].astype(module.int64, copy=False)
-    column_values = matrix[:, selected].astype(module.int64, copy=False)
-    row_values = matrix[row, selected].astype(module.int64, copy=False)
-    projections = gram_row @ column_values
-    deltas = 4 * (matrix.shape[0] - 1) - 4 * row_values * projections
-    return np.asarray(to_numpy(deltas), dtype=np.int64)
-
-
-def entry_flip_delta(matrix: Any, gram: Any, row: int, column: int) -> int:
-    """Return the exact energy delta for one sign-entry flip."""
-    return int(entry_flip_deltas(matrix, gram, row, [column])[0])
-
-
-def apply_entry_flip(
-    matrix: Any,
-    gram: Any,
-    row: int,
-    column: int,
-    *,
-    known_delta: int | None = None,
-) -> int:
-    """Flip one sign entry and update the affected Gram row and column in O(n)."""
-    delta = entry_flip_delta(matrix, gram, row, column) if known_delta is None else known_delta
-    old_value = matrix[row, column]
-    change = (-2 * old_value * matrix[:, column]).astype(gram.dtype, copy=False)
-    change[row] = 0
-    updated = gram[row] + change
-    matrix[row, column] = -old_value
-    gram[row, :] = updated
-    gram[:, row] = updated
-    gram[row, row] = 0
-    return int(delta)

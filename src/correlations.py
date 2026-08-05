@@ -59,63 +59,18 @@ def nonperiodic_autocorrelation_state(
     if matrix.ndim != 2 or matrix.shape[0] == 0:
         raise ValueError("sequences must be a non-empty two-dimensional array")
     if lengths.shape != (matrix.shape[0],) or np.any(lengths < 1):
-        raise ValueError("lengths must contain one positive value per sequence")
+        raise ValueError(
+            "lengths must contain one positive value per sequence")
     if weights.shape != lengths.shape:
         raise ValueError("weights must contain one value per sequence")
     return _npa_f_core(matrix, lengths, weights)
 
 
-def nonperiodic_correlation_energy(correlations: np.ndarray) -> int:
+@njit
+def nonperiodic_correlation_energy(correlations: np.ndarray):  # type: ignore[reportReturnType]
     """Squared NPAF energy without the zero shift."""
-    values = np.asarray(correlations, dtype=np.int64)[1:]
-    return int(np.dot(values, values))
-
-
-def npa_f_gradient(
-    sequences: np.ndarray, *, lengths: np.ndarray, weights: np.ndarray
-) -> np.ndarray:
-    """FFT gradient of the weighted NPAF energy. O(n log n).
-
-    ``sequences``: (4, n) float64 array. Returns same shape.
-    """
-    n = int(lengths[0])
-    fft_size = 2 * n - 1
-    spectrum = np.fft.fft(sequences, n=fft_size, axis=1)
-    autoco = np.fft.ifft(spectrum * spectrum.conj(), axis=1).real
-    w = weights.astype(np.float64)
-    total = w[0] * autoco[0] + w[1] * autoco[1] + w[2] * autoco[2] + w[3] * autoco[3]
-    coeffs = np.zeros(fft_size, dtype=np.float64)
-    coeffs[1:n] = total[1:n]
-    coeffs[-(n - 1) :] = total[1:n][::-1]
-    return (
-        2.0 * w[:, None] * np.fft.ifft(np.fft.fft(coeffs)[None, :] * spectrum, axis=1).real[:, :n]
-    )
-
-
-def apply_nonperiodic_flip(
-    sequences: np.ndarray,
-    correlations: np.ndarray,
-    sequence_index: int,
-    value_index: int,
-    *,
-    lengths: np.ndarray,
-    weight: int,
-) -> int:
-    """Flip one value and update NPAF state. O(L) vectorized."""
-    if not 0 <= sequence_index < len(lengths):
-        raise IndexError("sequence_index is out of range")
-    L = int(lengths[sequence_index])
-    if not 0 <= value_index < L:
-        raise IndexError("value_index is out of range")
-    seq = sequences[sequence_index]
-    old = int(seq[value_index])
-    j = value_index
-    delta = 2 * weight * old
-    nb = np.zeros(L, dtype=np.int64)
-    if j + 1 < L:
-        nb[1 : L - j] = seq[j + 1 : L].astype(np.int64)
-    if j > 0:
-        nb[1 : j + 1] += seq[:j][::-1].astype(np.int64)
-    correlations[:L] -= delta * nb
-    seq[j] = -old
-    return nonperiodic_correlation_energy(correlations)
+    values = correlations.astype(np.int64)[1:]
+    acc = np.int64(0)
+    for i in range(len(values)):
+        acc += values[i] * values[i]
+    return acc

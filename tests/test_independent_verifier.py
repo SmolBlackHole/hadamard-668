@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from constructions import sylvester
-from strategies.greedy import TurynGreedySearch
+from strategies.kflip import KFlipRepair
 from verify import (
     InvalidMatrix,
     build_turyn_reference,
@@ -62,7 +62,8 @@ def test_bit_flip_breaks_the_matrix_audit() -> None:
 
 
 def test_random_turyn_sequences_fail_the_sequence_condition() -> None:
-    random_sequences = np.random.default_rng(42).choice((-1, 1), size=(4, 8)).tolist()
+    random_sequences = np.random.default_rng(
+        42).choice((-1, 1), size=(4, 8)).tolist()
     with pytest.raises(InvalidMatrix, match="autocorrelation"):
         verify_turyn_sequences(
             (
@@ -75,12 +76,14 @@ def test_random_turyn_sequences_fail_the_sequence_condition() -> None:
 
 
 def test_solver_builder_agrees_with_the_reference_construction() -> None:
-    strategy = TurynGreedySearch(n=8, sieve=False)
+    strategy = KFlipRepair(n=8, sieve=False)
     sequences = strategy.seed(np.random.default_rng(3))
-    compact = tuple(sequences[row, :length].tolist() for row, length in enumerate(strategy.LENGTHS))
+    compact = tuple(sequences[row, :length].tolist()
+                    for row, length in enumerate(strategy.LENGTHS))
     solver_matrix, solver_metrics = strategy.build(sequences)
     reference_matrix = build_turyn_reference(compact)
-    assert np.array_equal(solver_matrix, np.asarray(reference_matrix, dtype=np.int8))
+    assert np.array_equal(solver_matrix, np.asarray(
+        reference_matrix, dtype=np.int8))
     if solver_metrics["energy"] == 0:
         independent_audit(reference_matrix)
     else:

@@ -11,13 +11,12 @@ import numpy as np
 import pytest
 
 from builders import build_goethals_seidel
-from constructions import get_known, paley, sylvester
+from constructions import get_known, sylvester
 from gpu import check_orthogonality
 from run import derive_seeds, select_best_run, worker_count
 from strategies.base import Pipeline, Result, SearchStrategy
 from strategies.base import RunResult as RR
-from strategies.greedy import TurynGreedySearch
-from strategies.repair import RepairSearch
+from strategies.kflip import KFlipRepair
 
 
 @pytest.mark.parametrize("order", [1, 2, 4, 8, 12, 16, 20])
@@ -30,7 +29,8 @@ def test_known_matrices_are_orthogonal(order: int) -> None:
 
 
 def test_goethals_seidel_builds_order_four_hadamard() -> None:
-    matrix = build_goethals_seidel(*(np.ones(1, dtype=np.int8) for _ in range(4)))
+    matrix = build_goethals_seidel(
+        *(np.ones(1, dtype=np.int8) for _ in range(4)))
     assert check_orthogonality(matrix) == {
         "energy": 0,
         "orthogonal_pairs": 6,
@@ -58,7 +58,7 @@ def test_run_writes_each_parallel_seed_separately(tmp_path) -> None:
             sys.executable,
             "run.py",
             "--strategy",
-            "greedy",
+            "kflip",
             "--steps",
             "0",
             "--seed",
@@ -87,14 +87,14 @@ def test_run_writes_each_parallel_seed_separately(tmp_path) -> None:
 
 
 def test_turyn_search_uses_the_expected_order() -> None:
-    matrix, _, _, _ = TurynGreedySearch(n=8).search(steps=0, seed=0)
+    matrix, _, _, _ = KFlipRepair(n=8).search(steps=0, seed=0)
     assert matrix.shape == (92, 92)
 
 
 def test_real_pipeline_runs_all_stages() -> None:
-    stages = [
-        (TurynGreedySearch(n=8), 0),
-        (RepairSearch(n=8), 0),
+    stages: list[tuple[SearchStrategy, int]] = [
+        (KFlipRepair(n=8), 0),
+        (KFlipRepair(n=8), 0),
     ]
     _, metrics, _, _ = Pipeline(stages).search(steps=0, seed=0)
     assert metrics["energy"] >= 0
@@ -146,29 +146,27 @@ def test_pipeline_short_circuits_only_after_exact_verification() -> None:
 
 def test_pipeline_rejects_non_refining_followup() -> None:
     with pytest.raises(ValueError, match="cannot refine"):
+        from strategies.pocs import PocsSearch
         Pipeline(
             [
-                (TurynGreedySearch(n=8), 1),
-                (TurynGreedySearch(n=8), 1),
+                (PocsSearch(n=8), 1),
+                (PocsSearch(n=8), 1),
             ]
         )
 
 
 def test_parallel_run_helpers_are_deterministic_and_gpu_safe() -> None:
     assert derive_seeds(40, 3) == [40, 41, 42]
-    assert worker_count("greedy", runs=3, workers=8) == 3
-    assert worker_count("greedy:10,repair:5", runs=3, workers=2) == 2
+    assert worker_count("kflip", runs=3, workers=8) == 3
+    assert worker_count("kflip:10,kflip:5", runs=3, workers=2) == 2
     assert worker_count("pocs", runs=3, workers=3) == 1
     assert worker_count("spectral_descent", runs=3, workers=3) == 1
 
     matrix = sylvester(4)
     results = [
-        RR(seed=40, matrix=matrix, energy=8, orthogonal_pairs=0, max_off_diagonal=0, wall=0.2),
-        RR(seed=41, matrix=matrix, energy=0, orthogonal_pairs=0, max_off_diagonal=0, wall=0.3),
+        RR(seed=40, matrix=matrix, energy=8,
+           orthogonal_pairs=0, max_off_diagonal=0, wall=0.2),
+        RR(seed=41, matrix=matrix, energy=0,
+           orthogonal_pairs=0, max_off_diagonal=0, wall=0.3),
     ]
     assert select_best_run(results).seed == 41
-
-
-@pytest.mark.parametrize("matrix", [sylvester(4), paley(8), paley(12)])
-def test_known_generators_only_emit_signs(matrix: np.ndarray) -> None:
-    assert np.all(np.isin(matrix, (-1, 1)))

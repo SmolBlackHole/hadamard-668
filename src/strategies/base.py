@@ -40,6 +40,7 @@ class SearchStrategy(ABC):
     @property
     @abstractmethod
     def name(self) -> str: ...
+
     @property
     def construction(self) -> str:
         return "unknown"
@@ -91,17 +92,22 @@ class TurynStrategy(SearchStrategy):
 
     def seed_batch(self, size: int, rng: np.random.Generator, *, module=np) -> np.ndarray:
         """Generate ``size`` starting sequences. Returns (size, 4, N)."""
+        # fall back to numpy if cupy RNG is passed (cupy Generator lacks `choice` / `seed_turyn_batch` internals)
+        if module is not np and not hasattr(rng, "choice"):
+            rng = np.random.default_rng()
         if self.sieve:
             batch = seed_turyn_batch(self.N, size, rng, module=module)
         else:
             batch = np.zeros((size, 4, self.N), dtype=np.int8)
             for i, L in enumerate(self.LENGTHS):
-                batch[:, i, : int(L)] = rng.choice((-1, 1), size=(size, int(L))).astype(np.int8)
+                batch[:, i, : int(L)] = rng.choice(
+                    (-1, 1), size=(size, int(L))).astype(np.int8)
         batch[:, 3, -1] = 0
         return batch
 
     def build(self, sequences: np.ndarray) -> tuple[np.ndarray, dict[str, int]]:
-        matrix = build_turyn(*(sequences[i, : self.LENGTHS[i]] for i in range(4)))
+        matrix = build_turyn(
+            *(sequences[i, : self.LENGTHS[i]] for i in range(4)))
         self._last_seq = sequences
         return matrix, check_orthogonality(matrix)
 
@@ -155,7 +161,8 @@ class Pipeline(SearchStrategy):
             if m["energy"] == 0:
                 return Result(carry.matrix, m, total_elapsed, carry.sequences)
         for idx, (s, steps_s) in enumerate(self._stages[1:], start=1):
-            carry = s.refine(carry.matrix, steps_s, seed + idx, carry.sequences)
+            carry = s.refine(carry.matrix, steps_s,
+                             seed + idx, carry.sequences)
             total_elapsed += carry.elapsed
             if carry.sequences is not None:
                 self._last_seq = carry.sequences

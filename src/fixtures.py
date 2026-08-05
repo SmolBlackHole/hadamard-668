@@ -119,31 +119,6 @@ def all_representatives(n: int) -> list[tuple[tuple[int, ...], ...]]:
     return [_parse_hex(h) for h in idx[key]]
 
 
-def tt_sequences(n: int, index: int = 0) -> np.ndarray:
-    """Return the ``index``-th TT(n) representative as (4, n) int8."""
-    reps = all_representatives(n)
-    if not reps or index >= len(reps):
-        raise IndexError(f"no representative {index} for TT({n})")
-    rep = reps[index]
-    arr = np.zeros((4, n), dtype=np.int8)
-    for i, s in enumerate(rep):
-        arr[i, : len(s)] = np.array(s, dtype=np.int8)
-    return arr
-
-
-def tt_lengths(n: int) -> np.ndarray:
-    """Return TT(n) lengths: (n, n, n, n-1)."""
-    return np.array((n, n, n, n - 1), dtype=np.int64)
-
-
-def known_solution(n: int) -> tuple[np.ndarray, np.ndarray] | None:
-    """Return (sequences, lengths) for the first known TT(n), or None."""
-    reps = all_representatives(n)
-    if not reps:
-        return None
-    return tt_sequences(n), tt_lengths(n)
-
-
 def hamming_distance(
     seq_a: np.ndarray,
     seq_b: np.ndarray,
@@ -156,21 +131,6 @@ def hamming_distance(
     for i, L in enumerate(lengths):
         mask[i, : int(L)] = True
     return int(np.sum((seq_a != seq_b) & mask))
-
-
-# ── Solution detection ─────────────────────────────────────────────────────────
-
-
-def is_known_solution(seq: np.ndarray, lengths: np.ndarray, n: int) -> bool:
-    """Check whether ``seq`` is equivalent to any known TT(n) solution.
-
-    Generates all 1024 transforms of ``seq``, hex-encodes them, and checks
-    against the known canonical hex set via O(1) set intersection.
-    """
-    known = _known_hex_set(n)
-    if not known:
-        return False
-    return not _all_transforms_hex(seq, lengths, n).isdisjoint(known)
 
 
 # ── Hamming distance ───────────────────────────────────────────────────────────

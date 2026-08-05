@@ -3,64 +3,32 @@
 from __future__ import annotations
 
 from .base import Pipeline, SearchStrategy
-from .greedy import TurynGreedySearch
-from .hierarchical import HierarchicalConstruction
+from .custom import CustomSolver
 from .kflip import KFlipRepair
 from .pocs import PocsSearch
-from .repair import RepairSearch
 from .spectral_descent import TurynSpectralDescentSearch
 
 try:
-    from experiments.syndrome_repair import RepairExperiment
+    from experiments.genetic import BatchedGeneticSearch as GeneticSearch
 except ImportError:
-    RepairExperiment = None  # type: ignore[assignment]
-
-try:
-    from experiments.strategies import HybridRepair, PhaseRetrievalRepair, RelaxRepair
-except ImportError:
-    RelaxRepair = None  # type: ignore[assignment]
-    PhaseRetrievalRepair = None  # type: ignore[assignment]
-    HybridRepair = None  # type: ignore[assignment]
+    GeneticSearch = None  # type: ignore[assignment]
 
 _CLASSES: dict[str, type[SearchStrategy] | None] = {
-    "hierarchical": HierarchicalConstruction,
-    "greedy": TurynGreedySearch,
-    "spectral_descent": TurynSpectralDescentSearch,
-    "pocs": PocsSearch,
-    "repair": RepairSearch,
-    "repair-exp": RepairExperiment,
+    "custom": CustomSolver,
     "kflip": KFlipRepair,
-    "relax": RelaxRepair,
-    "phase-ret": PhaseRetrievalRepair,
-    "hybrid": HybridRepair,
+    "pocs": PocsSearch,
+    "spectral_descent": TurynSpectralDescentSearch,
+    "genetic": GeneticSearch,
 }
 
 GPU = frozenset({"pocs", "spectral_descent"})
-DEFAULT = "spectral_descent"
+DEFAULT = "custom"
 
 _TURYN_CLASSES: set[type[SearchStrategy] | None] = {
-    TurynGreedySearch,
-    HierarchicalConstruction,
     TurynSpectralDescentSearch,
     PocsSearch,
-    RepairSearch,
-    RepairExperiment,
     KFlipRepair,
-    RelaxRepair,
-    PhaseRetrievalRepair,
-    HybridRepair,
-}
-
-_KNOWN_N: set[str] = {
-    "greedy",
-    "spectral_descent",
-    "pocs",
-    "repair",
-    "repair-exp",
-    "kflip",
-    "hybrid",
-    "relax",
-    "phase-ret",
+    GeneticSearch,
 }
 
 
@@ -75,6 +43,8 @@ def build(name: str, order: int) -> SearchStrategy:
     cls = _CLASSES[name]
     if cls is None:
         raise ImportError(f"strategy '{name}' requires packages not installed")
+    if name == "custom":
+        return CustomSolver.group(n=order // 4)  # type: ignore[return-value]
     if cls in _TURYN_CLASSES:
         return cls(n=_turyn_n(order))  # type: ignore[call-arg]
     return cls(order=order)  # type: ignore[call-arg]

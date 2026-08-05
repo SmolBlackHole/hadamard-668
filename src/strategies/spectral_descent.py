@@ -11,20 +11,13 @@ from .base import Result, TurynStrategy
 
 
 def _apply_flips(batch, correlations, energies, seq_idx, col_idx, lengths):
-    """Apply flips in-place. correlations shape is (batch, n-1): index k = shift k+1."""
-    weights = xp.asarray(TURYN_WEIGHTS, dtype=xp.int64)
-    for i in range(len(batch)):
-        si, ci = int(seq_idx[i]), int(col_idx[i])
-        wgt, old = int(weights[si]), int(batch[i, si, ci])
-        L = int(lengths[si])
-        for shift in range(1, L):
-            nb = 0
-            if ci + shift < L:
-                nb += int(batch[i, si, ci + shift])
-            if ci >= shift:
-                nb += int(batch[i, si, ci - shift])
-            correlations[i, shift - 1] -= 2 * wgt * old * nb
-        batch[i, si, ci] = -old
+    """Apply flips via vectorized indexing, then recompute from FFT."""
+    weights = xp.asarray(TURYN_WEIGHTS, dtype=xp.float32)
+    batch_idx = xp.arange(len(batch), dtype=xp.int64)
+    batch[batch_idx, seq_idx.astype(xp.int64), col_idx.astype(xp.int64)] *= -1
+    # Recompute via FFT — faster on GPU than per-element incremental update
+    new_corr = npa_f_residual(batch, lengths=lengths, weights=weights)
+    correlations[:] = new_corr
     energies[:] = xp.sum(correlations**2, axis=1)
 
 
@@ -49,18 +42,23 @@ class TurynSpectralDescentSearch(TurynStrategy):
         started = time.perf_counter()
         rng = xp.random.default_rng(seed)
         batch = self.seed_batch(self.batch_size, rng, module=xp)
-        correlations = npa_f_residual(batch, lengths=self.LENGTHS, weights=self.WEIGHTS)
+        correlations = npa_f_residual(
+            batch, lengths=self.LENGTHS, weights=self.WEIGHTS)
         energies = xp.sum(correlations**2, axis=1)
+
+        best_energy = float("inf")
+        best_state = None
 
         for _ in range(steps):
             # FFT gradient: rank every position by energy-improvement proxy
             fft_size = 2 * self.N - 1
             spectrum = xp.fft.fft(batch, n=fft_size, axis=2)
             autoco = xp.fft.ifft(xp.abs(spectrum) ** 2, axis=2).real
-            total = xp.sum(xp.asarray(self.WEIGHTS)[None, :, None] * autoco, axis=1)
+            total = xp.sum(xp.asarray(self.WEIGHTS)[
+                           None, :, None] * autoco, axis=1)
             coeffs = xp.zeros_like(total)
-            coeffs[:, 1 : self.N] = total[:, 1 : self.N]
-            coeffs[:, -(self.N - 1) :] = total[:, 1 : self.N][:, ::-1]
+            coeffs[:, 1: self.N] = total[:, 1: self.N]
+            coeffs[:, -(self.N - 1):] = total[:, 1: self.N][:, ::-1]
             grad = (
                 2
                 * xp.asarray(self.WEIGHTS)[None, :, None]
@@ -73,8 +71,15 @@ class TurynSpectralDescentSearch(TurynStrategy):
             choice = xp.argmin(score.reshape(self.batch_size, -1), axis=1)
             sequence = (choice // self.N).astype(xp.int64)
             column = (choice % self.N).astype(xp.int64)
-            _apply_flips(batch, correlations, energies, sequence, column, self.LENGTHS)
+            _apply_flips(batch, correlations, energies,
+                         sequence, column, self.LENGTHS)
 
-        best = to_numpy(batch[int(energies.argmin())])
-        matrix, metrics = self.build(best)
-        return Result(matrix, metrics, time.perf_counter() - started, best)
+            batch_idx = int(energies.argmin())
+            if float(energies[batch_idx]) < best_energy:
+                best_energy = float(energies[batch_idx])
+                best_state = to_numpy(batch[batch_idx]).copy()
+
+        if best_state is None:
+            best_state = to_numpy(batch[int(energies.argmin())])
+        matrix, metrics = self.build(best_state)
+        return Result(matrix, metrics, time.perf_counter() - started, best_state)

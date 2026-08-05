@@ -41,26 +41,6 @@ def turyn_sum_patterns(n: int) -> np.ndarray:
     return np.asarray(patterns, dtype=np.int16)
 
 
-def _seed_one(n: int, rng: np.random.Generator | None = None) -> np.ndarray:
-    """Single random seed from a sum pattern (instant, no filtering)."""
-    patterns = turyn_sum_patterns(n)
-    if rng is None:
-        rng = np.random.default_rng()
-    pidx = int(rng.integers(0, len(patterns)))
-    pattern = patterns[pidx]
-    lengths = turyn_lengths(n)
-    seq = np.zeros((4, n), dtype=np.int8)
-    for si, L in enumerate(lengths):
-        num_ones = int((L + pattern[si]) // 2)
-        cols = rng.choice(int(L), size=num_ones, replace=False)
-        seq[si, cols] = 1
-        mask = np.ones(L, dtype=bool)
-        mask[cols] = False
-        seq[si, :L][mask] = -1
-    seq[3, -1] = 0
-    return seq
-
-
 def _sum_seeds(n: int, count: int, rng: np.random.Generator | None = None) -> np.ndarray:
     """Batch of sum-constrained seeds via argsort trick. Returns (count, 4, n) float32."""
     patterns = turyn_sum_patterns(n)
@@ -71,9 +51,10 @@ def _sum_seeds(n: int, count: int, rng: np.random.Generator | None = None) -> np
     if rng is None:
         rng = np.random.default_rng()
     for _ in range(20):
-        selected = patterns[rng.integers(0, len(patterns), size=size)]
+        indices = to_numpy(rng.integers(0, len(patterns), size=size))
+        selected = patterns[indices]
         plus = (np.asarray(lengths)[None, :] + selected) // 2
-        keys = rng.random((size, 4, n), dtype=np.float32)
+        keys = to_numpy(rng.random((size, 4, n), dtype=np.float32))
         keys[:, 3, -1] = np.inf
         ranks = np.argsort(keys, axis=2).argsort(axis=2)
         batch = np.where(ranks < plus[:, :, None], 1, -1).astype(np.float32)
@@ -139,7 +120,8 @@ def seed_turyn_batch(
     remaining = count
     for _ in range(50):
         batch = _sum_seeds(n, batch_size, rng)
-        dr_batch = _dr_project(batch, lengths=lengths, weights=weights, n_iter=dr_iters)
+        dr_batch = _dr_project(batch, lengths=lengths,
+                               weights=weights, n_iter=dr_iters)
         mask = turyn_psd_mask(dr_batch, n=n)
         valid = dr_batch[mask]
         if len(valid):
@@ -148,4 +130,5 @@ def seed_turyn_batch(
             if not remaining:
                 result = np.concatenate(survivors, axis=0)
                 return module.asarray(result, dtype=module.int8) if module != np else result
-    raise RuntimeError(f"DR sieve could not produce {count} TT({n}) candidates")
+    raise RuntimeError(
+        f"DR sieve could not produce {count} TT({n}) candidates")
