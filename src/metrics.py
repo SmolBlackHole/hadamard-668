@@ -1,4 +1,4 @@
-"""The shared GPU backend and Hadamard matrix metrics."""
+"""Hadamard matrix metrics and orthogonality checks."""
 
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ xp: Any = np
 
 
 def _setup() -> None:
-    """Use CuPy when its CUDA DLLs are available, otherwise keep NumPy."""
     global xp
     if os.environ.get("HADAMARD_BACKEND", "auto").lower() == "numpy":
         return
@@ -56,7 +55,6 @@ def _setup() -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             import cupy as cp  # pyright: ignore[reportMissingImports]
-        # Sanity check: element-wise op + FFT
         _t = cp.array([1.0, 2.0])
         _t = _t * _t
         _t = cp.fft.fft(_t)
@@ -72,9 +70,8 @@ def _scalar(value: Any) -> int:
     return int(value.item())
 
 
-def gram_matrix(matrix: Any, *, backend=None):
-    """Return a zero-diagonal Gram matrix on the active or requested backend."""
-    module = xp if backend is None else backend
+def gram_matrix(matrix: Any):
+    module = xp
     values = module.asarray(matrix, dtype=module.float32)
     gram = module.rint(values @ values.T).astype(module.int32)
     module.fill_diagonal(gram, 0)
@@ -82,7 +79,6 @@ def gram_matrix(matrix: Any, *, backend=None):
 
 
 def metrics_from_gram(gram: Any) -> Metrics:
-    """Return exact off-diagonal metrics from a symmetric zero-diagonal Gram matrix."""
     module = np if isinstance(gram, np.ndarray) else xp
     size = gram.shape[0]
     pair_count = size * (size - 1) // 2
@@ -97,5 +93,4 @@ def metrics_from_gram(gram: Any) -> Metrics:
 
 
 def check_orthogonality(matrix: np.ndarray) -> Metrics:
-    """Return exact off-diagonal Gram-matrix metrics for a sign matrix."""
     return metrics_from_gram(gram_matrix(matrix))

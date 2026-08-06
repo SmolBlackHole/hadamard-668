@@ -23,8 +23,7 @@ def _circulant(values):
     n = values.size
     if n not in _IDX_CACHE:
         _IDX_CACHE[n] = (np.arange(n)[None, :] - np.arange(n)[:, None]) % n
-        _SIGN_CACHE[n] = np.where(
-            np.arange(n)[None, :] >= np.arange(n)[:, None], 1, -1)
+        _SIGN_CACHE[n] = np.where(np.arange(n)[None, :] >= np.arange(n)[:, None], 1, -1)
     return values[_IDX_CACHE[n]]
 
 
@@ -54,8 +53,7 @@ def _diff_table(dims):
         n = int(np.prod(dims))
         coords = np.stack(np.unravel_index(np.arange(n), dims), axis=0)
         dims_arr = np.array(dims, dtype=np.int64)
-        diff = (coords[:, :, None] - coords[:, None, :]
-                ) % dims_arr[:, None, None]
+        diff = (coords[:, :, None] - coords[:, None, :]) % dims_arr[:, None, None]
         table = np.ravel_multi_index(diff, dims)
         _DIFF_CACHE[dims] = np.asarray(table, dtype=np.int32)
     return _DIFF_CACHE[dims]
@@ -76,8 +74,7 @@ class Builder:
 
     def __init__(self, *, kind: str, n: int):
         if kind not in self._KINDS:
-            raise ValueError(
-                f"kind must be one of {self._KINDS}, got {kind!r}")
+            raise ValueError(f"kind must be one of {self._KINDS}, got {kind!r}")
         self.kind = kind
         self.n = n
         self._dims = _best_factorization(n) if kind == "gs4_group" else None
@@ -127,8 +124,7 @@ class Builder:
 
 
 def _best_factorization(n: int) -> list[int]:
-    pairs = [(p, n // p)
-             for p in range(3, int(n**0.5) + 1) if n % p == 0 and n // p >= 3]
+    pairs = [(p, n // p) for p in range(3, int(n**0.5) + 1) if n % p == 0 and n // p >= 3]
     if not pairs:
         return [n]
     p, q = min(pairs, key=lambda pq: abs(pq[0] - pq[1]))

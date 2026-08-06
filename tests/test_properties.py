@@ -1,12 +1,11 @@
-"""Property tests for metrics, gram primitives, and pipeline."""
+"""Property tests for metrics and gram primitives."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from gpu import Metrics, check_orthogonality, gram_matrix, metrics_from_gram
-from strategies.base import Pipeline, Result, SearchStrategy
+from metrics import Metrics, check_orthogonality, gram_matrix, metrics_from_gram
 
 
 def _reference_metrics(matrix: np.ndarray) -> Metrics:
@@ -51,31 +50,3 @@ def test_metrics_match_independent_reference(matrix):
 def test_gram_primitives_match_independent_reference(matrix):
     gram = gram_matrix(matrix)
     assert metrics_from_gram(gram) == _reference_metrics(matrix)
-
-
-def test_pipeline_passes_matrix_and_incremented_seed():
-    class Source(SearchStrategy):
-        ORDER = 4
-
-        @property
-        def name(self):
-            return "source"
-
-        def search(self, steps, seed):
-            return Result(matrix=_hadamard2(), metrics=Metrics(1, 0, 2), elapsed=0.1, seed=seed)
-
-    class Sink(SearchStrategy):
-        ORDER = 4
-
-        @property
-        def name(self):
-            return "sink"
-
-        def search(self, steps, seed):
-            raise AssertionError
-
-        def refine(self, matrix, steps, seed, sequences=None):
-            return Result(matrix=matrix, metrics=Metrics(1, 0, 2), elapsed=0.2, seed=seed)
-
-    r = Pipeline([(Source(), 3), (Sink(), 5)]).search(steps=0, seed=20)
-    assert r.metrics.energy == 1

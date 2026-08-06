@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from builders import Builder
-from gpu import check_orthogonality
+from builder import Builder
+from metrics import check_orthogonality
 
 
 @pytest.mark.parametrize("kind", ["gs4", "golay_2n", "gs4_group"])

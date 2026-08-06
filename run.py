@@ -11,52 +11,45 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from generator import Generator
 from output import save
-from strategies.base import Result
-from strategies.registry import DEFAULT, build
 
 
 def derive_seeds(seed: int, runs: int) -> list[int]:
     return [seed + offset for offset in range(runs)]
 
 
-def worker_count(runs: int, workers: int) -> int:
-    return min(runs, workers)
-
-
-def select_best_run(results: list[Result]) -> Result:
+def select_best_run(results: list) -> object:
     if not results:
         raise ValueError("at least one run result is required")
     return min(results, key=lambda r: r.metrics.energy)
 
 
-def _execute_run(spec: str, steps: int, seed: int, order: int, time_budget: float = 0.0) -> Result:
-    strategy = build(spec, order)
+def _execute_run(spec: str, steps: int, seed: int, order: int, time_budget: float = 0.0) -> object:
+    gen = Generator.from_cli(spec, order)
     started = time.perf_counter()
     result = None
 
     if time_budget > 0:
         t0 = time.perf_counter()
-        strategy.search(steps=50, seed=seed)
+        gen.search(steps=50, seed=seed)
         cal = max(time.perf_counter() - t0, 0.001)
         chunk = max(50, int(0.5 / cal * 50))
         for _ in range(int(time_budget / (chunk * cal / 50)) + 1):
-            result = strategy.search(steps=chunk, seed=seed)
+            result = gen.search(steps=chunk, seed=seed)
             if result.metrics.energy == 0:
                 break
 
     if result is None:
-        result = strategy.search(steps=steps, seed=seed)
+        result = gen.search(steps=steps, seed=seed)
 
-    wall = time.perf_counter() - started
-    result.elapsed = wall
-    result.hamming = strategy.hamming()
+    result.elapsed = time.perf_counter() - started
     return result
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hadamard search")
-    parser.add_argument("--strategy", default=DEFAULT)
+    parser.add_argument("--strategy", default="gs4")
     parser.add_argument("--steps", type=int, default=200_000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--runs", type=int, default=1)
@@ -67,9 +60,9 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        strategy = build(args.strategy, args.order)
+        Generator.from_cli(args.strategy, args.order)  # validate
         seeds = derive_seeds(args.seed, args.runs)
-        workers = worker_count(args.runs, args.workers)
+        workers = min(args.runs, args.workers)
     except ValueError as e:
         parser.error(str(e))
 
@@ -93,9 +86,10 @@ def main() -> None:
                 )
             )
 
+    gen = Generator.from_cli(args.strategy, args.order)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     for r in results:
-        out = Path(args.runs_dir) / f"{strategy.name.replace('->', '_')}_{r.seed}_{timestamp}"
+        out = Path(args.runs_dir) / f"{gen.name}_{r.seed}_{timestamp}"
         save(
             r.matrix,
             r.metrics,
@@ -105,16 +99,14 @@ def main() -> None:
             steps=args.steps,
             wall=r.elapsed,
             order=r.matrix.shape[0],
-            construction=strategy.construction,
-            hamming=r.hamming,
+            construction=gen.name,
         )
 
     best = select_best_run(results)
     print("\nRun summary")
     for r in results:
         star = " *" if r.seed == best.seed else ""
-        extra = f" hamming={r.hamming}" if r.hamming is not None else ""
-        print(f"  seed={r.seed} energy={r.metrics.energy} elapsed={r.elapsed:.1f}s{extra}{star}")
+        print(f"  seed={r.seed} energy={r.metrics.energy} elapsed={r.elapsed:.1f}s{star}")
     if best.metrics.energy == 0:
         print("*** HADAMARD! ***")
     print(f"best seed={best.seed} energy={best.metrics.energy} elapsed={best.elapsed:.1f}s")

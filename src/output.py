@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from gpu import Metrics
+from metrics import Metrics
 from verify import independent_audit
 
 
@@ -23,7 +23,6 @@ def save(
     wall: float,
     order: int,
     construction: str,
-    hamming: int | None = None,
 ) -> str:
     """Write matrix.csv and run.json. Audits via pure Python if energy==0."""
     if metrics.energy == 0:
@@ -49,7 +48,6 @@ def save(
         "max_off_diagonal": metrics.max_abs_correlation,
         "is_solution": metrics.energy == 0,
         "sha256": sha,
-        **({"hamming": hamming} if hamming is not None else {}),
     }
     (directory / "run.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     return sha
