@@ -18,6 +18,9 @@ class GramTracker:
 
     ``band_rows`` / ``band_cols`` are precomputed int16 index tables from
     Builder; multi-bit rescue uses them directly via ``_combo_delta``.
+
+    Internal ``_e`` stores full Frobenius² sum (both triangles).
+    Public API returns ``_e // 2`` to match ``metrics.py`` definition.
     """
 
     def __init__(
@@ -32,8 +35,9 @@ class GramTracker:
         self._cols_band: list[list[npt.NDArray[np.int16]]] | None = None
         self.M: npt.NDArray[np.int8] | None = None
         self.G: npt.NDArray[np.float32] | None = None
-        self._MfT: npt.NDArray[np.float32] | None = None  # M^T in float32
-        self._dG: npt.NDArray[np.float32] | None = None  # recycled combo buffer
+        self._MfT: npt.NDArray[np.float32] | None = None
+        self._dG: npt.NDArray[np.float32] | None = None
+        self._O_T_scratch: npt.NDArray[np.floating] | None = None
         self._e: int = 0
 
     def _gram_energy(self, M: npt.NDArray[np.int8]) -> tuple[npt.NDArray[np.float32], int]:
@@ -53,18 +57,20 @@ class GramTracker:
         self.M = self._fn(seqs)
         self._N = self.M.shape[0]
         self._MfT = self.M.T.astype(np.float32)
-        self._dG = np.zeros((self._N, self._N), dtype=np.float32) if self._dG is None else self._dG
+        if self._dG is None or self._dG.shape != (self._N, self._N):
+            self._dG = np.zeros((self._N, self._N), dtype=np.float32)
         self.G, self._e = self._gram_energy(self.M)
         self._rows_band = band_rows
         self._cols_band = band_cols
 
     def energy(self) -> int:
-        return self._e
+        """Gram energy (off-diagonal Frobenius² / 2, matches metrics.py)."""
+        return self._e // 2
 
     # --- fast single-flip delta (closed-form, no dG buffer) -------------------
 
     def _single(self, rows: npt.NDArray[np.int16], cols: npt.NDArray[np.int16]) -> int:
-        """Energy delta for toggling M[rows, cols].  Exact, float32-safe.
+        """Energy delta (full Frobenius²) for toggling M[rows, cols].
 
         E_new = E + 4*T1 + 2*S_O + 2*S_x + 16*trace(Orr) + 16*b
         where S_O = 4*b*N (every O entry is ±2 since band cols are a permutation).
@@ -73,10 +79,11 @@ class GramTracker:
 
         b = rows.size
         vn = -2.0 * self.M[rows, cols].astype(np.float32)
-        O_T = self._MfT[cols, :] * vn[:, None]  # b x N, contiguous row gather
-        Orr = O_T[:, rows]  # b x b
+        O_T = self._MfT[cols, :] * vn[:, None]
+        Orr = O_T[:, rows]
 
-        T1 = float(np.einsum("ij,ij->", O_T, self.G[rows, :], dtype=np.float64))
+        T1 = float(np.einsum("ij,ij->", O_T,
+                   self.G[rows, :], dtype=np.float64))
         S_O = 4.0 * b * self._N
         S_x = float(np.einsum("ij,ji->", Orr, Orr, dtype=np.float64))
 
@@ -86,7 +93,12 @@ class GramTracker:
     # --- backward-compatible wrapper (used by tests) --------------------------
 
     def _compute_delta(self, rows: npt.NDArray[np.int16], cols: npt.NDArray[np.int16]) -> int:
-        """Absolute energy after toggling M[rows, cols].  Does NOT modify M or G."""
+        """Absolute energy after toggling M[rows, cols], full Frobenius².
+
+        Used by tests for sanity checks against fresh builds.  Does NOT
+        divide by 2 — consumers looking for metrics.py compatibility
+        should call ``energy()`` or ``flip()`` instead.
+        """
         return self._e + self._single(rows, cols)
 
     # --- flip / accept --------------------------------------------------------
@@ -94,7 +106,7 @@ class GramTracker:
     def flip(self, _seqs: npt.NDArray[np.int8], s: int, c: int) -> int:
         if not self._rows_band or not self._cols_band:
             return self._flip_full(_seqs, s, c)
-        return self._e + self._single(self._rows_band[s][c], self._cols_band[s][c])
+        return (self._e + self._single(self._rows_band[s][c], self._cols_band[s][c])) // 2
 
     def _flip_full(self, seqs: npt.NDArray[np.int8], s: int, c: int) -> int:
         seqs[s, c] *= -1
@@ -104,8 +116,8 @@ class GramTracker:
             dM = np.subtract(M_new, self.M, dtype=np.int16)
             rn, cn = np.nonzero(dM)
             if rn.size == 0:
-                return self._e
-            return self._e + self._single(rn.astype(np.int16), cn.astype(np.int16))
+                return self._e // 2
+            return (self._e + self._single(rn.astype(np.int16), cn.astype(np.int16))) // 2
         finally:
             seqs[s, c] *= -1
 
@@ -113,7 +125,7 @@ class GramTracker:
         if not self._rows_band or not self._cols_band:
             seqs[s, c] *= -1
             self.build(seqs)
-            return self._e
+            return self._e // 2
 
         assert self.M is not None and self.G is not None and self._MfT is not None
 
@@ -130,9 +142,9 @@ class GramTracker:
         self.G[rows, :] += O.T
         np.fill_diagonal(self.G, 0)
         self._e = e_new
-        return self._e
+        return self._e // 2
 
-    # --- correct multi-bit delta (per-band scatter withoutno duplicate-index) ----
+    # --- correct multi-bit delta (per-band scatter, no duplicate-index) ------------
 
     def _combo_delta(self, bands: list[tuple[npt.NDArray[np.int16], npt.NDArray[np.int16]]]) -> int:
         """Energy after toggling multiple flips.  Exact per-band accumulation.
@@ -144,7 +156,8 @@ class GramTracker:
         assert self._dG is not None
 
         self._dG.fill(0.0)
-        vns: list[tuple[npt.NDArray[np.float32], npt.NDArray[np.int16], npt.NDArray[np.int16]]] = []
+        vns: list[tuple[npt.NDArray[np.float32],
+                        npt.NDArray[np.int16], npt.NDArray[np.int16]]] = []
 
         for rows, cols in bands:
             vn = -2.0 * self.M[rows, cols].astype(np.float32)
@@ -165,4 +178,4 @@ class GramTracker:
 
         G_new = self.G + self._dG
         np.fill_diagonal(G_new, 0)
-        return int(float(np.einsum("ij,ij->", G_new, G_new, dtype=np.float64)))
+        return int(float(np.einsum("ij,ij->", G_new, G_new, dtype=np.float64))) // 2

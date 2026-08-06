@@ -27,14 +27,19 @@ def _seqs_from_b64(b64: str, shape: tuple[int, int]) -> np.ndarray:
     return np.frombuffer(raw, dtype=np.int8).reshape(shape)
 
 
-SOLUTIONS = Path("data") / "solutions.json"
+SOLUTIONS = Path(__file__).resolve().parent.parent / "data" / "solutions.json"
 
 
 def _write_entry(path: Path, strategy: str, n: int, entry: dict[str, Any]) -> None:
     existing: dict[str, dict[str, list[dict[str, Any]]]] = {}
     if path.exists():
         existing = json.loads(path.read_text(encoding="utf-8"))
-    existing.setdefault(strategy, {}).setdefault(str(n), []).append(entry)
+    entries = existing.setdefault(strategy, {}).setdefault(str(n), [])
+    # dedup by (seed, sha256)
+    for prev in entries:
+        if prev.get("seed") == entry["seed"] and prev.get("sha256") == entry["sha256"]:
+            return
+    entries.append(entry)
     existing[strategy][str(n)].sort(key=lambda r: r["seed"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
@@ -44,8 +49,6 @@ def save_run(path: Path, strategy: str, n: int, result: Result) -> None:
     """Append one run to the dataset JSON, solved or unsolved.
 
     Solved runs (energy==0) are *also* persisted to ``SOLUTIONS`` automatically.
-    Stats are persisted via ``SearchStats.to_dict()`` so a stat field added to
-    ``to_dict()`` lands in the JSON with zero changes here.
     """
     seqs = result.sequences
     if seqs is None:
@@ -59,6 +62,7 @@ def save_run(path: Path, strategy: str, n: int, result: Result) -> None:
         "seqs_b64": b64,
         "solved": result.metrics.energy == 0,
         "energy": result.metrics.energy,
+        "solver_e": result.solver_e,
         "elapsed_s": round(result.elapsed, 3),
         "iterations": result.iterations,
     }
@@ -71,23 +75,21 @@ def save_run(path: Path, strategy: str, n: int, result: Result) -> None:
 
     _write_entry(path, strategy, n, entry)
 
-    if result.metrics.energy == 0 and path != SOLUTIONS:
+    if result.metrics.energy == 0 and path.resolve() != SOLUTIONS.resolve():
         _write_entry(SOLUTIONS, strategy, n, entry)
 
 
 def load_runs(path: Path) -> dict[str, dict[str, list[dict[str, Any]]]]:
-    """Load all runs from a dataset JSON.  Returns ``{strategy: {n: [entries]}}``."""
+    """Load all runs from a dataset JSON. Returns ``{strategy: {n: [entries]}}``."""
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def verify(path: Path) -> int:
-    """Verify all solved entries: SHA-256 integrity + pure-Python Hadamard audit.
-
-    Returns the number of valid entries.  Prints corruptions to stderr-ish.
-    """
+    """Verify all solved entries: SHA-256 integrity + pure-Python Hadamard audit."""
     from generator import Generator
+    from verify import independent_audit
 
     if not path.exists():
         print(f"{path} not found")
@@ -104,18 +106,24 @@ def verify(path: Path) -> int:
             gen = Generator(kind=strategy, n=n)
             for r in solved:
                 total += 1
-                seqs = _seqs_from_b64(r["seqs_b64"], (gen._builder.k, n))
+                b64 = r.get("seqs_b64")
+                if not b64:
+                    print(
+                        f"  SKIP {strategy} n={n_str} seed={r.get('seed', '?')}: missing seqs_b64"
+                    )
+                    continue
+                seqs = _seqs_from_b64(b64, (gen._builder.k, n))
                 actual_sha = hashlib.sha256(seqs.astype(np.int8, copy=False).tobytes()).hexdigest()
                 if actual_sha != r.get("sha256", ""):
-                    print(f"  CORRUPT {strategy} n={n_str} seed={r['seed']}: sha256 mismatch")
+                    print(
+                        f"  CORRUPT {strategy} n={n_str} seed={r.get('seed', '?')}: sha256 mismatch"
+                    )
                     continue
                 H = gen._builder.build(seqs)
                 try:
-                    from verify import independent_audit
-
                     independent_audit(H.tolist())
                     ok += 1
                 except Exception as e:
-                    print(f"  FAIL {strategy} n={n_str} seed={r['seed']}: {e}")
+                    print(f"  FAIL {strategy} n={n_str} seed={r.get('seed', '?')}: {e}")
     print(f"{ok}/{total} valid.")
     return ok

@@ -24,6 +24,7 @@ class Result:
     iterations: int = 0
     sequences: npt.NDArray[np.int8] | None = None
     stats: SearchStats | None = None
+    solver_e: int = 0  # tracker.energy() at best_seq (internal search metric)
 
     def __str__(self) -> str:
         order = self.matrix.shape[0]
@@ -83,10 +84,7 @@ class Generator:
         best_seq, best_e, iters, stats = ils_search(sequences, tracker, rng, steps=steps)
         elapsed = time.perf_counter() - started
 
-        matrix: npt.NDArray[np.int8] = (
-            b.build(best_seq) if best_e == 0 else np.ones((b.order, b.order), dtype=np.int8)
-        )
-
+        matrix = b.build(best_seq)
         metrics = check_orthogonality(matrix)
         return Result(
             matrix=matrix,
@@ -96,17 +94,20 @@ class Generator:
             iterations=iters,
             sequences=best_seq,
             stats=stats,
+            solver_e=best_e,
         )
 
     def _tensor_search(self, steps: int, seed: int, started: float) -> Result:
         n1, n2 = self.tensor_n  # type: ignore[reportGeneralTypeIssues]
 
         def _fail() -> Result:
+            # best_seq not available across the kron boundary; report sentinel
             return Result(
                 matrix=np.ones((self.order, self.order), dtype=np.int8),
-                metrics=check_orthogonality(np.ones((self.order, self.order), dtype=np.int8)),
+                metrics=Metrics(energy=-1, orthogonal_pairs=0, max_abs_correlation=0),
                 elapsed=time.perf_counter() - started,
                 seed=seed,
+                solver_e=-1,
             )
 
         r1 = Generator(kind="gs4", n=n1).search(steps=steps, seed=seed)

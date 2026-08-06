@@ -173,8 +173,8 @@ def search(
                 rescue_streak = 0
                 rescue_mode = False
 
-                # 3-bit rescue
-                result = _rescue(cur_seq, tracker, top_candidates[:K3], 3, cur_e, mode=mode)
+                # 3-bit rescue — always "first" after a failed pair rescue
+                result = _rescue(cur_seq, tracker, top_candidates[:K3], 3, cur_e, mode="first")
                 if result is not None:
                     cur_e = result
                     improved = True
@@ -212,6 +212,15 @@ def search(
                     cur_seq[s, int(cols[s])] *= -1
                 tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
                 cur_e = tracker.energy()
+                kick_streak += 1
+                if kick_streak >= 3:
+                    for s in range(n_seqs):
+                        cur_seq[s] = rng.choice(np.array([-1, 1], dtype=np.int8), size=n_cols)
+                    tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
+                    cur_e = tracker.energy()
+                    kick_streak = 0
+                    stats.restarts += 1
+                    stats._hit_other()
             steps -= 1
             stats.kicks += 1
             stats._hit_other()

@@ -23,50 +23,15 @@ findet lokales Minimum, aber Kick/Restart kommen nicht ins richtige Becken.
 
 ---
 
-## Baseline (Schritt 0) — ERGEBNISSE ✓
+## Baseline (Schritt 0) — ERGEBNISSE
 
-Sweep `n=32,34,36` je 10 Seeds, 200k Steps, 8 Worker, Commit `af00bf0`.
+**Erste Baseline war fehlerhaft** (Commit `af00bf0`): `generator.py` baute
+bei Fehlschlägen (`best_e > 0`) eine `np.ones()`-Dummy-Matrix statt
+`builder.build(best_seq)`. `check_orthogonality()` lieferte daher die Energie
+der All-Eins-Matrix — ein Faktor-2-Bug im Reporting.
 
-```bash
-PYTHONPATH=src python run.py --sweep gs4 32 34 36 --seeds 10 --steps 200000 --workers 8 --output data/baseline.json
-```
-
-| n | Ordnung | Gelöst | Fehlschlag-Energie | Ø S | Ø P | Ø T | Ø K | Ø R | Ø Strk |
-| ---: | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 32 | 128 | 4/10 | 133.169.152 | 4.400 | 155 | 3 | 500 | 170 | 23,5 |
-| 34 | 136 | 0/10 | 169.793.280 | 4.400 | 143 | 3 | 458 | 152 | 24,9 |
-| 36 | 144 | 2/10 | 213.497.856 | 4.330 | 135 | 3 | 417 | 139 | 26,2 |
-
-### Kernbefunde
-
-**1. Alle Fehlschläge landen bei derselben Energie pro n.** 6 Fehlschläge bei
-n=32: alle 133.169.152. 10 bei n=34: alle 169.793.280. Kein Seed-Rauschen.
-
-**2. Die Energien sind strukturell, nicht zufällig:**
-
-```text
-energy / pairs = N²
-```
-
-Das heißt jedes Zeilenpaar hat Dot-Produkt ±N — die Matrix ist de facto Rang 1,
-alle Zeilen sind parallel oder negiert. Es handelt sich um ein degeneriertes,
-flaches Plateau, keine zufällige Konfiguration.
-
-**3. Unterschiedliche Sequenzen, gleiche Energie.** Paarweise Bit-Vergleiche
-innerhalb der Fehlschläge zeigen ~45-55% Differenz — die Fehlschläge sind
-verschiedene Teiläquivalente im selben Plateau, kein einzelner Punkt.
-
-**4. iters = 199.999 bei allen Fehlschlägen.** Budget komplett ausgeschöpft,
-der Solver hat nie aufgegeben — konnte aber nicht entkommen.
-
-**5. Triples fast irrelevant.** 1-5 pro 200k-Step-Run, 0 in manchen gelösten
-Runs. Der Triple-Code kostet CPU und liefert nichts.
-
-**Schlussfolgerung:** Kein Budget-Problem, kein Seed-Problem. Das Plateau ist
-riesig und flach — der Solver läuft darin herum (50% Bit-Änderungen zwischen
-Fehlschlägen) aber die Energie bleibt identisch. Wir brauchen einen
-Mechanismus, der **gerichtet bergauf** aus dem Plateau läuft. Tabu-Walk
-(Schritt 4) ist der dafür vorgesehene Escape-Mechanismus.
+Gefixt: `metrics.energy` = reale Gram-Energie von `best_seq`, `solver_e` =
+interne Tracker-Energie. Baseline wird mit Fix neu gerechnet.
 
 ---
 
