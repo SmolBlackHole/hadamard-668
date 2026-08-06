@@ -182,8 +182,8 @@ class Tracker:
     @classmethod
     def _compute_residual(cls, seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int32]:
         n = seqs.shape[1]
-        j = np.arange(n)[:, None]
-        t = np.arange(n)[None, :]
+        j: npt.NDArray[np.intp] = np.arange(n, dtype=np.intp)[:, None]
+        t: npt.NDArray[np.intp] = np.arange(n, dtype=np.intp)[None, :]
         shifted = (j + t) % n
         sign = np.where(j + t < n, 1, -1).astype(np.int32)
         values = seqs.astype(np.int32)
@@ -194,8 +194,8 @@ def _build_delta_cache(seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
     """Build every reduced singleton delta without Python loops."""
     n = seqs.shape[1]
     m = n // 2
-    c = np.arange(n)[:, None]
-    t = np.arange(1, m + 1)[None, :]
+    c: npt.NDArray[np.intp] = np.arange(n, dtype=np.intp)[:, None]
+    t: npt.NDArray[np.intp] = np.arange(1, m + 1, dtype=np.intp)[None, :]
     forward = (c + t) % n
     backward = (c - t) % n
     forward_sign = np.where(c + t < n, 1, -1)

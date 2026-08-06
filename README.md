@@ -1,7 +1,7 @@
 # Hadamard-668
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
-[![Tests](https://img.shields.io/badge/tests-51%2F51-green)]()
+![Tests](https://img.shields.io/badge/tests-51%2F51-green)
 
 Suche nach einer reellen Hadamard-Matrix der Ordnung 668 über die
 Goethals-Seidel-Konstruktion mit vier negazyklischen (±1)-Folgen.
@@ -67,7 +67,7 @@ Mutationstests sind wegen ihrer Laufzeit absichtlich nicht Teil von `check`.
 Vier ±1-Folgen `a,b,c,d` der Länge `n` bilden über negazyklische Matrizen eine
 GS4-Blockmatrix. Die Hadamard-Bedingung ist äquivalent zu:
 
-```
+```text
 NAF_a(t) + NAF_b(t) + NAF_c(t) + NAF_d(t) = 0    für alle t = 1,…,n-1
 ```
 
@@ -80,7 +80,7 @@ Die vollständige Herleitung: [HYPOTHESIS.md](HYPOTHESIS.md)
 
 ## Architektur
 
-```
+```text
 src/
   tracker.py      # NAF-Energie-Tracker: Delta-Cache, Batch-Flip, O(1) Accept
   solver.py       # Iterated Local Search: Singles → Pairs → Kick

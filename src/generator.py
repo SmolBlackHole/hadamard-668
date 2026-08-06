@@ -100,7 +100,8 @@ class Generator:
         )
 
     def _tensor_search(self, steps: int, seed: int, started: float) -> Result:
-        n1, n2 = self.tensor_n  # type: ignore[reportGeneralTypeIssues]
+        assert self.tensor_n is not None
+        n1, n2 = self.tensor_n
 
         def _fail() -> Result:
             # best_seq not available across the kron boundary; report sentinel

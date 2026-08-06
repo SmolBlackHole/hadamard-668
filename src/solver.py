@@ -187,8 +187,8 @@ def search(
 
         if not improved:
             t_rescue = time.perf_counter()
-            top = np.argpartition(singles_e, K - 1)[:K]
-            top_candidates = [positions[t] for t in top]
+            top = np.asarray(np.argpartition(singles_e, K - 1)[:K], dtype=np.intp)
+            top_candidates: list[tuple[int, int]] = [positions[int(t)] for t in top]
 
             if cfg.pairs:
                 prev_e = cur_e
@@ -206,7 +206,7 @@ def search(
         # Phase 3: Kick — always accept
         if not improved and steps > 0 and cur_e > 0 and cfg.kick:
             t_kick = time.perf_counter()
-            cols = rng.integers(0, n_cols, size=n_seqs)
+            cols = np.asarray(rng.integers(0, n_cols, size=n_seqs), dtype=np.intp)
             prev_e = cur_e
             for s in range(n_seqs):
                 cur_e = tracker.accept(cur_seq, s, int(cols[s]))

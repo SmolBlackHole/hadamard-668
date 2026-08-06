@@ -76,7 +76,9 @@ def _full_tracker_energy(seqs: npt.NDArray[np.int8]) -> int:
         np.ones((3, 3), dtype=np.int8),
     ],
 )
-def test_metrics_and_gram_primitives_match_independent_reference(matrix):
+def test_metrics_and_gram_primitives_match_independent_reference(
+    matrix: npt.NDArray[np.int8],
+) -> None:
     expected = _reference_metrics(matrix)
     gram = gram_matrix(matrix)
     assert check_orthogonality(matrix) == expected

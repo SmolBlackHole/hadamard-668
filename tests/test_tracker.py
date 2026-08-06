@@ -60,10 +60,10 @@ def test_combo_energy_matches_full_gram_for_larger_moves(n: int) -> None:
     seqs = rng.choice((-1, 1), size=(builder.k, n)).astype(np.int8)
     tracker = Tracker()
     tracker.build(seqs)
-    positions = [(s, c) for s in range(4) for c in range(n)]
+    positions: list[tuple[int, int]] = [(s, c) for s in range(4) for c in range(n)]
 
     for width in range(2, 6):
-        combo = [positions[i] for i in rng.choice(len(positions), size=width, replace=False)]
+        combo = [positions[int(i)] for i in rng.choice(len(positions), size=width, replace=False)]
         flipped = seqs.copy()
         for s, c in combo:
             flipped[s, c] *= -1
@@ -79,9 +79,9 @@ def test_pair_batch_matches_combo_energy_in_combination_order(n: int) -> None:
     seqs = rng.choice((-1, 1), size=(builder.k, n)).astype(np.int8)
     tracker = Tracker()
     tracker.build(seqs)
-    positions = [(s, c) for s in range(4) for c in range(n)]
-    candidates = [
-        positions[i]
+    positions: list[tuple[int, int]] = [(s, c) for s in range(4) for c in range(n)]
+    candidates: list[tuple[int, int]] = [
+        positions[int(i)]
         for i in rng.choice(len(positions), size=min(10, len(positions)), replace=False)
     ]
     energies = tracker.pair_energies(candidates)
