@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 
-@dataclass
+@dataclass(frozen=True)
 class Metrics:
     energy: int
     orthogonal_pairs: int

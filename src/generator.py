@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 import numpy.typing as npt
 
-from builder import Builder
-from metrics import Metrics, check_orthogonality
-from solver import SearchStats
-from solver import search as ils_search
+from .builder import Builder
+from .metrics import Metrics, check_orthogonality
+from .solver import SearchStats
+from .solver import search as ils_search
 
 if TYPE_CHECKING:
-    from solver import SolverConfig
+    from .solver import SolverConfig
 
 
 @dataclass
@@ -77,7 +77,7 @@ class Generator:
 
         sequences = rng.choice(np.array([-1, 1], dtype=np.int8), size=(b.k, b.n))
 
-        from tracker import Tracker
+        from .tracker import Tracker
 
         tracker = Tracker()
         tracker.build(sequences)

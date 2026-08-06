@@ -67,7 +67,7 @@ class Builder:
     @classmethod
     def class_hash(cls, seqs: npt.NDArray[np.int8]) -> str:
         """Invariant hash for deduplication.  Dispatches on ``self.kind``."""
-        from fast_hash import gs4_class_hash
+        from .fast_hash import gs4_class_hash
 
         return gs4_class_hash(seqs)
 

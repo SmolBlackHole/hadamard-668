@@ -5,13 +5,12 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from functools import lru_cache
-from itertools import combinations
-from math import comb
 
 import numpy as np
 import numpy.typing as npt
 
-from tracker import Tracker
+from .statistics import fmt_e
+from .tracker import Tracker
 
 SINGLE_BATCH_SIZE = 64
 
@@ -21,9 +20,7 @@ class SolverConfig:
     """Feature flags for ablation testing.  Default: proven combination."""
 
     pairs: bool = True
-    triples: bool = False
     kick: bool = True
-    restart: bool = False
 
 
 @lru_cache(maxsize=16)
@@ -43,14 +40,13 @@ def _update_best(
 
 
 class SearchStats:
-    """Hit counters + streak histogram.  One place for all solver diagnostics."""
+    """Hit counters + streak histogram + phase timing."""
 
     __slots__ = (
         "_streak",
         "energy_saved_kicks",
         "energy_saved_pairs",
         "energy_saved_singles",
-        "energy_saved_triples",
         "kick_evals",
         "kick_time_s",
         "kicks",
@@ -58,20 +54,16 @@ class SearchStats:
         "rebuild_time_s",
         "rescue_evals",
         "rescue_time_s",
-        "restarts",
         "single_evals",
         "single_time_s",
         "singles",
         "singles_streaks",
-        "triples",
     )
 
     def __init__(self) -> None:
         self.singles: int = 0
         self.pairs: int = 0
-        self.triples: int = 0
         self.kicks: int = 0
-        self.restarts: int = 0
         self.single_evals: int = 0
         self.rescue_evals: int = 0
         self.kick_evals: int = 0
@@ -79,7 +71,6 @@ class SearchStats:
         self._streak: int = 0
         self.energy_saved_singles: int = 0
         self.energy_saved_pairs: int = 0
-        self.energy_saved_triples: int = 0
         self.energy_saved_kicks: int = 0
         self.single_time_s: float = 0.0
         self.rescue_time_s: float = 0.0
@@ -106,12 +97,9 @@ class SearchStats:
         return {
             "singles": self.singles,
             "pairs": self.pairs,
-            "triples": self.triples,
             "kicks": self.kicks,
-            "restarts": self.restarts,
             "e_singles": self.energy_saved_singles,
             "e_pairs": self.energy_saved_pairs,
-            "e_triples": self.energy_saved_triples,
             "e_kicks": self.energy_saved_kicks,
             "single_evals": self.single_evals,
             "rescue_evals": self.rescue_evals,
@@ -126,11 +114,9 @@ class SearchStats:
         """Compact one-line summary for CLI output."""
         self._flush()
         parts = [
-            f"S={self.singles}({_fmt_e(self.energy_saved_singles)})",
-            f"P={self.pairs}({_fmt_e(self.energy_saved_pairs)})",
-            f"T={self.triples}({_fmt_e(self.energy_saved_triples)})",
-            f"K={self.kicks}({_fmt_e(self.energy_saved_kicks)})",
-            f"R={self.restarts}",
+            f"S={self.singles}({fmt_e(self.energy_saved_singles)})",
+            f"P={self.pairs}({fmt_e(self.energy_saved_pairs)})",
+            f"K={self.kicks}({fmt_e(self.energy_saved_kicks)})",
             f"evals={self.single_evals}/{self.rescue_evals}/{self.kick_evals}",
             f"t={self.single_time_s:.1f}s/{self.rescue_time_s:.1f}s/{self.kick_time_s:.1f}s",
         ]
@@ -140,17 +126,6 @@ class SearchStats:
         else:
             parts.append("strk=-")
         return " ".join(parts)
-
-
-def _fmt_e(e: int) -> str:
-    """Compact energy formatting: 1234 -> '1.2k'."""
-    if e == 0:
-        return "0"
-    if e >= 1_000_000:
-        return f"{e / 1_000_000:.1f}M"
-    if e >= 1000:
-        return f"{e / 1000:.0f}k"
-    return str(e)
 
 
 def search(
@@ -179,12 +154,8 @@ def search(
     best_e = cur_e
 
     K = min(B - 1, max(16, int(B**0.5 * 3)))
-    KickStrikeMax = 3  # ponytail: constant, tune later
 
     singles_e = np.empty(B)
-    top: npt.NDArray[np.int64] = np.empty(0, dtype=np.int64)
-    top_candidates: list[tuple[int, int]] = []
-    kick_strike: int = 0
     while steps > 0 and best_e > 0:
         # Phase 1: greedy singles scan
         t_phase = time.perf_counter()
@@ -211,6 +182,7 @@ def search(
         stats.single_time_s += time.perf_counter() - t_phase
 
         if steps <= 0:
+            best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
             break
 
         if not improved:
@@ -218,10 +190,9 @@ def search(
             top = np.argpartition(singles_e, K - 1)[:K]
             top_candidates = [positions[t] for t in top]
 
-            # 2-bit rescue
             if cfg.pairs:
                 prev_e = cur_e
-                result, evaluations = _rescue(cur_seq, tracker, top_candidates, 2, cur_e)
+                result, evaluations = _rescue(cur_seq, tracker, top_candidates, cur_e)
                 stats.rescue_evals += evaluations
                 if result is not None:
                     stats.energy_saved_pairs += prev_e - result
@@ -230,39 +201,15 @@ def search(
                     stats.pairs += 1
                     stats._hit_other()
 
-            if not improved and cfg.triples:
-                triple_top = np.argpartition(singles_e, min(K, 10) - 1)[: min(K, 10)]
-                triple_candidates = [positions[t] for t in triple_top]
-                prev_e = cur_e
-                result, evaluations = _rescue(cur_seq, tracker, triple_candidates, 3, cur_e)
-                stats.rescue_evals += evaluations
-                if result is not None:
-                    stats.energy_saved_triples += prev_e - result
-                    cur_e = result
-                    improved = True
-                    stats.triples += 1
-                    stats._hit_other()
-
             stats.rescue_time_s += time.perf_counter() - t_rescue
 
-        # Phase 3: Kick — always accept, reset strike on success
+        # Phase 3: Kick — always accept
         if not improved and steps > 0 and cur_e > 0 and cfg.kick:
             t_kick = time.perf_counter()
             cols = rng.integers(0, n_cols, size=n_seqs)
             prev_e = cur_e
             for s in range(n_seqs):
                 cur_e = tracker.accept(cur_seq, s, int(cols[s]))
-            kick_strike += 1
-            if kick_strike >= KickStrikeMax and cfg.restart:
-                for s in range(n_seqs):
-                    cur_seq[s] = rng.choice(np.array([-1, 1], dtype=np.int8), size=n_cols)
-                t0 = time.perf_counter()
-                tracker.build(cur_seq)
-                stats.rebuild_time_s += time.perf_counter() - t0
-                cur_e = tracker.energy()
-                kick_strike = 0
-                stats.restarts += 1
-                stats._hit_other()
             steps -= 1
             stats.kicks += 1
             stats.kick_evals += 1
@@ -279,26 +226,16 @@ def _rescue(
     cur_seq: npt.NDArray[np.int8],
     tracker: Tracker,
     candidates: list[tuple[int, int]],
-    width: int,
     cur_e: int,
 ) -> tuple[int | None, int]:
-    """Try width-bit combinations. Returns improved energy or None."""
-    if width == 2:
-        energies = tracker.pair_energies(candidates)
-        rows, cols = np.triu_indices(len(candidates), 1)
-        improving = np.flatnonzero(energies[rows, cols] < cur_e)
-        if improving.size == 0:
-            return None, len(rows)
-        index = int(improving[0])
-        combo = (candidates[int(rows[index])], candidates[int(cols[index])])
-        for s, c in combo:
-            tracker.accept(cur_seq, s, c)
-        return tracker.energy(), index + 1
-
-    for evaluations, combo in enumerate(combinations(candidates, width), 1):
-        e = tracker.combo_energy(list(combo))
-        if e < cur_e:
-            for s, c in combo:
-                tracker.accept(cur_seq, s, c)
-            return tracker.energy(), evaluations
-    return None, comb(len(candidates), width) if len(candidates) >= width else 0
+    """Try pair combinations. Returns improved energy or None."""
+    energies = tracker.pair_energies(candidates)
+    rows, cols = np.triu_indices(len(candidates), 1)
+    improving = np.flatnonzero(energies[rows, cols] < cur_e)
+    if improving.size == 0:
+        return None, len(rows)
+    index = int(improving[0])
+    combo = (candidates[int(rows[index])], candidates[int(cols[index])])
+    for s, c in combo:
+        tracker.accept(cur_seq, s, c)
+    return tracker.energy(), index + 1

@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
-from generator import Generator
+from src.generator import Generator
 
 
-@pytest.mark.slow
 def test_n24_solves_all_random_seeds() -> None:
     """30 random seeds at n=24, 200k steps — must all reach energy 0."""
     gen = Generator(kind="gs4", n=24)

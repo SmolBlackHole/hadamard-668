@@ -5,11 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
-from generator import Result
-from metrics import Metrics
-from output import load_runs, save_run
-from solver import SearchStats
+from src import output
+from src.generator import Result
+from src.metrics import Metrics
+from src.output import load_runs, save_run
+from src.solver import SearchStats
 
 
 def _make_result(
@@ -20,12 +22,9 @@ def _make_result(
     stats: SearchStats | None = None,
 ) -> Result:
     seqs = np.ones((4, 6), dtype=np.int8)
-    if energy == 0:
-        seqs[0, 0] = -1
-    order = 24
-    matrix = np.ones((order, order), dtype=np.int8) if energy > 0 else _hadamard_24(seqs)
+    seqs[0, seed % seqs.shape[1]] = -1
     return Result(
-        matrix=matrix,
+        matrix=np.empty((0, 0), dtype=np.int8),
         metrics=Metrics(energy=energy, orthogonal_pairs=0, max_abs_correlation=0),
         elapsed=elapsed,
         seed=seed,
@@ -35,20 +34,12 @@ def _make_result(
     )
 
 
-def _hadamard_24(seqs: np.ndarray) -> np.ndarray:
-    """Build a real Hadamard matrix from sequences for testing."""
-    from builder import Builder
-
-    b = Builder(kind="gs4", n=6)
-    return b.build(seqs)
-
-
-def test_save_and_load_solution(tmp_path: Path) -> None:
+def test_save_and_load_solution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(output, "SOLUTIONS", tmp_path / "solutions.json")
     stats = SearchStats()
     stats.singles = 3
     stats.pairs = 1
     stats.singles_streaks = [3]
-    stats._flush()
 
     path = tmp_path / "runs.json"
     save_run(path, "gs4", 6, _make_result(42, energy=0, stats=stats))
@@ -84,7 +75,8 @@ def test_load_empty_dataset(tmp_path: Path) -> None:
     assert load_runs(tmp_path / "nonexistent.json") == {}
 
 
-def test_multiple_runs_same_n(tmp_path: Path) -> None:
+def test_multiple_runs_same_n(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(output, "SOLUTIONS", tmp_path / "solutions.json")
     path = tmp_path / "runs.json"
     save_run(path, "gs4", 6, _make_result(0, energy=0, elapsed=1.0, iterations=100))
     save_run(path, "gs4", 6, _make_result(1, energy=4, elapsed=2.0, iterations=200))

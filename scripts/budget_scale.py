@@ -1,19 +1,19 @@
-"""Budget scaling experiment: test solve rate vs step budget."""
+"""Budget scaling experiment: test solve rate vs step budget.
+
+Run with ``python -m scripts.budget_scale`` from the repository root.
+"""
 
 from __future__ import annotations
 
-import math
-import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from pathlib import Path
+from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from src.generator import Generator
+from src.statistics import wilson_ci
 
-from generator import Generator
 
-
-def _run_one(args: tuple[int, int, int]) -> dict[str, object]:
+def _run_one(args: tuple[int, int, int]) -> dict[str, Any]:
     n, seed, steps = args
     gen = Generator(kind="gs4", n=n)
     r = gen.search(steps=steps, seed=seed)
@@ -29,14 +29,6 @@ def _run_one(args: tuple[int, int, int]) -> dict[str, object]:
         "rescue_evals": s.get("rescue_evals", 0),
         "kick_evals": s.get("kick_evals", 0),
     }
-
-
-def _wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    p = k / n
-    denom = 1 + z * z / n
-    center = (p + z * z / (2 * n)) / denom
-    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
-    return center - half, center + half
 
 
 def main() -> None:
@@ -57,7 +49,7 @@ def main() -> None:
     print()
 
     started = time.perf_counter()
-    results: list[dict[str, object]] = []
+    results: list[dict[str, Any]] = []
     with ProcessPoolExecutor(max_workers=workers) as pool:
         for i, r in enumerate(pool.map(_run_one, tasks), 1):
             results.append(r)
@@ -68,7 +60,7 @@ def main() -> None:
 
     total_wall = time.perf_counter() - started
 
-    by_key: dict[tuple[int, int], list[dict[str, object]]] = {}
+    by_key: dict[tuple[int, int], list[dict[str, Any]]] = {}
     for r, (n_v, _, b) in zip(results, tasks):
         by_key.setdefault((n_v, b), []).append(r)
 
@@ -79,7 +71,7 @@ def main() -> None:
             rs = by_key[(n_val, b)]
             solved = sum(1 for r in rs if r["energy"] == 0)
             avg_t = sum(float(r["elapsed"]) for r in rs) / len(rs)
-            lo, hi = _wilson(solved, len(rs))
+            lo, hi = wilson_ci(solved, len(rs))
 
             s_avg = sum(int(r["single_evals"]) for r in rs) / len(rs)
             p_avg = sum(int(r["rescue_evals"]) for r in rs) / len(rs)

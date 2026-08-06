@@ -7,8 +7,8 @@ from itertools import combinations
 import numpy as np
 import pytest
 
-from builder import Builder
-from tracker import Tracker
+from src.builder import Builder
+from src.tracker import Tracker
 
 
 def _full_energy(builder: Builder, seqs: np.ndarray) -> int:
@@ -106,6 +106,7 @@ def test_accept_keeps_cache_equal_to_fresh_build() -> None:
         fresh = Tracker()
         fresh.build(seqs)
         assert tracker.energy() == fresh.energy()
+        assert tracker._norm2 is not None and fresh._norm2 is not None
         assert np.array_equal(tracker._norm2, fresh._norm2)
         assert np.array_equal(tracker.flip_energies(), fresh.flip_energies())
 

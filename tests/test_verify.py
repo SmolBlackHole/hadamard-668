@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from verify import InvalidMatrix, independent_audit
+from src.verify import InvalidMatrix, independent_audit
 
 
 def _hadamard2() -> list[list[int]]:

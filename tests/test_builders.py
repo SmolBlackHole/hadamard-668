@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from builder import Builder
-from metrics import check_orthogonality
+from src.builder import Builder
+from src.metrics import check_orthogonality
 
 
 def test_builder_unit_works() -> None:

@@ -43,7 +43,9 @@ class Tracker:
         self._q = int(np.dot(self._u, self._u))
         self._e = 64 * self._n * self._q
         self._delta = _build_delta_cache(self._seqs)
-        self._norm2 = np.sum(self._delta * self._delta, axis=1, dtype=np.int32)
+        self._norm2 = np.asarray(
+            np.sum(self._delta * self._delta, axis=1, dtype=np.int32), dtype=np.int32
+        )
         self._update_cols, self._update_lags, self._update_signs = _update_geometry(self._n)
 
     def energy(self) -> int:
@@ -154,7 +156,7 @@ class Tracker:
             return self._e
 
         seq_ids, cols = np.divmod(indices, self._n)
-        d = np.sum(self._delta[indices], axis=0, dtype=np.int32)
+        d = np.asarray(np.sum(self._delta[indices], axis=0, dtype=np.int32), dtype=np.int32)
         if indices.size > 1:
             distance = np.abs(cols[:, None] - cols[None, :])
             lag = np.minimum(distance, self._n - distance)
@@ -177,12 +179,6 @@ class Tracker:
         q = self._q + int(2 * np.dot(self._u, d) + np.dot(d, d))
         return 64 * self._n * q
 
-    @staticmethod
-    def _energy_from_r1(r1: npt.NDArray[np.int32]) -> int:
-        """Reference conversion from the full residual representation."""
-        n = len(r1) + 1
-        return int(2 * n * np.dot(r1, r1))
-
     @classmethod
     def _compute_residual(cls, seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int32]:
         n = seqs.shape[1]
@@ -192,10 +188,6 @@ class Tracker:
         sign = np.where(j + t < n, 1, -1).astype(np.int32)
         values = seqs.astype(np.int32)
         return np.sum(values[:, :, None] * values[:, shifted] * sign, axis=(0, 1))
-
-    @staticmethod
-    def _naf(a: npt.NDArray[np.int8]) -> npt.NDArray[np.int32]:
-        return Tracker._compute_residual(np.broadcast_to(a, (4, len(a)))) // 4
 
 
 def _build_delta_cache(seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
@@ -218,7 +210,9 @@ def _build_delta_cache(seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
 
 
 @cache
-def _update_geometry(n: int) -> tuple[npt.NDArray[np.intp], npt.NDArray[np.intp], npt.NDArray[np.int8]]:
+def _update_geometry(
+    n: int,
+) -> tuple[npt.NDArray[np.intp], npt.NDArray[np.intp], npt.NDArray[np.int8]]:
     """Return the affected cache coordinates for each flipped column."""
     centers = np.arange(n)[:, None]
     columns = np.broadcast_to(np.arange(n), (n, n))

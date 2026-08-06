@@ -15,8 +15,8 @@ from typing import Any
 
 import numpy as np
 
-from builder import Builder
-from generator import Result
+from .builder import Builder
+from .generator import Result
 
 
 def _seqs_to_b64(seqs: np.ndarray) -> str:
@@ -95,8 +95,8 @@ def load_runs(path: Path) -> dict[str, dict[str, list[dict[str, Any]]]]:
 
 def verify(path: Path) -> int:
     """Verify all solved entries: SHA-256 integrity + pure-Python Hadamard audit."""
-    from generator import Generator
-    from verify import independent_audit
+    from .generator import Generator
+    from .verify import independent_audit
 
     if not path.exists():
         print(f"{path} not found")

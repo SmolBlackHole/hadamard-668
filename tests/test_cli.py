@@ -13,8 +13,6 @@ from run import _execute_single, _fmt_time
 def test_run_help_works() -> None:
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
-    src = str(Path(__file__).parents[1] / "src")
-    environment["PYTHONPATH"] = src
     result = subprocess.run(
         [sys.executable, "run.py", "--help"],
         cwd=Path(__file__).parents[1],

@@ -12,3 +12,4 @@ runs/
 results/
 .coverage
 coverage.json
+reference_pzinn/

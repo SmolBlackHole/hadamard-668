@@ -1,5 +1,7 @@
 """Ablation test: measure each solver component's contribution.
 
+Run with ``python -m scripts.ablation`` from the repository root.
+
 Runs 7 configurations x 3 n-values x 20 seeds = 420 runs.
 Outputs a comparison table showing solved rate, energy, and per-component
 hit counts + energy saved.
@@ -7,18 +9,15 @@ hit counts + energy saved.
 
 from __future__ import annotations
 
-import sys
 import time
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-
-from generator import Generator
-from solver import SolverConfig
+from src.generator import Generator
+from src.solver import SolverConfig
+from src.statistics import fmt_e, wilson_ci, z_test
 
 
 @dataclass
@@ -31,8 +30,6 @@ CONFIGS = [
     AblationConfig("singles-only", SolverConfig(pairs=False, kick=False)),
     AblationConfig("+pairs", SolverConfig(pairs=True, kick=False)),
     AblationConfig("default (S+P+K)", SolverConfig()),
-    AblationConfig("all-on", SolverConfig(pairs=True, triples=True, kick=True, restart=True)),
-    AblationConfig("+restarts", SolverConfig(pairs=True, kick=True, restart=True)),
 ]
 
 NS = [32]
@@ -72,31 +69,19 @@ def _aggregate(runs: list[dict[str, Any]]) -> dict[str, Any]:
         "mean_t": f"{mean_t:.1f}s",
     }
 
-    for comp in ("singles", "pairs", "triples", "kicks"):
+    for comp in ("singles", "pairs", "kicks"):
         hits = sum(r["stats"].get(comp, 0) for r in runs)
         e_saved = sum(r["stats"].get(f"e_{comp}", 0) for r in runs)
         mean_e_per_hit = e_saved / hits if hits > 0 else 0
         agg[f"{comp}_hits"] = hits
-        agg[f"{comp}_e"] = _fmt_e(e_saved)
+        agg[f"{comp}_e"] = fmt_e(e_saved)
         agg[f"{comp}_e_hit"] = f"{mean_e_per_hit:.0f}" if hits > 0 else "-"
 
-    restarts = sum(r["stats"].get("restarts", 0) for r in runs)
-    agg["restarts"] = restarts
     agg["single_evals"] = sum(r["stats"].get("single_evals", 0) for r in runs)
     agg["rescue_evals"] = sum(r["stats"].get("rescue_evals", 0) for r in runs)
     agg["kick_evals"] = sum(r["stats"].get("kick_evals", 0) for r in runs)
 
     return agg
-
-
-def _fmt_e(e: int) -> str:
-    if e == 0:
-        return "0"
-    if e >= 1_000_000:
-        return f"{e / 1_000_000:.1f}M"
-    if e >= 1000:
-        return f"{e / 1000:.0f}k"
-    return str(e)
 
 
 def main() -> None:
@@ -130,29 +115,42 @@ def main() -> None:
         by_config[ac.name][r["n"]].append(r)
 
     # Print table
+    by_cfg_n_solved: dict[str, dict[int, tuple[int, int]]] = defaultdict(
+        lambda: defaultdict(lambda: (0, 0))
+    )  # type: ignore[assignment]
     for ac in CONFIGS:
         print()
         print(f"-- {ac.name} --")
-        header = f"{'n':>4}  {'solved':>7}  {'best_e':>6}  {'mean_e':>7}  {'time':>6}  "
-        header += f"{'S-hits':>7} {'S-e':>7} {'S/':>4}  "
-        header += f"{'P-hits':>7} {'P-e':>7} {'P/':>4}  "
-        header += f"{'T-hits':>7} {'T-e':>7} {'T/':>4}  "
-        header += f"{'K-hits':>7} {'K-e':>7} {'K/':>4}  "
-        header += f"{'R':>5} {'S-eval':>8} {'R-eval':>8} {'K-eval':>8}"
+        header = f"{'n':>4}  {'solved':>7}  {'95% CI':>15}  {'mean_e':>7}  {'time':>6}  "
+        header += f"{'S-hits':>7} {'P-hits':>7} {'K-hits':>7}"
         print(header)
         print("-" * len(header))
         for n in NS:
             a = _aggregate(by_config[ac.name][n])
+            solved, total = a["solved"].split("/")
+            k, tot = int(solved), int(total)
+            by_cfg_n_solved[ac.name][n] = (k, tot)
+            lo, hi = wilson_ci(k, tot)
             line = (
-                f"{n:>4}  {a['solved']:>7}  {a['best_e']:>6}  {a['mean_e']:>7}  {a['mean_t']:>6}  "
-                f"{a['singles_hits']:>7} {a['singles_e']:>7} {a['singles_e_hit']:>4}  "
-                f"{a['pairs_hits']:>7} {a['pairs_e']:>7} {a['pairs_e_hit']:>4}  "
-                f"{a['triples_hits']:>7} {a['triples_e']:>7} {a['triples_e_hit']:>4}  "
-                f"{a['kicks_hits']:>7} {a['kicks_e']:>7} {a['kicks_e_hit']:>4}  "
-                f"{a['restarts']:>5} {a['single_evals']:>8} {a['rescue_evals']:>8} "
-                f"{a['kick_evals']:>8}"
+                f"{n:>4}  {a['solved']:>7}  [{lo:.3f},{hi:.3f}]  "
+                f"{a['mean_e']:>7}  {a['mean_t']:>6}  "
+                f"{a['singles_hits']:>7} {a['pairs_hits']:>7} "
+                f"{a['kicks_hits']:>7}"
             )
             print(line)
+        print()
+
+    # Z-tests against baseline (first config)
+    if len(CONFIGS) > 1:
+        base_name = CONFIGS[0].name
+        print("-- Z-Tests vs", base_name, "--")
+        for ac in CONFIGS[1:]:
+            for n in NS:
+                k1, n1 = by_cfg_n_solved[base_name][n]
+                k2, n2 = by_cfg_n_solved[ac.name][n]
+                z, p = z_test(k1, n1, k2, n2)
+                sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
+                print(f"  {ac.name} n={n}: z={z:+.3f}  p={p:.4f}  {sig}")
         print()
 
 
