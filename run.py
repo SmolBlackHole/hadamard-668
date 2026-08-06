@@ -10,6 +10,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -26,6 +27,15 @@ def _fmt_time(t: float) -> str:
     if t < 1.0:
         return f"{t * 1000:.0f}ms"
     return f"{t:.1f}s"
+
+
+def _wilson_ci(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score interval for binomial proportion (95 % CI)."""
+    p = k / n
+    den = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / den
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / den
+    return center - half, center + half
 
 
 def _execute_single(kind: str, n: int, steps: int, seed: int) -> Result:
@@ -78,7 +88,8 @@ def _run_sweep(
         solved = sum(1 for r in rs if r.metrics.energy == 0)
         best_e = min(r.metrics.energy for r in rs)
         avg_t = sum(r.elapsed for r in rs) / len(rs)
-        line = f"  n={n:>3}  {solved}/{len(rs)} solved  best_e={best_e}  avg {_fmt_time(avg_t)}"
+        lo, hi = _wilson_ci(solved, len(rs))
+        line = f"  n={n:>3}  {solved}/{len(rs)} solved  best_e={best_e}  avg {_fmt_time(avg_t)}  ci=[{lo:.3f}, {hi:.3f}]"
         if solved < len(rs):
             failed = [r.metrics.energy for r in rs if r.metrics.energy > 0]
             line += f"  failed_e={failed}"
@@ -91,7 +102,7 @@ def _run_sweep(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Hadamard matrix search via GS4 / Golay 2N constructions.",
+        description="Hadamard matrix search via GS4 construction.",
         epilog="sweep example: python run.py --sweep gs4 32 34 36 --seeds 10 --workers 4 --output data.json",
     )
     parser.add_argument(

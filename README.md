@@ -1,40 +1,30 @@
 # Hadamard-668
 
-Finde eine reelle Hadamard-Matrix der Ordnung 668 = 4 x 167.
+Suche nach einer reellen Hadamard-Matrix der Ordnung \(668=4\cdot167\) über
+die Goethals-Seidel-Konstruktion mit vier negazyklischen Folgen.
 
-## Strategien
+## Ausführen
 
 ```sh
-python run.py --strategy gs4       --order 668   # Goethals-Seidel, 4 negazyklische Bloecke (default)
-python run.py --strategy golay_2n  --order 668   # 2N Golay-Paar
-python run.py --strategy gs4_group --order 668   # GS4 group-circulant
-python run.py --strategy tensor    --order 240   # Kronecker-Produkt (240 = 16*3*5)
+python run.py --strategy gs4 --order 668
 ```
 
-## Build
-
-```python
-from builders import Builder
-
-b = Builder(kind="gs4", n=167)
-seqs = ...  # (4, 167) int8
-H = b.build(seqs)  # 668x668
-```
-
-## Struktur
+## Kernstruktur
 
 ```txt
 src/
-  builders.py       # Builder(kind, n) — Hadamard-Matrix-Konstruktion
-  tracker.py        # GramTracker — O(N^2) inkrementelle Energie
-  gpu.py            # Metriken, Orthogonalitaetspruefung
-  output.py         # CSV + JSON Persistenz
-  verify.py         # Pure-Python Referenz-Verifikation
-  strategies/
-    kflip.py        # Iterated Local Search (KFlip)
-    custom.py       # CustomSolver — Suche via KFlip + GramTracker
-    registry.py     # CLI-Name -> Strategy
-    base.py         # Result, SearchStrategy ABC
+  builder.py     # GS4-Blockmatrix aus vier Folgen
+  tracker.py     # reduzierte NAF-Energie und inkrementelle Deltas
+  solver.py      # Single-Scan, Rescue, Kick und Restart
+  generator.py   # Suchpipeline und finale Orthogonalitätsprüfung
+  metrics.py     # Gram-Metriken
+  output.py      # Ergebnis-Persistenz
+scripts/
+  ablation.py    # Komponentenablelationen
 tests/
-run.py              # CLI
 ```
+
+`Tracker` optimiert exakt dieselbe ungeordnete Gram-Energie, die `metrics.py`
+für die finale Matrix berechnet. Die mathematische Reduktion steht in
+[HYPOTHESIS.md](HYPOTHESIS.md), die experimentellen Grenzen in
+[RESEARCH.md](RESEARCH.md).
