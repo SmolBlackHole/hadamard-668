@@ -65,11 +65,10 @@ class Generator:
 
         b = self._builder
 
-        sequences = np.zeros((b.k, b.n), dtype=np.int8)
-        for i in range(b.k):
-            sequences[i] = rng.choice((-1, 1), size=b.n).astype(np.int8)
+        sequences = rng.choice(np.array([-1, 1], dtype=np.int8), size=(b.k, b.n))
 
         tracker = GramTracker(b.build)
+        tracker.build(sequences, band_rows=b.band_rows, band_cols=b.band_cols)
         best_seq, best_e, iters = ils_search(sequences, tracker, rng, steps=steps)
         elapsed = time.perf_counter() - started
 

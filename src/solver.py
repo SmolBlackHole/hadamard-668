@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+from itertools import combinations
+
 import numpy as np
 import numpy.typing as npt
 
 from tracker import GramTracker
+
+
+@lru_cache(maxsize=16)
+def _positions(n_seqs: int, n_cols: int) -> tuple[tuple[int, int], ...]:
+    return tuple((s, c) for s in range(n_seqs) for c in range(n_cols))
 
 
 def _update_best(
@@ -28,11 +36,12 @@ def search(
 ) -> tuple[npt.NDArray[np.int8], int, int]:
     """Iterated local search. Returns (best_seq, best_energy, iterations)."""
     n_seqs, n_cols = seqs.shape
-    positions: list[tuple[int, int]] = [(s, c) for s in range(n_seqs) for c in range(n_cols)]
+    positions = _positions(n_seqs, n_cols)
     B = len(positions)
 
     cur_seq = seqs.copy()
-    tracker.build(cur_seq)
+    _rows_band, _cols_band = tracker._rows_band, tracker._cols_band
+    tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
     cur_e = tracker.energy()
     steps -= 1
     total_budget = steps
@@ -41,9 +50,18 @@ def search(
     best_seq = cur_seq.copy()
     best_e = cur_e
 
+    # adaptive K: widen when rescue often finds improvements, shrink when kick happens
+    K = min(B, max(12, B // 4))
+    K3 = min(K // 2, 8)
+    rescue_skip: int = 0  # cooldown after kick
+    improved: bool = False
+
     singles_e = np.empty(B)
+    top: npt.NDArray[np.int64] = np.empty(0, dtype=np.int64)
+    top_candidates: list[tuple[int, int]] = []
     while steps > 0 and best_e > 0:
         iters += 1
+
         # Phase 1: greedy singles scan
         singles_e.fill(np.inf)
         improved = False
@@ -58,71 +76,79 @@ def search(
                 improved = True
                 break
 
-        if improved:
-            best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
-            continue
+        if steps <= 0:
+            break
 
-        # Phase 2: 2-bit rescue among top-K singles
-        K = min(B, max(12, B // 4))
-        top = np.argsort(singles_e)[:K]
-        for i in range(K):
-            if steps <= 0:
-                break
-            si, ci = positions[top[i]]
-            for j in range(i + 1, K):
-                if steps <= 0:
-                    break
-                sj, cj = positions[top[j]]
-                e = tracker.flip_batch(cur_seq, [(si, ci), (sj, cj)])
-                steps -= 1
-                if e < cur_e:
-                    cur_e = tracker.accept_many(cur_seq, [(si, ci), (sj, cj)])
+        if improved:
+            K = min(B, max(12, B // 4))  # singles work — narrow rescue
+            K3 = min(K // 2, 8)
+        elif rescue_skip > 0:
+            rescue_skip -= 1
+        else:
+            top = np.argpartition(singles_e, K)[:K]
+            top_candidates = [positions[t] for t in top]
+
+            # 2-bit rescue
+            result = _rescue(cur_seq, tracker, top_candidates, 2, cur_e)
+            if result is not None:
+                cur_e = result
+                improved = True
+                K = min(B, max(16, B // 2))  # rescue hit — widen
+                K3 = min(K // 2, 12)
+            else:
+                # 3-bit rescue among narrower pool
+                result = _rescue(cur_seq, tracker, top_candidates[:K3], 3, cur_e)
+                if result is not None:
+                    cur_e = result
                     improved = True
-                    break
-            if improved:
-                break
-
-        if improved:
-            best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
-            continue
-
-        # Phase 3: 3-bit rescue among narrower pool
-        K3 = min(K // 2, 10)
-        for i in range(K3):
-            if steps <= 0:
-                break
-            si, ci = positions[top[i]]
-            for j in range(i + 1, K3):
-                if steps <= 0:
-                    break
-                sj, cj = positions[top[j]]
-                for k in range(j + 1, K3):
-                    if steps <= 0:
-                        break
-                    sk, ck = positions[top[k]]
-                    e = tracker.flip_batch(cur_seq, [(si, ci), (sj, cj), (sk, ck)])
-                    steps -= 1
-                    if e < cur_e:
-                        cur_e = tracker.accept_many(cur_seq, [(si, ci), (sj, cj), (sk, ck)])
-                        improved = True
-                        break
-                if improved:
-                    break
-            if improved:
-                break
-
-        if improved:
-            best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
-            continue
+                    K = min(B, max(16, B // 2))  # rescue hit — widen
+                    K3 = min(K // 2, 12)
 
         # Phase 4: Kick
-        if steps > 0 and cur_e > 0:
-            kicks = [(s, int(rng.integers(0, n_cols))) for s in range(n_seqs)]
-            for s, c in kicks:
-                cur_seq[s, c] *= -1
-            tracker.build(cur_seq)
+        if not improved and steps > 0 and cur_e > 0:
+            cols = rng.integers(0, n_cols, size=n_seqs)
+            for s in range(n_seqs):
+                cur_seq[s, int(cols[s])] *= -1
+            tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
             cur_e = tracker.energy()
             steps -= 1
-            best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
+            K = min(B, max(12, B // 4))  # reset after kick
+            K3 = min(K // 2, 8)
+            rescue_skip = 3  # skip rescue for 3 iterations after kick
+
+        best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
 
     return best_seq, best_e, total_budget - max(steps, 0)
+
+
+def _rescue(
+    cur_seq: npt.NDArray[np.int8],
+    tracker: GramTracker,
+    candidates: list[tuple[int, int]],
+    width: int,
+    cur_e: int,
+) -> int | None:
+    """Try all width-bit combinations. Returns best improved cur_e or None."""
+    assert tracker._rows_band and tracker._cols_band, "_rescue requires band tables"
+
+    best_e = cur_e
+    best_combo: tuple | None = None
+
+    for combo in combinations(candidates, width):
+        row_parts = [tracker._rows_band[s][c] for s, c in combo]
+        col_parts = [tracker._cols_band[s][c] for s, c in combo]
+        rows = np.concatenate(row_parts)
+        cols = np.concatenate(col_parts)
+
+        e = tracker._compute_delta(rows.astype(np.int16), cols.astype(np.int16))
+        if e < best_e:
+            best_e = e
+            best_combo = combo
+
+    if best_combo is None:
+        return None
+
+    for s, c in best_combo:
+        cur_seq[s, c] *= -1
+    tracker.build(cur_seq, band_rows=tracker._rows_band, band_cols=tracker._cols_band)
+    return tracker.energy()

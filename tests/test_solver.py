@@ -13,6 +13,7 @@ def test_solver_finds_solution_small_n() -> None:
     b = Builder(kind="gs4", n=5)
     seqs = np.random.default_rng(42).choice((-1, 1), size=(b.k, 5)).astype(np.int8)
     tracker = GramTracker(b.build)
+    tracker.build(seqs, band_rows=b.band_rows, band_cols=b.band_cols)
     best_seq, best_e, _iters = ils_search(seqs, tracker, np.random.default_rng(42), steps=5000)
 
     assert best_e == 0
@@ -25,6 +26,7 @@ def test_solver_golay_2n_kick_recovery() -> None:
     b = Builder(kind="golay_2n", n=6)
     seqs = np.random.default_rng(7).choice((-1, 1), size=(b.k, 6)).astype(np.int8)
     tracker = GramTracker(b.build)
+    tracker.build(seqs, band_rows=b.band_rows, band_cols=b.band_cols)
     best_seq, best_e, _iters = ils_search(seqs, tracker, np.random.default_rng(7), steps=1000)
 
     assert best_e == 0
@@ -38,6 +40,7 @@ def test_solver_budget_not_exceeded() -> None:
     b = Builder(kind="gs4", n=3)
     seqs = np.ones((b.k, 3), dtype=np.int8)
     tracker = GramTracker(b.build)
+    tracker.build(seqs, band_rows=b.band_rows, band_cols=b.band_cols)
 
     budget = 1000
     _best_seq, _best_e, consumed = ils_search(
@@ -76,6 +79,7 @@ def test_all_kinds_validate() -> None:
         b = Builder(kind=kind, n=n_val)
         seqs = np.random.default_rng(42).choice((-1, 1), size=(b.k, n_val)).astype(np.int8)
         tracker = GramTracker(b.build)
+        tracker.build(seqs, band_rows=b.band_rows, band_cols=b.band_cols)
         best_seq, best_e, _iters = ils_search(
             seqs, tracker, np.random.default_rng(42), steps=budget
         )
