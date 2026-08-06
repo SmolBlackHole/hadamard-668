@@ -162,7 +162,7 @@ def main() -> None:
         ok = verify(Path(args.check))
         sys.exit(0 if ok > 0 else 1)
 
-    # --- sweep mode ---
+    # --- sweep mode -----------------------------------------------------------
     if args.sweep is not None:
         if len(args.sweep) < 2:
             parser.error("--sweep STRATEGY N1 [N2 ...]")
@@ -172,7 +172,7 @@ def main() -> None:
         _run_sweep(strategy, ns, args.seeds, args.steps, args.workers, output_path)
         return
 
-    # --- single-run mode ---
+    # --- single-run mode ------------------------------------------------------
     try:
         gen = Generator.from_cli(args.strategy, args.order)
         seeds = [args.seed + offset for offset in range(args.runs)]

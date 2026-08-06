@@ -1,7 +1,8 @@
-"""Iterated local search — singles scan + 2/3-bit rescue + kick, energy-budgeted."""
+"""Iterated local search — singles scan + pair rescue + kick."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 from itertools import combinations
 
@@ -9,6 +10,17 @@ import numpy as np
 import numpy.typing as npt
 
 from tracker import Tracker
+
+
+@dataclass
+class SolverConfig:
+    """Feature flags for ablation testing.  Default: proven combination."""
+
+    pairs: bool = True
+    triples: bool = False
+    kick: bool = True
+    restart: bool = False
+    rescue_mode: bool = False
 
 
 @lru_cache(maxsize=16)
@@ -32,6 +44,10 @@ class SearchStats:
 
     __slots__ = (
         "_streak",
+        "energy_saved_kicks",
+        "energy_saved_pairs",
+        "energy_saved_singles",
+        "energy_saved_triples",
         "kicks",
         "pairs",
         "restarts",
@@ -48,6 +64,10 @@ class SearchStats:
         self.restarts: int = 0
         self.singles_streaks: list[int] = []
         self._streak: int = 0
+        self.energy_saved_singles: int = 0
+        self.energy_saved_pairs: int = 0
+        self.energy_saved_triples: int = 0
+        self.energy_saved_kicks: int = 0
 
     def _hit_single(self) -> None:
         self.singles += 1
@@ -72,16 +92,20 @@ class SearchStats:
             "triples": self.triples,
             "kicks": self.kicks,
             "restarts": self.restarts,
+            "e_singles": self.energy_saved_singles,
+            "e_pairs": self.energy_saved_pairs,
+            "e_triples": self.energy_saved_triples,
+            "e_kicks": self.energy_saved_kicks,
         }
 
     def display(self) -> str:
         """Compact one-line summary for CLI output."""
         self._flush()
         parts = [
-            f"S={self.singles}",
-            f"P={self.pairs}",
-            f"T={self.triples}",
-            f"K={self.kicks}",
+            f"S={self.singles}({_fmt_e(self.energy_saved_singles)})",
+            f"P={self.pairs}({_fmt_e(self.energy_saved_pairs)})",
+            f"T={self.triples}({_fmt_e(self.energy_saved_triples)})",
+            f"K={self.kicks}({_fmt_e(self.energy_saved_kicks)})",
             f"R={self.restarts}",
         ]
         if self.singles_streaks:
@@ -92,14 +116,27 @@ class SearchStats:
         return " ".join(parts)
 
 
+def _fmt_e(e: int) -> str:
+    """Compact energy formatting: 1234 -> '1.2k'."""
+    if e == 0:
+        return "0"
+    if e >= 1_000_000:
+        return f"{e / 1_000_000:.1f}M"
+    if e >= 1000:
+        return f"{e / 1000:.0f}k"
+    return str(e)
+
+
 def search(
     seqs: npt.NDArray[np.int8],
     tracker: Tracker,
     rng: np.random.Generator,
     *,
     steps: int,
+    config: SolverConfig | None = None,
 ) -> tuple[npt.NDArray[np.int8], int, int, SearchStats]:
     """Iterated local search. Returns (best_seq, best_energy, evals, stats)."""
+    cfg = config if config is not None else SolverConfig()
     n_seqs, n_cols = seqs.shape
     positions = _positions(n_seqs, n_cols)
     B = len(positions)
@@ -117,14 +154,12 @@ def search(
     best_e = cur_e
 
     K = min(B - 1, max(16, int(B**0.5 * 3)))
-    K3 = min(K // 2, 10)
-    rescue_mode: bool = False  # best-mode after consecutive hits
-    rescue_streak: int = 0
-    kick_streak: int = 0
+    KickStrikeMax = 3  # ponytail: constant, tune later
 
     singles_e = np.empty(B)
     top: npt.NDArray[np.int64] = np.empty(0, dtype=np.int64)
     top_candidates: list[tuple[int, int]] = []
+    kick_strike: int = 0
     while steps > 0 and best_e > 0:
         iters += 1
 
@@ -138,7 +173,9 @@ def search(
             steps -= 1
             singles_e[idx] = e
             if e < cur_e:
+                prev_e = cur_e
                 cur_e = tracker.accept(cur_seq, s, c)
+                stats.energy_saved_singles += prev_e - cur_e
                 improved = True
                 stats._hit_single()
                 break
@@ -146,85 +183,40 @@ def search(
         if steps <= 0:
             break
 
-        if improved:
-            rescue_streak = 0
-            rescue_mode = False
-        else:
+        if not improved:
             top = np.argpartition(singles_e, K)[:K]
             top_candidates = [positions[t] for t in top]
 
-            mode = "best" if rescue_mode else "first"
-            narrowed = top_candidates if rescue_mode else None
-
             # 2-bit rescue
-            result = _rescue(
-                cur_seq, tracker, top_candidates, 2, cur_e, mode=mode, narrowed=narrowed
-            )
-            if result is not None:
-                cur_e = result
-                improved = True
-                stats.pairs += 1
-                stats._hit_other()
-                rescue_streak += 1
-                if rescue_streak >= 2:
-                    rescue_mode = True
-            else:
-                rescue_streak = 0
-                rescue_mode = False
-
-                # 3-bit rescue — always "first" after a failed pair rescue
-                result = _rescue(cur_seq, tracker, top_candidates[:K3], 3, cur_e, mode="first")
+            if cfg.pairs:
+                prev_e = cur_e
+                result = _rescue(cur_seq, tracker, top_candidates, 2, cur_e, mode="first")
                 if result is not None:
+                    stats.energy_saved_pairs += prev_e - result
                     cur_e = result
                     improved = True
-                    stats.triples += 1
+                    stats.pairs += 1
                     stats._hit_other()
 
-        # Phase 4: Kick — test via band, commit via build, hard-restart if stuck
-        if not improved and steps > 0 and cur_e > 0:
+        # Phase 3: Kick — always accept, reset strike on success
+        if not improved and steps > 0 and cur_e > 0 and cfg.kick:
             cols = rng.integers(0, n_cols, size=n_seqs)
-            if _rows_band and _cols_band:
-                bands = [
-                    (_rows_band[s][int(cols[s])], _cols_band[s][int(cols[s])])
-                    for s in range(n_seqs)
-                ]
-                e_test = tracker._combo_delta(bands)
-                if e_test < cur_e:
-                    for s in range(n_seqs):
-                        cur_seq[s, int(cols[s])] *= -1
-                    tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
-                    cur_e = tracker.energy()
-                    improved = True
-                    kick_streak = 0
-                else:
-                    kick_streak += 1
-                    if kick_streak >= 3:
-                        for s in range(n_seqs):
-                            cur_seq[s] = rng.choice(np.array([-1, 1], dtype=np.int8), size=n_cols)
-                        tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
-                        cur_e = tracker.energy()
-                        kick_streak = 0
-                        stats.restarts += 1
-                        stats._hit_other()
-            else:
+            for s in range(n_seqs):
+                cur_seq[s, int(cols[s])] *= -1
+            tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
+            cur_e = tracker.energy()
+            kick_strike += 1
+            if kick_strike >= KickStrikeMax and cfg.restart:
                 for s in range(n_seqs):
-                    cur_seq[s, int(cols[s])] *= -1
+                    cur_seq[s] = rng.choice(np.array([-1, 1], dtype=np.int8), size=n_cols)
                 tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
                 cur_e = tracker.energy()
-                kick_streak += 1
-                if kick_streak >= 3:
-                    for s in range(n_seqs):
-                        cur_seq[s] = rng.choice(np.array([-1, 1], dtype=np.int8), size=n_cols)
-                    tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
-                    cur_e = tracker.energy()
-                    kick_streak = 0
-                    stats.restarts += 1
-                    stats._hit_other()
+                kick_strike = 0
+                stats.restarts += 1
+                stats._hit_other()
             steps -= 1
             stats.kicks += 1
             stats._hit_other()
-            rescue_mode = False
-            rescue_streak = 0
 
         best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
 

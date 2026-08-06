@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
@@ -12,6 +13,9 @@ from builder import Builder
 from metrics import Metrics, check_orthogonality
 from solver import SearchStats
 from solver import search as ils_search
+
+if TYPE_CHECKING:
+    from solver import SolverConfig
 
 
 @dataclass
@@ -62,7 +66,7 @@ class Generator:
     def name(self) -> str:
         return self._builder.kind
 
-    def search(self, steps: int, seed: int) -> Result:
+    def search(self, steps: int, seed: int, *, config: SolverConfig | None = None) -> Result:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
 
@@ -77,7 +81,9 @@ class Generator:
 
         tracker = Tracker()
         tracker.build(sequences)
-        best_seq, best_e, iters, stats = ils_search(sequences, tracker, rng, steps=steps)
+        best_seq, best_e, iters, stats = ils_search(
+            sequences, tracker, rng, steps=steps, config=config
+        )
         elapsed = time.perf_counter() - started
 
         matrix = b.build(best_seq)

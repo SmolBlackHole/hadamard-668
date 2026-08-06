@@ -390,7 +390,7 @@ Suche ausgereizt ist.
 8. Gewinner kombinieren
 9. Größeres Budget
 10. Spektralreparatur (langfristig)
-N. AutocorrTracker (NAF-Reduktion, siehe HYPOTHESIS.md) — 3-5× schneller
+N. AutocorrTracker (NAF-Reduktion, siehe HYPOTHESIS.md) — 3-5x schneller
     für GS4, verifiziert korrekt gegen GramTracker.  Test-Sweep läuft.
 ```
 

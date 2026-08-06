@@ -2,7 +2,7 @@
 
 ## Die Entdeckung
 
-Der `GramTracker` berechnet die Orthogonalitäts-Energie einer 4n×4n-Matrix H.
+Der `GramTracker` berechnet die Orthogonalitäts-Energie einer 4nx4n-Matrix H.
 Durch die Goethals-Seidel-Blockstruktur reduziert sich das Problem drastisch.
 
 ## Mathematische Reduktion
@@ -36,7 +36,7 @@ HHᵀ  =  │0  S  0  0 │   mit  S = AAᵀ + BBᵀ + CCᵀ + DDᵀ
 ```
 
 Die Kreuzterme heben sich wegen der GS4-Struktur exakt weg.
-S ist eine n×n-Matrix.
+S ist eine nxn-Matrix.
 
 ### Schritt 2: Negazyklische Autokorrelation
 
@@ -83,10 +83,10 @@ alle Energien exakt identisch.
 
 | Darstellung | Einträge bei n=167 |
 | --- | --- |
-| Gram-Matrix (4n×4n) | 446.224 |
+| Gram-Matrix (4nx4n) | 446.224 |
 | Residualvektor | 83 |
 
-Faktor: **5.376× weniger Zustand**.
+Faktor: **5.376x weniger Zustand**.
 
 ## Einzelflip-Delta
 
@@ -115,7 +115,7 @@ Das ist ein Skalarprodukt über m ≈ n/2 kleine Ganzzahlen — kein Matmul, kei
 
 ## Konsequenzen für KFlip
 
-1. **Single-Scan ~5000× schneller** bei n=167 — statt Minuten pro Scan, Millisekunden
+1. **Single-Scan ~5000x schneller** bei n=167 — statt Minuten pro Scan, Millisekunden
 2. **Subset-Rescue trivial**: Gray-Code über top-k Bits, ein δ pro Flip, O(n) pro Kombination
 3. **Kick/Tabu-Walk**: operieren direkt auf den Residuals, sehen *welche* Abstände falsch sind
 4. **Suchzustand in δ speichern**: jeder Flip hat einen δ-Vektor (m Werte), kann gecached werden
