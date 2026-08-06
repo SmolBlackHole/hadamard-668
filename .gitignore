@@ -10,3 +10,5 @@ checkpoints/
 *.pkl
 runs/
 results/
+.coverage
+coverage.json
