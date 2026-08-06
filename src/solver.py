@@ -8,7 +8,7 @@ from itertools import combinations
 import numpy as np
 import numpy.typing as npt
 
-from tracker import GramTracker
+from tracker_protocol import Tracker
 
 
 @lru_cache(maxsize=16)
@@ -64,7 +64,7 @@ class SearchStats:
             self._streak = 0
 
     def to_dict(self) -> dict[str, object]:
-        """Full stats for JSON persistence.  All keys are stable public API."""
+        """Full stats for JSON persistence."""
         self._flush()
         return {
             "singles": self.singles,
@@ -72,7 +72,6 @@ class SearchStats:
             "triples": self.triples,
             "kicks": self.kicks,
             "restarts": self.restarts,
-            "singles_streaks": self.singles_streaks,
         }
 
     def display(self) -> str:
@@ -95,7 +94,7 @@ class SearchStats:
 
 def search(
     seqs: npt.NDArray[np.int8],
-    tracker: GramTracker,
+    tracker: Tracker,
     rng: np.random.Generator,
     *,
     steps: int,
@@ -234,7 +233,7 @@ def search(
 
 def _rescue(
     cur_seq: npt.NDArray[np.int8],
-    tracker: GramTracker,
+    tracker: Tracker,
     candidates: list[tuple[int, int]],
     width: int,
     cur_e: int,
@@ -245,7 +244,8 @@ def _rescue(
     """Try width-bit combinations. Returns improved energy or None."""
     band_rows = tracker._rows_band
     band_cols = tracker._cols_band
-    if not band_rows or not band_cols:
+    native = hasattr(tracker, "_combo_delta_native")
+    if not native and (not band_rows or not band_cols):
         return None
 
     pool = narrowed if narrowed is not None else candidates
@@ -253,8 +253,10 @@ def _rescue(
     best_combo: tuple | None = None
 
     for combo in combinations(pool, width):
-        bands = [(band_rows[s][c], band_cols[s][c]) for s, c in combo]
-        e = tracker._combo_delta(bands)
+        if native:
+            e = tracker._combo_delta_native(list(combo))  # type: ignore[reportGeneralTypeIssues]
+        else:
+            e = tracker._combo_delta([(band_rows[s][c], band_cols[s][c]) for s, c in combo])  # type: ignore[reportGeneralTypeIssues]
         if e < cur_e:
             if mode == "first":
                 for s, c in combo:

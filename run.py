@@ -28,11 +28,11 @@ def _fmt_time(t: float) -> str:
     return f"{t:.1f}s"
 
 
-def _execute_single(kind: str, n: int, steps: int, seed: int) -> Result:
+def _execute_single(kind: str, n: int, steps: int, seed: int, autocorr: bool = False) -> Result:
     """Run one search (pickle-friendly for ProcessPoolExecutor)."""
     gen = Generator(kind=kind, n=n)
     started = time.perf_counter()
-    result = gen.search(steps=steps, seed=seed)
+    result = gen.search(steps=steps, seed=seed, autocorr=autocorr)
     result.elapsed = time.perf_counter() - started
     return result
 
@@ -44,15 +44,17 @@ def _run_sweep(
     steps: int,
     workers: int,
     output_path: Path | None,
+    *,
+    autocorr: bool = False,
 ) -> None:
     """Run a sweep: for each n, run ``seeds`` independent searches.
 
     Results are printed as they arrive and optionally persisted to ``output_path``.
     """
-    tasks: list[tuple[str, int, int, int]] = []
+    tasks: list[tuple[str, int, int, int, bool]] = []
     for n in ns:
         for s in range(seeds):
-            tasks.append((strategy, n, steps, s))
+            tasks.append((strategy, n, steps, s, autocorr))
 
     total = len(tasks)
     results: list[Result] = []
@@ -60,10 +62,10 @@ def _run_sweep(
         with ProcessPoolExecutor(max_workers=workers) as pool:
             results = list(pool.map(_execute_single, *zip(*tasks, strict=True)))
     else:
-        for i, (kind, n, st, seed) in enumerate(tasks, 1):
+        for i, (kind, n, st, seed, ac) in enumerate(tasks, 1):
             print(f"[{i}/{total}] n={n}:", end=" ", flush=True)
             try:
-                results.append(_execute_single(kind, n, st, seed))
+                results.append(_execute_single(kind, n, st, seed, ac))
             except Exception as exc:
                 print(f"FAILED: {exc}")
 
@@ -72,7 +74,7 @@ def _run_sweep(
 
     # group by n for summary
     by_n: dict[int, list[Result]] = {}
-    for r, (_, n, _, _) in zip(results, tasks, strict=True):
+    for r, (_, n, _, _, _) in zip(results, tasks, strict=True):
         by_n.setdefault(n, []).append(r)
 
     total_t = sum(r.elapsed for r in results)
@@ -89,7 +91,7 @@ def _run_sweep(
         print(line)
 
     if output_path:
-        for r, (_, n, _, _) in zip(results, tasks, strict=True):
+        for r, (_, n, _, _, _) in zip(results, tasks, strict=True):
             save_run(output_path, strategy, n, r)
 
 
@@ -160,6 +162,12 @@ def main() -> None:
         default=10,
         help="Number of independent seeds per n in sweep mode (default: 10)",
     )
+    parser.add_argument(
+        "--autocorr",
+        action="store_true",
+        default=False,
+        help="Use AutocorrTracker instead of GramTracker (GS4 only, much faster)",
+    )
     args = parser.parse_args()
 
     if args.check is not None:
@@ -173,7 +181,9 @@ def main() -> None:
         strategy = args.sweep[0]
         ns = [int(x) for x in args.sweep[1:]]
         output_path = Path(args.output) if args.output else None
-        _run_sweep(strategy, ns, args.seeds, args.steps, args.workers, output_path)
+        _run_sweep(
+            strategy, ns, args.seeds, args.steps, args.workers, output_path, autocorr=args.autocorr
+        )
         return
 
     # --- single-run mode ---
@@ -188,13 +198,13 @@ def main() -> None:
     if workers == 1:
         for s in seeds:
             try:
-                r = _execute_single(gen._builder.kind, gen._builder.n, args.steps, s)
+                r = _execute_single(gen._builder.kind, gen._builder.n, args.steps, s, args.autocorr)
                 results.append(r)
                 print(f"  {r}")
             except Exception as exc:
                 print(f"  run seed={s} FAILED: {exc}")
     else:
-        tasks = [(gen._builder.kind, gen._builder.n, args.steps, s) for s in seeds]
+        tasks = [(gen._builder.kind, gen._builder.n, args.steps, s, args.autocorr) for s in seeds]
         with ProcessPoolExecutor(max_workers=workers) as pool:
             results = list(pool.map(_execute_single, *zip(*tasks, strict=True)))
         for r in results:

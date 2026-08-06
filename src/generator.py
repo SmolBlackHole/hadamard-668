@@ -12,7 +12,6 @@ from builder import Builder
 from metrics import Metrics, check_orthogonality
 from solver import SearchStats
 from solver import search as ils_search
-from tracker import GramTracker
 
 
 @dataclass
@@ -68,7 +67,7 @@ class Generator:
     def name(self) -> str:
         return self._builder.kind
 
-    def search(self, steps: int, seed: int) -> Result:
+    def search(self, steps: int, seed: int, *, autocorr: bool = False) -> Result:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
 
@@ -79,9 +78,17 @@ class Generator:
 
         sequences = rng.choice(np.array([-1, 1], dtype=np.int8), size=(b.k, b.n))
 
-        tracker = GramTracker(b.build)
-        tracker.build(sequences, band_rows=b.band_rows, band_cols=b.band_cols)
-        best_seq, best_e, iters, stats = ils_search(sequences, tracker, rng, steps=steps)
+        if autocorr:
+            from autocorr import AutocorrTracker
+
+            tracker = AutocorrTracker()
+            tracker.build(sequences)
+        else:
+            from tracker import GramTracker
+
+            tracker = GramTracker(b.build)
+            tracker.build(sequences, band_rows=b.band_rows, band_cols=b.band_cols)
+        best_seq, best_e, iters, stats = ils_search(sequences, tracker, rng, steps=steps)  # type: ignore[reportArgumentType]
         elapsed = time.perf_counter() - started
 
         matrix = b.build(best_seq)

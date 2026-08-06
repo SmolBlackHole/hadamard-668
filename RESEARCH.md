@@ -185,20 +185,15 @@ ist unklar (siehe Schritt 7: rescue_mode-Ablation).
 
 ## Testkaskade (nur eine Änderung pro Lauf)
 
-### 1. Single-Scan-Reihenfolge
+### 1. Single-Scan-Reihenfolge ✗ (abgeschlossen — keine Verbesserung)
 
-Aktuell prüfst du die Bits immer in derselben Reihenfolge und nimmst das erste
-bessere.
+Variante A (zufälliger Startindex pro Sweep, dann zyklisch) getestet mit
+n=32,34,36, 10 Seeds, 200k Steps gegen Baseline.
 
-```text
-Baseline: feste Reihenfolge
-Variante A: zufälliger Startindex pro Sweep, dann zyklisch
-Variante B: komplette Reihenfolge pro Sweep mischen
-```
+Ergebnis: 4/30 gelöst (vs. 6/30 Baseline). Kein systematischer Gewinn —
+die Scan-Reihenfolge verschiebt nur welche Seeds erfolgreich sind.
 
-Zuerst Variante A. Fast kostenlos und weniger verzerrt.
-
-Datei: `solver.py` — `_positions` und Scan-Loop
+Code reverted. Schritt 1 ist abgehakt — keine weiteren Scan-Varianten testen.
 
 ### 2. Echter Kick
 
@@ -385,7 +380,7 @@ Suche ausgereizt ist.
 
 ```text
 0. Baseline einfrieren ✓ (Commit af00bf0, data/baseline.json)
-1. Zufälliger Scan-Start (billig, testet Verzerrung)
+1. Random-Scan-Start ✗ (kein Gewinn, reverted)
 2. Kick immer akzeptieren
 3. Teil-Restart (eine Sequenz)
 4. Tabu-Walk (stärkster Kandidat gegen Plateau)
@@ -395,6 +390,8 @@ Suche ausgereizt ist.
 8. Gewinner kombinieren
 9. Größeres Budget
 10. Spektralreparatur (langfristig)
+N. AutocorrTracker (NAF-Reduktion, siehe HYPOTHESIS.md) — 3-5× schneller
+    für GS4, verifiziert korrekt gegen GramTracker.  Test-Sweep läuft.
 ```
 
 Immer nur **eine Änderung pro Testlauf**. Kein "SuperSolver" bei dem niemand

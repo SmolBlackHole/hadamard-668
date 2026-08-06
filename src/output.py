@@ -30,15 +30,24 @@ def _seqs_from_b64(b64: str, shape: tuple[int, int]) -> np.ndarray:
 SOLUTIONS = Path(__file__).resolve().parent.parent / "data" / "solutions.json"
 
 
-def _write_entry(path: Path, strategy: str, n: int, entry: dict[str, Any]) -> None:
+def _write_entry(
+    path: Path, strategy: str, n: int, entry: dict[str, Any], *, dedup_class: bool = False
+) -> None:
     existing: dict[str, dict[str, list[dict[str, Any]]]] = {}
     if path.exists():
         existing = json.loads(path.read_text(encoding="utf-8"))
     entries = existing.setdefault(strategy, {}).setdefault(str(n), [])
-    # dedup by (seed, sha256)
+    # dedup by sha256 (always)
     for prev in entries:
-        if prev.get("seed") == entry["seed"] and prev.get("sha256") == entry["sha256"]:
+        if prev.get("sha256") == entry["sha256"]:
             return
+    # dedup by class hash (for solutions.json — same equivalence class)
+    if dedup_class:
+        cls = entry.get("class")
+        if cls is not None:
+            for prev in entries:
+                if prev.get("class") == cls:
+                    return
     entries.append(entry)
     existing[strategy][str(n)].sort(key=lambda r: r["seed"])
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,14 +78,18 @@ def save_run(path: Path, strategy: str, n: int, result: Result) -> None:
     if result.stats:
         entry["stats"] = result.stats.to_dict()
     if strategy == "golay_2n":
-        from ngp_canonical import class_hash
+        from fast_hash import golay_class_hash
 
-        entry["ngp_class"] = class_hash(seqs[0], seqs[1])
+        entry["class"] = golay_class_hash(seqs[0], seqs[1])
+    elif strategy == "gs4":
+        from fast_hash import gs4_class_hash
+
+        entry["class"] = gs4_class_hash(seqs)
 
     _write_entry(path, strategy, n, entry)
 
     if result.metrics.energy == 0 and path.resolve() != SOLUTIONS.resolve():
-        _write_entry(SOLUTIONS, strategy, n, entry)
+        _write_entry(SOLUTIONS, strategy, n, entry, dedup_class=True)
 
 
 def load_runs(path: Path) -> dict[str, dict[str, list[dict[str, Any]]]]:

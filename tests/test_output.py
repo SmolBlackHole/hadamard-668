@@ -64,7 +64,6 @@ def test_save_and_load_solution(tmp_path: Path) -> None:
     assert r["iterations"] == 100
     assert r["stats"]["singles"] == 3
     assert r["stats"]["pairs"] == 1
-    assert r["stats"]["singles_streaks"] == [3]
     assert len(r["sha256"]) == 64
     assert len(r["seqs_b64"]) > 0
 

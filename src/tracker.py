@@ -82,8 +82,7 @@ class GramTracker:
         O_T = self._MfT[cols, :] * vn[:, None]
         Orr = O_T[:, rows]
 
-        T1 = float(np.einsum("ij,ij->", O_T,
-                   self.G[rows, :], dtype=np.float64))
+        T1 = float(np.einsum("ij,ij->", O_T, self.G[rows, :], dtype=np.float64))
         S_O = 4.0 * b * self._N
         S_x = float(np.einsum("ij,ji->", Orr, Orr, dtype=np.float64))
 
@@ -128,7 +127,6 @@ class GramTracker:
             return self._e // 2
 
         assert self.M is not None and self.G is not None and self._MfT is not None
-        assert self._O_T_scratch is not None  # set by _single() below
 
         seqs[s, c] *= -1
         rows = self._rows_band[s][c]
@@ -136,7 +134,7 @@ class GramTracker:
 
         e_new = self._e + self._single(rows, cols)
         scratch = self._O_T_scratch
-        assert scratch is not None
+        assert scratch is not None  # set by _single() above
         O = scratch.T.astype(np.float32)
 
         self.M[rows, cols] *= -1
@@ -159,8 +157,7 @@ class GramTracker:
         assert self._dG is not None
 
         self._dG.fill(0.0)
-        vns: list[tuple[npt.NDArray[np.float32],
-                        npt.NDArray[np.int16], npt.NDArray[np.int16]]] = []
+        vns: list[tuple[npt.NDArray[np.float32], npt.NDArray[np.int16], npt.NDArray[np.int16]]] = []
 
         for rows, cols in bands:
             vn = -2.0 * self.M[rows, cols].astype(np.float32)
