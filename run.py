@@ -9,24 +9,26 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from generator import Generator
+from generator import Generator, Result
 from output import save
+
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 
 def derive_seeds(seed: int, runs: int) -> list[int]:
     return [seed + offset for offset in range(runs)]
 
 
-def select_best_run(results: list) -> object:
+def select_best_run(results: list) -> Result:
     if not results:
         raise ValueError("at least one run result is required")
     return min(results, key=lambda r: r.metrics.energy)
 
 
-def _execute_run(spec: str, steps: int, seed: int, order: int, time_budget: float = 0.0) -> object:
-    gen = Generator.from_cli(spec, order)
+def _execute_run(
+    strategy_name: str, steps: int, seed: int, order: int, time_budget: float = 0.0
+) -> Result:
+    gen = Generator.from_cli(strategy_name, order)
     started = time.perf_counter()
     result = None
 
@@ -60,7 +62,7 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        Generator.from_cli(args.strategy, args.order)  # validate
+        gen = Generator.from_cli(args.strategy, args.order)
         seeds = derive_seeds(args.seed, args.runs)
         workers = min(args.runs, args.workers)
     except ValueError as e:
@@ -86,7 +88,6 @@ def main() -> None:
                 )
             )
 
-    gen = Generator.from_cli(args.strategy, args.order)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     for r in results:
         out = Path(args.runs_dir) / f"{gen.name}_{r.seed}_{timestamp}"
@@ -94,12 +95,12 @@ def main() -> None:
             r.matrix,
             r.metrics,
             out,
-            strategy=args.strategy,
+            strategy=gen.name,
             seed=r.seed,
             steps=args.steps,
-            wall=r.elapsed,
+            elapsed=r.elapsed,
             order=r.matrix.shape[0],
-            construction=gen.name,
+            iterations=r.iterations,
         )
 
     best = select_best_run(results)

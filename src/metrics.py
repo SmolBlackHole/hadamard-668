@@ -70,7 +70,7 @@ def _scalar(value: Any) -> int:
     return int(value.item())
 
 
-def gram_matrix(matrix: Any):
+def gram_matrix(matrix: Any) -> Any:
     module = xp
     values = module.asarray(matrix, dtype=module.float32)
     gram = module.rint(values @ values.T).astype(module.int32)

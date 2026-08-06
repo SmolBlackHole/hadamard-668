@@ -20,9 +20,9 @@ def save(
     strategy: str,
     seed: int,
     steps: int,
-    wall: float,
+    elapsed: float,
     order: int,
-    construction: str,
+    iterations: int = 0,
 ) -> str:
     """Write matrix.csv and run.json. Audits via pure Python if energy==0."""
     if metrics.energy == 0:
@@ -38,16 +38,16 @@ def save(
     sha = hashlib.sha256(csv_path.read_bytes()).hexdigest()
     info = {
         "order": order,
-        "construction": construction,
         "strategy": strategy,
         "seed": seed,
         "steps": steps,
-        "wall_seconds": round(wall, 3),
+        "elapsed": round(elapsed, 3),
         "energy": metrics.energy,
         "orthogonal_pairs": metrics.orthogonal_pairs,
-        "max_off_diagonal": metrics.max_abs_correlation,
+        "max_abs_correlation": metrics.max_abs_correlation,
         "is_solution": metrics.energy == 0,
         "sha256": sha,
+        "iterations": iterations,
     }
     (directory / "run.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     return sha

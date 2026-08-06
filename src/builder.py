@@ -10,29 +10,39 @@ Each builder exposes ``.k`` (sequence count), ``.order`` (matrix size),
 
 from __future__ import annotations
 
+from functools import cache
+from typing import ClassVar
+
 import numpy as np
+import numpy.typing as npt
 
 # ── low-level helpers ────────────────────────────────────────────────────────
 
-_IDX_CACHE: dict[int, np.ndarray] = {}
-_SIGN_CACHE: dict[int, np.ndarray] = {}
+
+@cache
+def _circ_idx(n: int) -> npt.NDArray[np.int64]:
+    return (np.arange(n)[None, :] - np.arange(n)[:, None]) % n
 
 
-def _circulant(values):
-    values = np.asarray(values, dtype=np.int8)
-    n = values.size
-    if n not in _IDX_CACHE:
-        _IDX_CACHE[n] = (np.arange(n)[None, :] - np.arange(n)[:, None]) % n
-        _SIGN_CACHE[n] = np.where(np.arange(n)[None, :] >= np.arange(n)[:, None], 1, -1)
-    return values[_IDX_CACHE[n]]
+@cache
+def _negacirc_sign(n: int) -> npt.NDArray[np.int64]:
+    return np.where(np.arange(n)[None, :] >= np.arange(n)[:, None], 1, -1)
 
 
-def _negacirculant(values):
-    c = _circulant(values)  # populates cache first
-    return (_SIGN_CACHE[values.size] * c).astype(np.int8)
+def _circulant(values: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
+    return values[_circ_idx(values.size)]  # type: ignore[return-value]
 
 
-def _gs4_block(A, B, C, D):
+def _negacirculant(values: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
+    return (_negacirc_sign(values.size) * _circulant(values)).astype(np.int8)
+
+
+def _gs4_block(
+    A: npt.NDArray[np.int8],
+    B: npt.NDArray[np.int8],
+    C: npt.NDArray[np.int8],
+    D: npt.NDArray[np.int8],
+) -> npt.NDArray[np.int8]:
     BR, CR, DR = B[:, ::-1], C[:, ::-1], D[:, ::-1]
     BtR, CtR, DtR = B.T[:, ::-1], C.T[:, ::-1], D.T[:, ::-1]
     return np.block(
@@ -45,18 +55,13 @@ def _gs4_block(A, B, C, D):
     ).astype(np.int8)
 
 
-_DIFF_CACHE: dict[tuple[int, ...], np.ndarray] = {}
-
-
-def _diff_table(dims):
-    if dims not in _DIFF_CACHE:
-        n = int(np.prod(dims))
-        coords = np.stack(np.unravel_index(np.arange(n), dims), axis=0)
-        dims_arr = np.array(dims, dtype=np.int64)
-        diff = (coords[:, :, None] - coords[:, None, :]) % dims_arr[:, None, None]
-        table = np.ravel_multi_index(diff, dims)
-        _DIFF_CACHE[dims] = np.asarray(table, dtype=np.int32)
-    return _DIFF_CACHE[dims]
+@cache
+def _diff_table(dims: tuple[int, ...]) -> npt.NDArray[np.int32]:
+    n = int(np.prod(dims))
+    coords = np.stack(np.unravel_index(np.arange(n), dims), axis=0)
+    dims_arr = np.array(dims, dtype=np.int64)
+    diff = (coords[:, :, None] - coords[:, None, :]) % dims_arr[:, None, None]
+    return np.asarray(np.ravel_multi_index(diff, dims), dtype=np.int32)
 
 
 # ── Builder ──────────────────────────────────────────────────────────────────
@@ -70,51 +75,54 @@ class Builder:
     ``Builder(kind="gs4_group", n=167)`` — 4 group-circulant blocks, GS4.
     """
 
-    _KINDS = ("gs4", "golay_2n", "gs4_group")
+    _KINDS: ClassVar[tuple[str, ...]] = ("gs4", "golay_2n", "gs4_group")
 
-    def __init__(self, *, kind: str, n: int):
+    # kind → (k, order_factor, divisor)
+    _CONFIG: ClassVar[dict[str, tuple[int, int, int]]] = {
+        "gs4": (4, 4, 4),
+        "golay_2n": (2, 2, 2),
+        "gs4_group": (4, 4, 4),
+    }
+
+    @classmethod
+    def k_for(cls, kind: str) -> int:
+        """Return the divisor for a strategy kind."""
+        if kind not in cls._CONFIG:
+            raise ValueError(f"unknown kind {kind!r}")
+        return cls._CONFIG[kind][2]
+
+    @staticmethod
+    def factorize(n: int) -> list[int]:
+        """Best 2-factor split for group-circulant construction."""
+        pairs = [(p, n // p) for p in range(3, int(n**0.5) + 1) if n % p == 0 and n // p >= 3]
+        if not pairs:
+            return [n]
+        p, q = min(pairs, key=lambda pq: abs(pq[0] - pq[1]))
+        return sorted([p, q], reverse=True)
+
+    def __init__(self, *, kind: str, n: int) -> None:
         if kind not in self._KINDS:
             raise ValueError(f"kind must be one of {self._KINDS}, got {kind!r}")
         self.kind = kind
         self.n = n
-        self._dims = _best_factorization(n) if kind == "gs4_group" else None
+        cfg = self._CONFIG[kind]
+        self.k: int = cfg[0]
+        self.order: int = cfg[1] * n
+        self._dims: list[int] = self.factorize(n) if kind == "gs4_group" else []
 
-    @property
-    def k(self) -> int:
-        """Number of sequences needed."""
-        return 2 if self.kind == "golay_2n" else 4
+        self._build = {
+            "gs4": self._build_gs4,
+            "golay_2n": self._build_2n,
+            "gs4_group": self._build_group,
+        }[kind]
 
-    @property
-    def order(self) -> int:
-        """Resulting Hadamard matrix order."""
-        return 2 * self.n if self.kind == "golay_2n" else 4 * self.n
+        self.label: str = " [2N]" if kind == "golay_2n" else ""
 
-    @property
-    def label(self) -> str:
-        if self.kind == "golay_2n":
-            return " [2N]"
-        if self._dims:
-            return f" [{self._dims}]"
-        return ""
+    def build(self, seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
+        """Build matrix from sequences. seqs shape is (self.k, self.n)."""
+        return self._build(seqs)
 
-    def build(self, seqs):
-        """Build matrix from sequences. seqs shape is (k, n)."""
-        if self.kind == "golay_2n":
-            A = _negacirculant(seqs[0])
-            B = _negacirculant(seqs[1])
-            return np.block([[A, B], [-B.T, A.T]]).astype(np.int8)
-        if self.kind == "gs4_group":
-            dt = _diff_table(tuple(self._dims))
-
-            def circ(flat):
-                return flat[dt].astype(np.int8)
-
-            return _gs4_block(
-                circ(seqs[0, : self.n]),
-                circ(seqs[1, : self.n]),
-                circ(seqs[2, : self.n]),
-                circ(seqs[3, : self.n]),
-            )
+    def _build_gs4(self, seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
         return _gs4_block(
             _negacirculant(seqs[0]),
             _negacirculant(seqs[1]),
@@ -122,10 +130,21 @@ class Builder:
             _negacirculant(seqs[3]),
         )
 
+    def _build_2n(self, seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
+        A = _negacirculant(seqs[0])
+        B = _negacirculant(seqs[1])
+        return np.block([[A, B], [-B.T, A.T]]).astype(np.int8)
 
-def _best_factorization(n: int) -> list[int]:
-    pairs = [(p, n // p) for p in range(3, int(n**0.5) + 1) if n % p == 0 and n // p >= 3]
-    if not pairs:
-        return [n]
-    p, q = min(pairs, key=lambda pq: abs(pq[0] - pq[1]))
-    return sorted([p, q], reverse=True)
+    def _build_group(self, seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
+        dt = _diff_table(tuple(self._dims))
+        rn = self.n
+
+        def circ(flat: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
+            return flat[dt].astype(np.int8)
+
+        return _gs4_block(
+            circ(seqs[0, :rn]),
+            circ(seqs[1, :rn]),
+            circ(seqs[2, :rn]),
+            circ(seqs[3, :rn]),
+        )
