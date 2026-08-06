@@ -9,8 +9,8 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any
 
+from src.benchmark_stats import wilson_ci
 from src.generator import Generator
-from src.statistics import wilson_ci
 
 
 def _run_one(args: tuple[int, int, int]) -> dict[str, Any]:

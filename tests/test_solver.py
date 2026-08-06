@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import cast
 
 import numpy as np
+import pytest
 
 from src.builder import Builder
-from src.solver import SearchStats, SolverConfig, _rescue
+from src.solver import SearchStats, SolverConfig, _rescue, _tabu_walk
 from src.solver import search as ils_search
 from src.tracker import Tracker
 
@@ -175,3 +176,77 @@ def test_search_stats_display_flushes_streak() -> None:
 
     assert "S=2(2k)" in stats.display()
     assert "strk=2.0/2" in stats.display()
+
+
+def test_tabu_walk_replays_its_best_state() -> None:
+    seqs = np.random.default_rng(0).choice((-1, 1), size=(4, 4)).astype(np.int8)
+    tracker = Tracker()
+    tracker.build(seqs)
+    before = tracker.energy()
+    expected_index = int(np.argmin(tracker.flip_energies()))
+    expected_energy = int(tracker.flip_energies()[expected_index])
+    expected = seqs.copy()
+    expected[expected_index // 4, expected_index % 4] *= -1
+
+    result, evaluations = _tabu_walk(
+        seqs,
+        tracker,
+        before,
+        np.random.default_rng(1),
+        SolverConfig(tabu=True, tabu_steps=1, tabu_noise=0.0),
+    )
+
+    assert evaluations == 1
+    assert result == expected_energy
+    assert np.array_equal(seqs, expected)
+    assert tracker.energy() == expected_energy
+
+
+def test_tabu_walk_keeps_main_state_when_it_finds_no_improvement() -> None:
+    seqs = np.random.default_rng(0).choice((-1, 1), size=(4, 3)).astype(np.int8)
+    tracker = Tracker()
+    tracker.build(seqs)
+    index = int(np.argmin(tracker.flip_energies()))
+    seqs[index // 3, index % 3] *= -1
+    tracker.build(seqs)
+    assert tracker.energy() == 0
+    original = seqs.copy()
+
+    result, evaluations = _tabu_walk(
+        seqs,
+        tracker,
+        0,
+        np.random.default_rng(1),
+        SolverConfig(tabu=True, tabu_steps=3, tabu_noise=0.0),
+    )
+
+    assert result is None
+    assert evaluations == 3
+    assert np.array_equal(seqs, original)
+    assert tracker.energy() == 0
+
+
+def test_solver_kicks_after_an_unsuccessful_tabu_walk(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    def failed_tabu(*_args: object) -> tuple[None, int]:
+        calls.append(1)
+        return None, 3
+
+    monkeypatch.setattr("src.solver._tabu_walk", failed_tabu)
+    tracker = _ScriptedTracker()
+    seqs = np.ones((4, 2), dtype=np.int8)
+
+    _best, _energy, _used, stats = ils_search(
+        seqs,
+        cast(Tracker, tracker),
+        np.random.default_rng(1),
+        steps=10,
+        config=SolverConfig(tabu=True),
+    )
+
+    assert calls == [1]
+    assert stats.tabu_walks == 1
+    assert stats.tabu_hits == 0
+    assert stats.tabu_evals == 3
+    assert stats.kicks == 1

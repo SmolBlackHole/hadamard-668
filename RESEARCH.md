@@ -12,7 +12,7 @@ Stand: 2026-08-07, Commit `96b4fa3`
   - Triples: 1000-Seed-Test zeigt p=0.855 (nicht signifikant) → Code entfernt
   - Restarts: mit korrigiertem Tracker kein Beleg für Nutzen → Code entfernt
   - rescue_mode: kein Effekt → Code entfernt
-  - Z-Test + Wilson-CI in `src/statistics.py`
+  - Z-Test + Wilson-CI in `src/benchmark_stats.py`
 - [x] **Budget-Scaling** — n=32 erreicht 99% bei 1.6M Steps (reines Compute-Limit)
   - n=32: 5%→99% über 50k→1.6M
   - n=34: 2%→78%

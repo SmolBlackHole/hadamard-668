@@ -15,9 +15,9 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+from src.benchmark_stats import wilson_ci
 from src.generator import Generator, Result
 from src.output import save_run, verify
-from src.statistics import wilson_ci
 
 
 def _fmt_time(t: float) -> str:

@@ -15,9 +15,9 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
+from src.benchmark_stats import fmt_e, wilson_ci, z_test
 from src.generator import Generator
 from src.solver import SolverConfig
-from src.statistics import fmt_e, wilson_ci, z_test
 
 
 @dataclass
@@ -30,6 +30,7 @@ CONFIGS = [
     AblationConfig("singles-only", SolverConfig(pairs=False, kick=False)),
     AblationConfig("+pairs", SolverConfig(pairs=True, kick=False)),
     AblationConfig("default (S+P+K)", SolverConfig()),
+    AblationConfig("+tabu", SolverConfig(tabu=True)),
 ]
 
 NS = [32]
@@ -80,6 +81,8 @@ def _aggregate(runs: list[dict[str, Any]]) -> dict[str, Any]:
     agg["single_evals"] = sum(r["stats"].get("single_evals", 0) for r in runs)
     agg["rescue_evals"] = sum(r["stats"].get("rescue_evals", 0) for r in runs)
     agg["kick_evals"] = sum(r["stats"].get("kick_evals", 0) for r in runs)
+    agg["tabu_hits"] = sum(r["stats"].get("tabu_hits", 0) for r in runs)
+    agg["tabu_evals"] = sum(r["stats"].get("tabu_evals", 0) for r in runs)
 
     return agg
 
@@ -122,7 +125,7 @@ def main() -> None:
         print()
         print(f"-- {ac.name} --")
         header = f"{'n':>4}  {'solved':>7}  {'95% CI':>15}  {'mean_e':>7}  {'time':>6}  "
-        header += f"{'S-hits':>7} {'P-hits':>7} {'K-hits':>7}"
+        header += f"{'S-hits':>7} {'P-hits':>7} {'TB-hit':>7} {'K-hits':>7}"
         print(header)
         print("-" * len(header))
         for n in NS:
@@ -135,7 +138,7 @@ def main() -> None:
                 f"{n:>4}  {a['solved']:>7}  [{lo:.3f},{hi:.3f}]  "
                 f"{a['mean_e']:>7}  {a['mean_t']:>6}  "
                 f"{a['singles_hits']:>7} {a['pairs_hits']:>7} "
-                f"{a['kicks_hits']:>7}"
+                f"{a['tabu_hits']:>7} {a['kicks_hits']:>7}"
             )
             print(line)
         print()

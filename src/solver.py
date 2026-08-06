@@ -9,7 +9,7 @@ from functools import lru_cache
 import numpy as np
 import numpy.typing as npt
 
-from .statistics import fmt_e
+from .benchmark_stats import fmt_e
 from .tracker import Tracker
 
 SINGLE_BATCH_SIZE = 64
@@ -21,6 +21,11 @@ class SolverConfig:
 
     pairs: bool = True
     kick: bool = True
+    tabu: bool = False
+    tabu_steps: int = 100
+    tabu_tenure: float = 10.0
+    tabu_decay: float = 0.9
+    tabu_noise: float = 0.3
 
 
 @lru_cache(maxsize=16)
@@ -47,6 +52,7 @@ class SearchStats:
         "energy_saved_kicks",
         "energy_saved_pairs",
         "energy_saved_singles",
+        "energy_saved_tabu",
         "kick_evals",
         "kick_time_s",
         "kicks",
@@ -58,6 +64,10 @@ class SearchStats:
         "single_time_s",
         "singles",
         "singles_streaks",
+        "tabu_evals",
+        "tabu_hits",
+        "tabu_time_s",
+        "tabu_walks",
     )
 
     def __init__(self) -> None:
@@ -67,15 +77,20 @@ class SearchStats:
         self.single_evals: int = 0
         self.rescue_evals: int = 0
         self.kick_evals: int = 0
+        self.tabu_evals: int = 0
+        self.tabu_hits: int = 0
+        self.tabu_walks: int = 0
         self.singles_streaks: list[int] = []
         self._streak: int = 0
         self.energy_saved_singles: int = 0
         self.energy_saved_pairs: int = 0
         self.energy_saved_kicks: int = 0
+        self.energy_saved_tabu: int = 0
         self.single_time_s: float = 0.0
         self.rescue_time_s: float = 0.0
         self.kick_time_s: float = 0.0
         self.rebuild_time_s: float = 0.0
+        self.tabu_time_s: float = 0.0
 
     def _hit_single(self) -> None:
         self.singles += 1
@@ -101,13 +116,18 @@ class SearchStats:
             "e_singles": self.energy_saved_singles,
             "e_pairs": self.energy_saved_pairs,
             "e_kicks": self.energy_saved_kicks,
+            "e_tabu": self.energy_saved_tabu,
             "single_evals": self.single_evals,
             "rescue_evals": self.rescue_evals,
             "kick_evals": self.kick_evals,
+            "tabu_evals": self.tabu_evals,
+            "tabu_hits": self.tabu_hits,
+            "tabu_walks": self.tabu_walks,
             "single_time_s": self.single_time_s,
             "rescue_time_s": self.rescue_time_s,
             "kick_time_s": self.kick_time_s,
             "rebuild_time_s": self.rebuild_time_s,
+            "tabu_time_s": self.tabu_time_s,
         }
 
     def display(self) -> str:
@@ -116,9 +136,10 @@ class SearchStats:
         parts = [
             f"S={self.singles}({fmt_e(self.energy_saved_singles)})",
             f"P={self.pairs}({fmt_e(self.energy_saved_pairs)})",
+            f"TB={self.tabu_hits}/{self.tabu_walks}({fmt_e(self.energy_saved_tabu)})",
             f"K={self.kicks}({fmt_e(self.energy_saved_kicks)})",
-            f"evals={self.single_evals}/{self.rescue_evals}/{self.kick_evals}",
-            f"t={self.single_time_s:.1f}s/{self.rescue_time_s:.1f}s/{self.kick_time_s:.1f}s",
+            f"evals={self.single_evals}/{self.rescue_evals}/{self.tabu_evals}/{self.kick_evals}",
+            f"t={self.single_time_s:.1f}s/{self.rescue_time_s:.1f}s/{self.tabu_time_s:.1f}s/{self.kick_time_s:.1f}s",
         ]
         if self.singles_streaks:
             s = self.singles_streaks
@@ -203,6 +224,20 @@ def search(
 
             stats.rescue_time_s += time.perf_counter() - t_rescue
 
+        if not improved and cfg.tabu:
+            t_tabu = time.perf_counter()
+            prev_e = cur_e
+            result, evaluations = _tabu_walk(cur_seq, tracker, cur_e, rng, cfg)
+            stats.tabu_time_s += time.perf_counter() - t_tabu
+            stats.tabu_walks += 1
+            stats.tabu_evals += evaluations
+            if result is not None:
+                stats.energy_saved_tabu += prev_e - result
+                cur_e = result
+                improved = True
+                stats.tabu_hits += 1
+                stats._hit_other()
+
         # Phase 3: Kick — always accept
         if not improved and steps > 0 and cur_e > 0 and cfg.kick:
             t_kick = time.perf_counter()
@@ -239,3 +274,46 @@ def _rescue(
     for s, c in combo:
         tracker.accept(cur_seq, s, c)
     return tracker.energy(), index + 1
+
+
+def _tabu_walk(
+    cur_seq: npt.NDArray[np.int8],
+    tracker: Tracker,
+    cur_e: int,
+    rng: np.random.Generator,
+    config: SolverConfig,
+) -> tuple[int | None, int]:
+    """Explore uphill single flips and retain only the best visited state."""
+    if config.tabu_steps <= 0:
+        return None, 0
+
+    n_seqs, n_cols = cur_seq.shape
+    work_seq = cur_seq.copy()
+    work_tracker = Tracker()
+    work_tracker.build(work_seq)
+    tabu = np.zeros((n_seqs, n_cols), dtype=np.float64)
+    best_e = cur_e
+    best_seq: npt.NDArray[np.int8] | None = None
+    evaluations = 0
+
+    for _ in range(config.tabu_steps):
+        evaluations += 1
+        energies = work_tracker.flip_energies().reshape(n_seqs, n_cols)
+        penalty = 1.0 + tabu + config.tabu_noise * rng.random((n_seqs, n_cols))
+        s, c = divmod(int(np.argmin(energies * penalty)), n_cols)
+        work_e = work_tracker.accept(work_seq, s, c)
+        tabu *= config.tabu_decay
+        tabu[s, c] = config.tabu_tenure
+
+        if work_e < best_e:
+            best_e = work_e
+            best_seq = work_seq.copy()
+            if best_e == 0:
+                break
+
+    if best_seq is None:
+        return None, evaluations
+
+    cur_seq[...] = best_seq
+    tracker.build(cur_seq)
+    return best_e, evaluations

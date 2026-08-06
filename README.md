@@ -87,7 +87,7 @@ src/
   generator.py    # Orchestrierung: Builder → Tracker → Solver → Metrics
   builder.py      # GS4-Blockmatrix-Konstruktion
   metrics.py      # Gram-Metriken, Orthogonalitätsprüfung
-  statistics.py   # Wilson-CI, Z-Test, McNemar
+  benchmark_stats.py  # Wilson-CI, Z-Test, McNemar
   output.py       # JSON-Persistenz mit SHA-256-Dedup
   fast_hash.py    # Äquivalenzklassen-Hash (negashift + reverse)
   verify.py       # Dataset-Integritätscheck
