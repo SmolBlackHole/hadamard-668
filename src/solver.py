@@ -50,11 +50,11 @@ def search(
     best_seq = cur_seq.copy()
     best_e = cur_e
 
-    # adaptive K: widen when rescue often finds improvements, shrink when kick happens
-    K = min(B, max(12, B // 4))
+    # K cap: B//8 (=84 at n=167) is enough candidates without combinatorial explosion
+    K = min(B, max(12, B // 8))
     K3 = min(K // 2, 8)
-    rescue_skip: int = 0  # cooldown after kick
-    improved: bool = False
+    rescue_mode: bool = False  # best-mode after consecutive hits
+    rescue_streak: int = 0
 
     singles_e = np.empty(B)
     top: npt.NDArray[np.int64] = np.empty(0, dtype=np.int64)
@@ -80,29 +80,34 @@ def search(
             break
 
         if improved:
-            K = min(B, max(12, B // 4))  # singles work — narrow rescue
-            K3 = min(K // 2, 8)
-        elif rescue_skip > 0:
-            rescue_skip -= 1
+            rescue_streak = 0
+            rescue_mode = False
         else:
             top = np.argpartition(singles_e, K)[:K]
             top_candidates = [positions[t] for t in top]
 
+            mode = "best" if rescue_mode else "first"
+            narrowed = top_candidates if rescue_mode else None
+
             # 2-bit rescue
-            result = _rescue(cur_seq, tracker, top_candidates, 2, cur_e)
+            result = _rescue(
+                cur_seq, tracker, top_candidates, 2, cur_e, mode=mode, narrowed=narrowed
+            )
             if result is not None:
                 cur_e = result
                 improved = True
-                K = min(B, max(16, B // 2))  # rescue hit — widen
-                K3 = min(K // 2, 12)
+                rescue_streak += 1
+                if rescue_streak >= 2:
+                    rescue_mode = True  # productive valley, go deep
             else:
+                rescue_streak = 0
+                rescue_mode = False
+
                 # 3-bit rescue among narrower pool
-                result = _rescue(cur_seq, tracker, top_candidates[:K3], 3, cur_e)
+                result = _rescue(cur_seq, tracker, top_candidates[:K3], 3, cur_e, mode=mode)
                 if result is not None:
                     cur_e = result
                     improved = True
-                    K = min(B, max(16, B // 2))  # rescue hit — widen
-                    K3 = min(K // 2, 12)
 
         # Phase 4: Kick
         if not improved and steps > 0 and cur_e > 0:
@@ -112,9 +117,8 @@ def search(
             tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
             cur_e = tracker.energy()
             steps -= 1
-            K = min(B, max(12, B // 4))  # reset after kick
-            K3 = min(K // 2, 8)
-            rescue_skip = 3  # skip rescue for 3 iterations after kick
+            rescue_mode = False
+            rescue_streak = 0
 
         best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
 
@@ -127,28 +131,46 @@ def _rescue(
     candidates: list[tuple[int, int]],
     width: int,
     cur_e: int,
+    *,
+    mode: str = "first",
+    narrowed: list[tuple[int, int]] | None = None,
 ) -> int | None:
-    """Try all width-bit combinations. Returns best improved cur_e or None."""
-    assert tracker._rows_band and tracker._cols_band, "_rescue requires band tables"
+    """Try width-bit combinations. Returns improved energy or None.
 
+    mode="first": stop at first improvement (fast descent).
+    mode="best":  scan all, take best (for deep plateaus).
+    narrowed:     optional pre-filtered candidate list for "best" mode.
+    """
+    band_rows = tracker._rows_band
+    band_cols = tracker._cols_band
+    if not band_rows or not band_cols:
+        return None
+
+    pool = narrowed if narrowed is not None else candidates
     best_e = cur_e
     best_combo: tuple | None = None
 
-    for combo in combinations(candidates, width):
-        row_parts = [tracker._rows_band[s][c] for s, c in combo]
-        col_parts = [tracker._cols_band[s][c] for s, c in combo]
+    for combo in combinations(pool, width):
+        row_parts = [band_rows[s][c] for s, c in combo]
+        col_parts = [band_cols[s][c] for s, c in combo]
         rows = np.concatenate(row_parts)
         cols = np.concatenate(col_parts)
 
         e = tracker._compute_delta(rows.astype(np.int16), cols.astype(np.int16))
-        if e < best_e:
-            best_e = e
-            best_combo = combo
+        if e < cur_e:
+            if mode == "first":
+                for s, c in combo:
+                    cur_seq[s, c] *= -1
+                tracker.build(cur_seq, band_rows=band_rows, band_cols=band_cols)
+                return tracker.energy()
+            if e < best_e:
+                best_e = e
+                best_combo = combo
 
     if best_combo is None:
         return None
 
     for s, c in best_combo:
         cur_seq[s, c] *= -1
-    tracker.build(cur_seq, band_rows=tracker._rows_band, band_cols=tracker._cols_band)
+    tracker.build(cur_seq, band_rows=band_rows, band_cols=band_cols)
     return tracker.energy()
