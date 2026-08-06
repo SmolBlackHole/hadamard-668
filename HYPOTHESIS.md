@@ -121,11 +121,81 @@ Das ist ein Skalarprodukt über m ≈ n/2 kleine Ganzzahlen — kein Matmul, kei
 4. **Suchzustand in δ speichern**: jeder Flip hat einen δ-Vektor (m Werte), kann gecached werden
 5. **Geometrie sichtbar**: r zeigt welche Abstände systematisch falsch sind — plateau-Diagnose direkt
 
+## Diagnostik via Residualvektor
+
+Der NAF-Tracker macht die Suchlandschaft sichtbar. Statt nur "Energie = 2048"
+sieht man jetzt *welche Abstände falsch sind*:
+
+```txt
+Abstand 1:   0
+Abstand 2:  -4
+Abstand 3:   0
+Abstand 4:  12   ← hier liegt der Fehler
+Abstand 5:  -8   ← und hier
+```
+
+### Plateau-Diagnose
+
+Zwei Zustände können dieselbe Energie haben, aber völlig verschiedene Fehlerprofile:
+
+```txt
+Zustand A:  r = [12, 0, 0, 0]     → Q = 144
+Zustand B:  r = [6, 6, 6, 6]      → Q = 144
+```
+
+Mit nur einer Gesamtzahl sieht der Solver keinen Unterschied. Der Residualvektor
+ermöglicht zusätzliche Kriterien:
+
+- **Anzahl nicht-null Residuen**: `nnz(r)` — weniger ist besser
+- **Maximales Residuum**: `max(|r_t|)` — glättet Plateaus
+- **L1-Summe**: `sum(|r_t|)` — weniger sensitiv für Ausreißer
+- **Adaptive Gewichtung** (Breakout Local Search): `sum(w_t · r_t²)` wobei `w_t`
+  für hartnäckige Abstände erhöht wird
+
+Diese Hilfsziele haben alle den gleichen Nullpunkt (`r=0`), verändern aber die
+Topologie der Suchlandschaft um den Solver aus lokalen Minima zu führen.
+
+## Spektrale Perspektive
+
+Das gleiche Problem lässt sich im Frequenzraum ausdrücken. Sei
+
+```txt
+ζ_k = exp(iπ(2k+1)/n)
+```
+
+eine Nullstelle von -1, und `A(ζ_k)` die entsprechende Fourier-Auswertung.
+Die Hadamard-Bedingung lautet dann:
+
+```txt
+|A(ζ_k)|² + |B(ζ_k)|² + |C(ζ_k)|² + |D(ζ_k)|² = 4n   für alle k
+```
+
+Der Solver sucht vier binäre Signale, deren **summierte spektrale Leistung
+vollkommen flach** ist. Das ist die Signalverarbeitungs-Interpretation des
+Problems und relevant für GPU/FFT-basierte Ganzfolgen-Reparatur.
+
+## Der Solver in verschiedenen Domänen
+
+Der KFlip-Solver operiert gleichzeitig in mehreren mathematischen Gebieten:
+
+| Domäne | Formulierung |
+| --- | --- |
+| **Kombinatorik** | GS-Differenzfamilien, Hadamard-Konstruktion |
+| **Signalverarbeitung** | Vier Signale, summierte spektrale Leistung flach |
+| **Optimierung** | HUBO (Polynom 4. Grades): `Q(x) = Σ_t (xᵀP_t x)²` |
+| **Statistische Physik** | Ising-Modell mit Vierkörper-Wechselwirkungen |
+| **Frame-Theorie** | Überschüssige Frame-Potential-Energie erzwingt Orthogonalbasis |
+
 ## Prioritätsverschiebung
 
-Der `AutocorrTracker` macht die gesamte Testkaskade (Schritte 1-9) obsolet.
-Statt die Suchdynamik des langsamen GramTrackers zu optimieren, sollten wir
-den schnellen Tracker bauen und dann bei viel größeren n testen.
+Der NAF-Tracker macht die Geschwindigkeits-Aspekte der Testkaskade (Schritte 1-9)
+obsolet. Statt die Suchdynamik des langsamen GramTrackers zu optimieren, können
+wir den schnellen Tracker nutzen und die Suchstrategien direkt auf dem
+Residualvektor entwickeln.
+
+Der größte Gewinn ist nicht nur Geschwindigkeit. Wir suchen jetzt **in den
+natürlichen Koordinaten des Problems** (Autokorrelations-Residuen) statt
+ständig die vollständige Hadamard-Matrix als teuren Übersetzer dazwischenzuschalten.
 
 ## Referenz
 
