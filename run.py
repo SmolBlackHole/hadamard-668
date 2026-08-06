@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from generator import Generator, Result
-from output import save
+from output import append_solution, check_dataset, save
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
@@ -59,7 +59,15 @@ def main() -> None:
     parser.add_argument("--runs-dir", default="runs")
     parser.add_argument("--order", type=int, default=668)
     parser.add_argument("--time", type=float, default=0)
+    parser.add_argument(
+        "--dataset", type=str, default=None, help="save solutions to this JSON dataset"
+    )
+    parser.add_argument("--check", type=str, default=None, help="verify dataset file")
     args = parser.parse_args()
+
+    if args.check is not None:
+        ok = check_dataset(Path(args.check))
+        sys.exit(0 if ok > 0 else 1)
 
     try:
         gen = Generator.from_cli(args.strategy, args.order)
@@ -90,6 +98,17 @@ def main() -> None:
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     for r in results:
+        if r.metrics.energy == 0 and args.dataset:
+            append_solution(
+                Path(args.dataset),
+                gen.name,
+                gen._builder.n,
+                r.seed,
+                r.sequences,
+                r.elapsed,
+                r.iterations,
+                r.stats,
+            )
         out = Path(args.runs_dir) / f"{gen.name}_{r.seed}_{timestamp}"
         save(
             r.matrix,

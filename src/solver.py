@@ -27,17 +27,37 @@ def _update_best(
     return best_seq, best_e
 
 
+class SearchStats:
+    """Per-phase hit counters for solver diagnostics."""
+
+    __slots__ = ("kicks", "pairs", "restarts", "singles", "triples")
+
+    def __init__(self) -> None:
+        self.singles: int = 0
+        self.pairs: int = 0
+        self.triples: int = 0
+        self.kicks: int = 0
+        self.restarts: int = 0
+
+    def __repr__(self) -> str:
+        return (
+            f"single={self.singles} pair={self.pairs} triple={self.triples}"
+            f" kick={self.kicks} restart={self.restarts}"
+        )
+
+
 def search(
     seqs: npt.NDArray[np.int8],
     tracker: GramTracker,
     rng: np.random.Generator,
     *,
     steps: int,
-) -> tuple[npt.NDArray[np.int8], int, int]:
-    """Iterated local search. Returns (best_seq, best_energy, iterations)."""
+) -> tuple[npt.NDArray[np.int8], int, int, SearchStats]:
+    """Iterated local search. Returns (best_seq, best_energy, evals, stats)."""
     n_seqs, n_cols = seqs.shape
     positions = _positions(n_seqs, n_cols)
     B = len(positions)
+    stats = SearchStats()
 
     cur_seq = seqs.copy()
     _rows_band, _cols_band = tracker._rows_band, tracker._cols_band
@@ -50,11 +70,11 @@ def search(
     best_seq = cur_seq.copy()
     best_e = cur_e
 
-    # K cap: B//8 (=84 at n=167) is enough candidates without combinatorial explosion
-    K = min(B, max(12, B // 8))
-    K3 = min(K // 2, 8)
+    K = min(B - 1, max(16, int(B**0.5 * 3)))
+    K3 = min(K // 2, 10)
     rescue_mode: bool = False  # best-mode after consecutive hits
     rescue_streak: int = 0
+    kick_streak: int = 0
 
     singles_e = np.empty(B)
     top: npt.NDArray[np.int64] = np.empty(0, dtype=np.int64)
@@ -74,6 +94,7 @@ def search(
             if e < cur_e:
                 cur_e = tracker.accept(cur_seq, s, c)
                 improved = True
+                stats.singles += 1
                 break
 
         if steps <= 0:
@@ -96,33 +117,60 @@ def search(
             if result is not None:
                 cur_e = result
                 improved = True
+                stats.pairs += 1
                 rescue_streak += 1
                 if rescue_streak >= 2:
-                    rescue_mode = True  # productive valley, go deep
+                    rescue_mode = True
             else:
                 rescue_streak = 0
                 rescue_mode = False
 
-                # 3-bit rescue among narrower pool
+                # 3-bit rescue
                 result = _rescue(cur_seq, tracker, top_candidates[:K3], 3, cur_e, mode=mode)
                 if result is not None:
                     cur_e = result
                     improved = True
+                    stats.triples += 1
 
-        # Phase 4: Kick
+        # Phase 4: Kick — test via band, commit via build, hard-restart if stuck
         if not improved and steps > 0 and cur_e > 0:
             cols = rng.integers(0, n_cols, size=n_seqs)
-            for s in range(n_seqs):
-                cur_seq[s, int(cols[s])] *= -1
-            tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
-            cur_e = tracker.energy()
+            if _rows_band and _cols_band:
+                bands = [
+                    (_rows_band[s][int(cols[s])], _cols_band[s][int(cols[s])])
+                    for s in range(n_seqs)
+                ]
+                e_test = tracker._combo_delta(bands)
+                if e_test < cur_e:
+                    for s in range(n_seqs):
+                        cur_seq[s, int(cols[s])] *= -1
+                    tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
+                    cur_e = tracker.energy()
+                    improved = True
+                    kick_streak = 0
+                else:
+                    kick_streak += 1
+                    # hard restart after 3 failed kicks: new random seq
+                    if kick_streak >= 3:
+                        for s in range(n_seqs):
+                            cur_seq[s] = rng.choice(np.array([-1, 1], dtype=np.int8), size=n_cols)
+                        tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
+                        cur_e = tracker.energy()
+                        kick_streak = 0
+                        stats.restarts += 1
+            else:
+                for s in range(n_seqs):
+                    cur_seq[s, int(cols[s])] *= -1
+                tracker.build(cur_seq, band_rows=_rows_band, band_cols=_cols_band)
+                cur_e = tracker.energy()
             steps -= 1
+            stats.kicks += 1
             rescue_mode = False
             rescue_streak = 0
 
         best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
 
-    return best_seq, best_e, total_budget - max(steps, 0)
+    return best_seq, best_e, total_budget - max(steps, 0), stats
 
 
 def _rescue(
@@ -151,12 +199,8 @@ def _rescue(
     best_combo: tuple | None = None
 
     for combo in combinations(pool, width):
-        row_parts = [band_rows[s][c] for s, c in combo]
-        col_parts = [band_cols[s][c] for s, c in combo]
-        rows = np.concatenate(row_parts)
-        cols = np.concatenate(col_parts)
-
-        e = tracker._compute_delta(rows.astype(np.int16), cols.astype(np.int16))
+        bands = [(band_rows[s][c], band_cols[s][c]) for s, c in combo]
+        e = tracker._combo_delta(bands)
         if e < cur_e:
             if mode == "first":
                 for s, c in combo:

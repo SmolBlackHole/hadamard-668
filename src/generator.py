@@ -1,4 +1,4 @@
-"""Generator — search orchestration: Builder → Tracker → Solver."""
+"""Generator — search orchestration: Builder -> Tracker -> Solver."""
 
 from __future__ import annotations
 
@@ -21,6 +21,8 @@ class Result:
     elapsed: float
     seed: int
     iterations: int = 0
+    sequences: npt.NDArray[np.int8] | None = None
+    stats: dict[str, int] | None = None
 
 
 class Generator:
@@ -69,7 +71,7 @@ class Generator:
 
         tracker = GramTracker(b.build)
         tracker.build(sequences, band_rows=b.band_rows, band_cols=b.band_cols)
-        best_seq, best_e, iters = ils_search(sequences, tracker, rng, steps=steps)
+        best_seq, best_e, iters, stats = ils_search(sequences, tracker, rng, steps=steps)
         elapsed = time.perf_counter() - started
 
         matrix: npt.NDArray[np.int8] = (
@@ -83,7 +85,21 @@ class Generator:
         else:
             print(f"  seed={seed} best_e={best_e}{label} {elapsed:.1f}s")
 
-        return Result(matrix=matrix, metrics=metrics, elapsed=elapsed, seed=seed, iterations=iters)
+        return Result(
+            matrix=matrix,
+            metrics=metrics,
+            elapsed=elapsed,
+            seed=seed,
+            iterations=iters,
+            sequences=best_seq,
+            stats={
+                "singles": stats.singles,
+                "pairs": stats.pairs,
+                "triples": stats.triples,
+                "kicks": stats.kicks,
+                "restarts": stats.restarts,
+            },
+        )
 
     def _tensor_search(self, steps: int, seed: int, started: float) -> Result:
         n1, n2 = self.tensor_n  # type: ignore[reportGeneralTypeIssues]

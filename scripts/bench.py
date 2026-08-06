@@ -8,48 +8,96 @@ from __future__ import annotations
 
 import datetime
 import subprocess
-import time
-
-import numpy as np
-
-from builder import Builder
-from solver import search as ils_search
-from tracker import GramTracker
+import sys
+from pathlib import Path
 
 
-def bench_n(strategy: str, kind: str, n: int, steps: int, seed: int) -> dict:
-    b = Builder(kind=kind, n=n)
-    seqs = np.random.default_rng(seed).choice(
-        (-1, 1), size=(b.k, n)).astype(np.int8)
-    tracker = GramTracker(b.build)
-    tracker.build(seqs, band_rows=b.band_rows, band_cols=b.band_cols)
+def bench_n(
+    strategy: str, kind: str, n: int, steps: int, seed: int, dataset: str | None = None
+) -> dict:
+    """Benchmark via Generator.search() (CLI path). Optionally save to dataset."""
+    from generator import Generator
 
-    t0 = time.perf_counter()
-    _best_seq, best_e, iters = ils_search(
-        seqs, tracker, np.random.default_rng(seed), steps=steps)
-    elapsed = time.perf_counter() - t0
+    gen = Generator(kind=kind, n=n)
+    r = gen.search(steps=steps, seed=seed)
 
     sha = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True
     ).stdout.strip()
+
+    if r.metrics.energy == 0 and dataset:
+        from output import append_solution
+
+        append_solution(
+            Path(dataset), strategy, n, seed, r.sequences, r.elapsed, r.iterations, r.stats
+        )
 
     return {
         "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "commit": sha,
         "strategy": strategy,
         "n": n,
-        "order": b.order,
-        "energy": best_e,
-        "iterations": iters,
-        "elapsed": elapsed,
-        "solved": best_e == 0,
+        "order": gen.order,
+        "energy": r.metrics.energy,
+        "iterations": r.iterations,
+        "elapsed": r.elapsed,
+        "solved": r.metrics.energy == 0,
     }
 
 
+def _fmt_time(t: float) -> str:
+    if t < 0.001:
+        return f"{t * 1_000_000:.0f}us"
+    if t < 1.0:
+        return f"{t * 1000:.0f}ms"
+    return f"{t:.1f}s"
+
+
 def main() -> None:
+    args = sys.argv[1:]
+
+    # --sweep gs4 24 28 30 --seeds 50   ->  n=24,28,30 each 50 seeds
+    if "--sweep" in args:
+        idx = args.index("--sweep")
+        strategy = args[idx + 1]
+        # collect n values until we hit --seeds or --dataset
+        ns: list[int] = []
+        num_seeds = 50
+        dataset = None
+        i = idx + 2
+        while i < len(args):
+            if args[i] == "--seeds":
+                num_seeds = int(args[i + 1])
+                i += 2
+            elif args[i] == "--dataset":
+                dataset = args[i + 1]
+                i += 2
+            else:
+                ns.append(int(args[i]))
+                i += 1
+
+        for n in ns:
+            solved = 0
+            best_e = 1 << 60
+            print(f"\n--- {strategy} n={n} ({num_seeds} seeds) ---")
+            for s in range(num_seeds):
+                print(f"  seed={s}:", end=" ", flush=True)
+                r = bench_n(strategy, strategy, n, 200_000, s, dataset=dataset)
+                if r["solved"]:
+                    solved += 1
+                best_e = min(best_e, r["energy"])
+                status = "OK" if r["solved"] else f"e={r['energy']}"
+                print(f"{status}  {_fmt_time(r['elapsed'])}")
+            print(f"  => {solved}/{num_seeds}, best_e={best_e}")
+        return
+
+    # full sweep: 2er Schritte, teure zuerst
+    gs4_ns = list(range(32, 7, -1))
+    golay_ns = list(range(34, 5, -2))
+
     configs: list[tuple[str, str, list[int], int]] = [
-        ("gs4", "gs4", [8, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30], 200_000),
-        ("golay_2n", "golay_2n", [6, 10, 12, 14, 18, 22, 26, 30, 34], 200_000),
+        ("gs4", "gs4", gs4_ns, 200_000),
+        ("golay_2n", "golay_2n", golay_ns, 200_000),
     ]
 
     results = []
@@ -59,21 +107,19 @@ def main() -> None:
             r = bench_n(strategy, kind, n, steps, seed=42)
             status = "OK" if r["solved"] else f"e={r['energy']}"
             iters = r["iterations"]
-            elapsed = r["elapsed"]
-            print(f"{status}  iters={iters}  {elapsed:.1f}s")
+            t_fmt = _fmt_time(r["elapsed"])
+            print(f"{status}  iters={iters}  {t_fmt}")
             results.append(r)
 
     # write BENCHMARKS.md
     lines = ["# Benchmarks\n"]
-    lines.append(
-        "| Date | Commit | Strategy | n | Order | Solved | Energy | Iters | Elapsed |")
-    lines.append(
-        "|------|--------|----------|--:|-------|--------|--------|------:|--------:|")
+    lines.append("| Date | Commit | Strategy | n | Order | Solved | Energy | Iters | Elapsed |")
+    lines.append("|------|--------|----------|--:|-------|--------|--------|------:|--------:|")
     for r in results:
         solved = "YES" if r["solved"] else "NO"
         lines.append(
             f"| {r['date']} | {r['commit']} | {r['strategy']} | {r['n']} | "
-            f"{r['order']} | {solved} | {r['energy']} | {r['iterations']} | {r['elapsed']:.1f}s |"
+            f"{r['order']} | {solved} | {r['energy']} | {r['iterations']} | {_fmt_time(r['elapsed'])} |"
         )
 
     with open("BENCHMARKS.md", "w", encoding="utf-8") as f:

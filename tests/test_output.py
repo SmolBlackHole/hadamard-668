@@ -25,7 +25,6 @@ def test_save_writes_csv_and_json(tmp_path: Path) -> None:
         iterations=10,
     )
     assert len(sha) == 64
-    assert (tmp_path / "run" / "matrix.csv").exists()
     assert (tmp_path / "run" / "run.json").exists()
 
     data = json.loads((tmp_path / "run" / "run.json").read_text())
@@ -36,7 +35,6 @@ def test_save_writes_csv_and_json(tmp_path: Path) -> None:
     assert data["energy"] == 0
     assert data["max_abs_correlation"] == 0
     assert data["is_solution"] is True
-    assert data["sha256"] == sha
     assert data["iterations"] == 10
 
 

@@ -33,7 +33,7 @@ src/
   strategies/
     kflip.py        # Iterated Local Search (KFlip)
     custom.py       # CustomSolver — Suche via KFlip + GramTracker
-    registry.py     # CLI-Name → Strategy
+    registry.py     # CLI-Name -> Strategy
     base.py         # Result, SearchStrategy ABC
 tests/
 run.py              # CLI

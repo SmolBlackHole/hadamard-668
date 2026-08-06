@@ -14,7 +14,9 @@ def test_solver_finds_solution_small_n() -> None:
     seqs = np.random.default_rng(42).choice((-1, 1), size=(b.k, 5)).astype(np.int8)
     tracker = GramTracker(b.build)
     tracker.build(seqs, band_rows=b.band_rows, band_cols=b.band_cols)
-    best_seq, best_e, _iters = ils_search(seqs, tracker, np.random.default_rng(42), steps=5000)
+    best_seq, best_e, _iters, _stats = ils_search(
+        seqs, tracker, np.random.default_rng(42), steps=5000
+    )
 
     assert best_e == 0
     matrix = b.build(best_seq)
@@ -27,7 +29,9 @@ def test_solver_golay_2n_kick_recovery() -> None:
     seqs = np.random.default_rng(7).choice((-1, 1), size=(b.k, 6)).astype(np.int8)
     tracker = GramTracker(b.build)
     tracker.build(seqs, band_rows=b.band_rows, band_cols=b.band_cols)
-    best_seq, best_e, _iters = ils_search(seqs, tracker, np.random.default_rng(7), steps=1000)
+    best_seq, best_e, _iters, _stats = ils_search(
+        seqs, tracker, np.random.default_rng(7), steps=1000
+    )
 
     assert best_e == 0
     matrix = b.build(best_seq)
@@ -43,7 +47,7 @@ def test_solver_budget_not_exceeded() -> None:
     tracker.build(seqs, band_rows=b.band_rows, band_cols=b.band_cols)
 
     budget = 1000
-    _best_seq, _best_e, consumed = ils_search(
+    _best_seq, _best_e, consumed, _stats = ils_search(
         seqs, tracker, np.random.default_rng(99), steps=budget
     )
     # consumed = total_budget - remaining, from solver's return value
@@ -59,15 +63,15 @@ def test_solver_best_e_never_increases() -> None:
     best_seq = np.ones((4, 3), dtype=np.int8)
     cur_seq = best_seq.copy()
 
-    # energy going down → new best
+    # energy going down -> new best
     _, e1 = _update_best(cur_seq, 10, best_seq, 20)
     assert e1 == 10
 
-    # energy going up → old best kept
+    # energy going up -> old best kept
     _, e2 = _update_best(cur_seq, 30, best_seq, 10)
     assert e2 == 10  # best unchanged
 
-    # same energy → old best kept
+    # same energy -> old best kept
     _, e3 = _update_best(cur_seq, 5, best_seq, 5)
     assert e3 == 5
 
@@ -80,7 +84,7 @@ def test_all_kinds_validate() -> None:
         seqs = np.random.default_rng(42).choice((-1, 1), size=(b.k, n_val)).astype(np.int8)
         tracker = GramTracker(b.build)
         tracker.build(seqs, band_rows=b.band_rows, band_cols=b.band_cols)
-        best_seq, best_e, _iters = ils_search(
+        best_seq, best_e, _iters, _stats = ils_search(
             seqs, tracker, np.random.default_rng(42), steps=budget
         )
         assert best_e == 0, f"kind={kind} best_e={best_e}"

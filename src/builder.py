@@ -35,7 +35,7 @@ def _circulant(values: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
 
 def _negacirculant(values: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
     sign = _negacirc_sign(values.size)
-    return sign * _circulant(values)  # int8 * int8 → int8
+    return sign * _circulant(values)  # int8 * int8 -> int8
 
 
 def _gs4_block(
@@ -78,7 +78,7 @@ class Builder:
 
     _KINDS: ClassVar[tuple[str, ...]] = ("gs4", "golay_2n", "gs4_group")
 
-    # kind → (k, order_factor, divisor)
+    # kind -> (k, order_factor, divisor)
     _CONFIG: ClassVar[dict[str, tuple[int, int, int]]] = {
         "gs4": (4, 4, 4),
         "golay_2n": (2, 2, 2),
@@ -178,7 +178,7 @@ class Builder:
         )
 
 
-# --- Band-index builders -------------------------------------------------------
+# --- Band-index builders ------------------------------------------------------
 
 
 def _build_band_gs4(
