@@ -19,7 +19,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff>=0.11"]
+dev = [
+    "hypothesis>=6.100",
+    "pyright>=1.1.390",
+    "pytest-cov>=7.0",
+    "pytest-gremlins>=1.9,<2",
+    "ruff>=0.11",
+]
+
+[tool.pytest-gremlins]
+paths = ["src/tracker.py", "src/solver.py"]
+cache = true
 
 [tool.ruff]
 line-length = 100
@@ -52,7 +62,7 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 
 [tool.pyright]
-include = ["src", "tests", "run.py"]
+include = ["src", "tests", "scripts", "run.py"]
 exclude = [
     ".venv",
     ".git",
@@ -70,6 +80,7 @@ reportUnusedImport = "error"
 reportUnusedVariable = "error"
 reportDuplicateImport = "error"
 reportWildcardImportFromLibrary = "error"
+reportPrivateUsage = "none"
 reportOptionalSubscript = "error"
 reportOptionalMemberAccess = "error"
 reportOptionalCall = "error"
