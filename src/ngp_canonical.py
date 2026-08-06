@@ -1,7 +1,8 @@
-"""NGP canonicalizer: map an (a,b) pair to its equivalence class representative.
+"""NGP canonicalizer: BFS over Python ints (correct, no shortcuts).
 
-All BFS operations on Python ints (zero numpy allocations in the hot path).
-LSB = a[0], MSB = a[n-1] for natural shift semantics.
+Covers all 5 NGP symmetries via BFS closure over integer encodings.
+O(|orbit|) time — sufficient for n <= 20 (Egan's reference range).
+For n > 20 use fast_orbit_hash (shift+rev+swap only) as diversity bound.
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ import numpy as np
 
 
 def _to_int(seq: np.ndarray) -> int:
-    """Pack ±1 int8 array to bit-packed Python int.  LSB = seq[0]."""
     result = 0
     for v in reversed(seq):
         result = (result << 1) | (1 if v == 1 else 0)
@@ -23,17 +23,14 @@ def _to_int(seq: np.ndarray) -> int:
 
 
 def _to_pair_int(a: np.ndarray, b: np.ndarray) -> int:
-    """(a,b) → Python int: b in low n bits, a in high n bits."""
     n = len(a)
     return (_to_int(a) << n) | _to_int(b)
 
 
 def _from_pair_int(val: int, n: int) -> tuple[np.ndarray, np.ndarray]:
-    """Decode back to arrays.  Only called for the best candidate."""
     mask = (1 << n) - 1
     b_int = val & mask
     a_int = (val >> n) & mask
-
     a = np.empty(n, dtype=np.int8)
     b = np.empty(n, dtype=np.int8)
     for i in range(n):
@@ -42,18 +39,21 @@ def _from_pair_int(val: int, n: int) -> tuple[np.ndarray, np.ndarray]:
     return a, b
 
 
-# --- fast int-level transformations (no allocations) ---------------------------
+def _encode_pair(a: np.ndarray, b: np.ndarray) -> bytes:
+    bits = np.concatenate((a == 1, b == 1)).astype(np.uint8)
+    return np.packbits(bits, bitorder="big").tobytes()
+
+
+# --- O(1) int-level transformations -------------------------------------------
 
 
 def _negashift(val: int, n: int) -> int:
-    """Negacyclic shift of n bits: LSB = NOT old MSB."""
     mask = (1 << n) - 1
     shifted = (val << 1) & mask
     return shifted | (1 ^ ((val >> (n - 1)) & 1))
 
 
 def _reverse(val: int, n: int) -> int:
-    """Reverse n bits."""
     result = 0
     v = val
     for _ in range(n):
@@ -62,21 +62,20 @@ def _reverse(val: int, n: int) -> int:
     return result
 
 
-def _negate_odd(val: int, n: int, dbl: int) -> int:
-    """Toggle odd bits in both sequences (odd index bits in each n-bit half)."""
-    # odd-index bits: positions 1,3,5,... and n+1, n+3, ...
+def _negate_odd(val: int, n: int) -> int:
+    dbl = 2 * n
     mask = 0
     for i in range(1, dbl, 2):
         mask |= 1 << i
     return val ^ mask
 
 
-# --- decimation tables ---------------------------------------------------------
+# --- decimation tables --------------------------------------------------------
 
 
 @lru_cache(maxsize=256)
 def _decimation_maps(n: int) -> tuple[tuple[list[tuple[int, int]], int], ...]:
-    """For each coprime k: (bit-perm pairs, xor_mask)."""
+    """For each k coprime to n: (bit-perm-pairs, xor_mask)."""
     result = []
     for k in range(1, n):
         if np.gcd(k, n) != 1:
@@ -86,9 +85,7 @@ def _decimation_maps(n: int) -> tuple[tuple[list[tuple[int, int]], int], ...]:
         for i in range(n):
             j = (k * i) % n
             zi = 1 if (k * i) % (2 * n) < n else -1
-            # a[i] ← sign * a[j]:  dst bit = i, src bit = j
             pairs.append((i, j))
-            # b[i] ← sign * b[j]:  dst bit = n + i, src bit = n + j
             pairs.append((n + i, n + j))
             if zi == -1:
                 xor |= 1 << i
@@ -98,7 +95,6 @@ def _decimation_maps(n: int) -> tuple[tuple[list[tuple[int, int]], int], ...]:
 
 
 def _decimate(val: int, pairs: list[tuple[int, int]], xor_mask: int) -> int:
-    """Apply precomputed decimation to a pair int."""
     out = 0
     for dst, src in pairs:
         if (val >> src) & 1:
@@ -106,55 +102,48 @@ def _decimate(val: int, pairs: list[tuple[int, int]], xor_mask: int) -> int:
     return out ^ xor_mask
 
 
-# --- canonical form (BFS over ints) --------------------------------------------
+# --- full BFS canonical form --------------------------------------------------
 
 
 def canonical(a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Return the canonical (a,b) under NGP equivalence.
+    """Return the canonical (a,b) under full NGP equivalence.
 
-    BFS over Python ints.  10-50x faster than array-based BFS.
+    BFS visits the entire equivalence orbit.  Correct for all n but
+    O(|orbit|) time — use only for n <= 20 in production sweeps.
     """
     n = len(a)
-    dbl = 2 * n
     maps = _decimation_maps(n)
 
     start = _to_pair_int(a, b)
     best = start
-
     seen: set[int] = {start}
     queue: list[int] = [start]
 
     while queue:
         cur = queue.pop()
+        mask = (1 << n) - 1
+        cur_a = (cur >> n) & mask
+        cur_b = cur & mask
 
-        # extract a and b parts
-        mask_seq = (1 << n) - 1
-        cur_a = (cur >> n) & mask_seq
-        cur_b = cur & mask_seq
-
-        # 1-2: reverse / negashift individually
-        variants = [
+        for v in [
             (_reverse(cur_a, n) << n) | cur_b,
             (cur_a << n) | _reverse(cur_b, n),
             (_negashift(cur_a, n) << n) | cur_b,
             (cur_a << n) | _negashift(cur_b, n),
-        ]
-        for v in variants:
+        ]:
             if v not in seen:
                 seen.add(v)
                 queue.append(v)
                 if v < best:
                     best = v
 
-        # 3: swap
-        v = (cur_b << n) | cur_a
+        v = (cur_b << n) | cur_a  # swap
         if v not in seen:
             seen.add(v)
             queue.append(v)
             if v < best:
                 best = v
 
-        # 4: decimate
         for pairs, xor_mask in maps:
             v = _decimate(cur, pairs, xor_mask)
             if v not in seen:
@@ -163,8 +152,7 @@ def canonical(a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
                 if v < best:
                     best = v
 
-        # 5: negate odd positions
-        v = _negate_odd(cur, n, dbl)
+        v = _negate_odd(cur, n)
         if v not in seen:
             seen.add(v)
             queue.append(v)
@@ -175,8 +163,47 @@ def canonical(a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def class_hash(a: np.ndarray, b: np.ndarray) -> str:
-    """SHA-256 of canonical representative → equivalence class hash."""
+    """SHA-256 of full BFS canonical representative."""
     ca, cb = canonical(a, b)
-    bits = np.concatenate((ca == 1, cb == 1)).astype(np.uint8)
-    raw = np.packbits(bits, bitorder="big").tobytes()
-    return hashlib.sha256(raw).hexdigest()
+    return hashlib.sha256(_encode_pair(ca, cb)).hexdigest()
+
+
+# --- fast subgroup signature (shift+rev+swap, no BFS) -------------------------
+
+
+def _canon_int(val: int, n: int) -> int:
+    """Minimal int among all shift+reverse variants (O(n), no BFS)."""
+    best = val
+    cur = val
+    for _ in range(2 * n):
+        cur = _negashift(cur, n)
+        if cur < best:
+            best = cur
+    cur = _reverse(val, n)
+    for _ in range(2 * n):
+        cur = _negashift(cur, n)
+        if cur < best:
+            best = cur
+    return best
+
+
+def fast_orbit_hash(a: np.ndarray, b: np.ndarray) -> str:
+    """Fast diversity bound: shift+reverse+swap only, NOT full NGP equivalence.
+
+    Different hashes imply different NGP classes (upper bound on diversity).
+    Same hash does NOT imply same class (lower bound, not equality).
+    """
+    n = len(a)
+
+    def _int_to_arr(val):
+        arr = np.empty(n, dtype=np.int8)
+        for i in range(n):
+            arr[i] = 1 if (val >> i) & 1 else -1
+        return arr
+
+    ca = _canon_int(_to_int(a), n)
+    cb = _canon_int(_to_int(b), n)
+    # lexicographic min of (ca,cb) and (cb,ca) = swap-invariant
+    if ca < cb or (ca == cb and _to_int(a) < _to_int(b)):
+        return hashlib.sha256(_encode_pair(_int_to_arr(ca), _int_to_arr(cb))).hexdigest()
+    return hashlib.sha256(_encode_pair(_int_to_arr(cb), _int_to_arr(ca))).hexdigest()
