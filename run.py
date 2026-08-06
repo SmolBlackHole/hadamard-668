@@ -1,39 +1,26 @@
-# ruff: noqa: I001
-
 """Hadamard search entry point."""
 
 from __future__ import annotations
-from strategies.registry import DEFAULT, parse as parse_strategy
-from strategies.base import Result
-from output import save
-from concurrent.futures import ProcessPoolExecutor
-import time
-import datetime
-import argparse
 
+import argparse
+import datetime
 import sys
+import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-
-def _gpu_available() -> bool:
-    try:
-        import cupy
-
-        cupy.array([1.0])
-        return True
-    except Exception:
-        return False
+from output import save
+from strategies.base import Result
+from strategies.registry import DEFAULT, build
 
 
 def derive_seeds(seed: int, runs: int) -> list[int]:
     return [seed + offset for offset in range(runs)]
 
 
-def worker_count(strategy, runs: int, workers: int) -> int:
-    if getattr(strategy, "gpu_exclusive", False) and _gpu_available():
-        return 1
+def worker_count(runs: int, workers: int) -> int:
     return min(runs, workers)
 
 
@@ -44,7 +31,7 @@ def select_best_run(results: list[Result]) -> Result:
 
 
 def _execute_run(spec: str, steps: int, seed: int, order: int, time_budget: float = 0.0) -> Result:
-    strategy = parse_strategy(spec, order)
+    strategy = build(spec, order)
     started = time.perf_counter()
     result = None
 
@@ -80,9 +67,9 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        strategy = parse_strategy(args.strategy, args.order)
+        strategy = build(args.strategy, args.order)
         seeds = derive_seeds(args.seed, args.runs)
-        workers = worker_count(strategy, args.runs, args.workers)
+        workers = worker_count(args.runs, args.workers)
     except ValueError as e:
         parser.error(str(e))
 

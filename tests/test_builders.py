@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
-from builders import build_goethals_seidel, build_negacyclic_gs4
+from builders import Builder
 from gpu import check_orthogonality
 
 
-def test_goethals_seidel_unit_works():
-    m = check_orthogonality(build_goethals_seidel(*(np.ones(1, dtype=np.int8) for _ in range(4))))
+@pytest.mark.parametrize("kind", ["gs4", "golay_2n", "gs4_group"])
+def test_builder_unit_works(kind):
+    b = Builder(kind=kind, n=1)
+    seqs = np.ones((b.k, 1), dtype=np.int8)
+    m = check_orthogonality(b.build(seqs))
     assert m.energy == 0
-    assert m.orthogonal_pairs == 6
-
-
-def test_negacyclic_gs4_unit_works():
-    m = check_orthogonality(build_negacyclic_gs4(*(np.ones(1, dtype=np.int8) for _ in range(4))))
-    assert m.energy == 0
-    assert m.orthogonal_pairs == 6

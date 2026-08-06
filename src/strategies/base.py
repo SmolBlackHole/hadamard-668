@@ -35,10 +35,6 @@ class SearchStrategy(ABC):
     def construction(self) -> str:
         return "unknown"
 
-    @property
-    def order(self) -> int:
-        return self.ORDER
-
     def hamming(self) -> int | None:
         return None
 
@@ -67,28 +63,24 @@ class Pipeline(SearchStrategy):
     def construction(self) -> str:
         return self._stages[0][0].construction
 
-    def hamming(self) -> int | None:
-        return self._stages[0][0].hamming()
+    def _try_accept(self, carry, elapsed, seed):
+        if carry.metrics.energy == 0:
+            m = check_orthogonality(carry.matrix)
+            if m.energy == 0:
+                return Result(carry.matrix, m, elapsed, seed, carry.sequences)
+        return None
 
     def search(self, steps: int, seed: int) -> Result:
         s, steps_s = self._stages[0]
         carry = s.search(steps_s, seed)
-        total_elapsed = carry.elapsed
-        if carry.sequences is not None:
-            self._last_seq = carry.sequences
-        if carry.metrics.energy == 0:
-            m = check_orthogonality(carry.matrix)
-            if m.energy == 0:
-                return Result(carry.matrix, m, total_elapsed, seed, carry.sequences)
+        total = carry.elapsed
+        if (r := self._try_accept(carry, total, seed)) is not None:
+            return r
 
         for idx, (s, steps_s) in enumerate(self._stages[1:], start=1):
             carry = s.refine(carry.matrix, steps_s, seed + idx, carry.sequences)
-            total_elapsed += carry.elapsed
-            if carry.sequences is not None:
-                self._last_seq = carry.sequences
-            if carry.metrics.energy == 0:
-                m = check_orthogonality(carry.matrix)
-                if m.energy == 0:
-                    return Result(carry.matrix, m, total_elapsed, seed, carry.sequences)
+            total += carry.elapsed
+            if (r := self._try_accept(carry, total, seed)) is not None:
+                return r
 
-        return Result(carry.matrix, carry.metrics, total_elapsed, seed, carry.sequences)
+        return Result(carry.matrix, carry.metrics, total, seed, carry.sequences)

@@ -10,7 +10,7 @@ from pathlib import Path
 from run import derive_seeds
 
 
-def test_run_help_works_without_pythonpath() -> None:
+def test_run_help_works() -> None:
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
     src = str(Path(__file__).parents[1] / "src")

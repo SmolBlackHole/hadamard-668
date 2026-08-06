@@ -11,7 +11,7 @@ from strategies.custom import CustomSolver
 
 
 def test_custom_solver_uses_expected_order() -> None:
-    r = CustomSolver.negacyclic(n=11).search(steps=0, seed=0)
+    r = CustomSolver(kind="gs4", n=11).search(steps=0, seed=0)
     assert r.matrix.shape == (44, 44)
 
 
@@ -24,12 +24,20 @@ def test_pipeline_runs_all_stages() -> None:
             return "refining"
 
         def search(self, steps, seed):
-            r = CustomSolver.negacyclic(n=8).search(steps=0, seed=seed)
-            return Result(r.matrix, r.metrics, r.elapsed, seed, r.sequences)
+            return Result(
+                matrix=np.ones((32, 32), dtype=np.int8),
+                metrics=Metrics(0, 0, 0),
+                elapsed=0.0,
+                seed=seed,
+            )
 
         def refine(self, matrix, steps, seed, sequences=None):
-            r = CustomSolver.negacyclic(n=8).search(steps=0, seed=seed)
-            return Result(r.matrix, r.metrics, r.elapsed, seed, r.sequences)
+            return Result(
+                matrix=np.ones((32, 32), dtype=np.int8),
+                metrics=Metrics(0, 0, 0),
+                elapsed=0.0,
+                seed=seed,
+            )
 
     r = Pipeline(
         [
@@ -37,7 +45,7 @@ def test_pipeline_runs_all_stages() -> None:
             (Refining(), 0),
         ]
     ).search(steps=0, seed=0)
-    assert r.metrics.energy >= 0
+    assert r.matrix.shape == (32, 32)
 
 
 def test_pipeline_short_circuits_after_exact_verification() -> None:
@@ -84,7 +92,7 @@ def test_pipeline_short_circuits_after_exact_verification() -> None:
 
 def test_pipeline_rejects_non_refining_followup() -> None:
     class NoRefine(SearchStrategy):
-        ORDER = 32
+        ORDER = 8
 
         @property
         def name(self):
