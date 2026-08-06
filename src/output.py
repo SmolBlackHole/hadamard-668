@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 
+from builder import Builder
 from generator import Result
 
 
@@ -77,14 +78,7 @@ def save_run(path: Path, strategy: str, n: int, result: Result) -> None:
     }
     if result.stats:
         entry["stats"] = result.stats.to_dict()
-    if strategy == "golay_2n":
-        from fast_hash import golay_class_hash
-
-        entry["class"] = golay_class_hash(seqs[0], seqs[1])
-    elif strategy == "gs4":
-        from fast_hash import gs4_class_hash
-
-        entry["class"] = gs4_class_hash(seqs)
+    entry["class"] = Builder.class_hash(seqs)
 
     _write_entry(path, strategy, n, entry)
 

@@ -1,181 +1,185 @@
-"""Energy tracker with band-index fast path.
+"""GS4 energy tracker via negaperiodic autocorrelation residuals.
 
-Uses float32 Gram matrix (all intermediate values are exact integers ≤ 2²⁴).
-Single-flip energy: closed-form incremental formula, no dG buffer needed.
-Multi-bit rescue: per-band scatter (avoids NumPy duplicate-index bug).
+For GS4 with four negacyclic sequences a,b,c,d of length n:
+
+    r_t = NAF_a(t) + NAF_b(t) + NAF_c(t) + NAF_d(t),  t = 1..n-1
+    E   = 2n * sum_{t=1}^{n-1} r_t²
+
+Delta cache: all 4n delta vectors precomputed at build() and incrementally
+updated on accept().  flip() uses the closed-form delta-E formula:
+
+    dE = 4n·dot(r1, d1) + 2n·dot(d1, d1)
+
+avoiding temporary arrays on the hot path.
 """
 
 from __future__ import annotations
-
-from collections.abc import Callable
 
 import numpy as np
 import numpy.typing as npt
 
 
-class GramTracker:
-    """Tracks M (N x N, int8) and G (N x N, float32) for a Hadamard construction.
+class Tracker:
+    """Tracks GS4 orthogonality energy via NAF residuals with delta cache."""
 
-    ``band_rows`` / ``band_cols`` are precomputed int16 index tables from
-    Builder; multi-bit rescue uses them directly via ``_combo_delta``.
-
-    Internal ``_e`` stores full Frobenius² sum (both triangles).
-    Public API returns ``_e // 2`` to match ``metrics.py`` definition.
-    """
-
-    def __init__(
-        self,
-        build_fn: Callable[[npt.NDArray[np.int8]], npt.NDArray[np.int8]],
-    ) -> None:
-        self._fn = build_fn
-        self._k: int = 0
+    def __init__(self) -> None:
         self._n: int = 0
-        self._N: int = 0
-        self._rows_band: list[list[npt.NDArray[np.int16]]] | None = None
-        self._cols_band: list[list[npt.NDArray[np.int16]]] | None = None
-        self.M: npt.NDArray[np.int8] | None = None
-        self.G: npt.NDArray[np.float32] | None = None
-        self._MfT: npt.NDArray[np.float32] | None = None
-        self._dG: npt.NDArray[np.float32] | None = None
-        self._O_T_scratch: npt.NDArray[np.floating] | None = None
+        self._seqs: npt.NDArray[np.int8] | None = None
+        self._r: npt.NDArray[np.int32] | None = None
+        self._r1: npt.NDArray[np.int32] | None = None  # r[1:] view for dot products
         self._e: int = 0
+        self._delta: npt.NDArray[np.int32] | None = None  # (4*n, n) cache
+        self._rows_band: None = None
+        self._cols_band: None = None
 
-    def _gram_energy(self, M: npt.NDArray[np.int8]) -> tuple[npt.NDArray[np.float32], int]:
-        Mf = M.astype(np.float32)
-        G = Mf @ Mf.T
-        np.fill_diagonal(G, 0)
-        e = int(float(np.einsum("ij,ij->", G, G, dtype=np.float64)))
-        return G, e
+    # --- public API -----------------------------------------------------------
 
     def build(
         self,
         seqs: npt.NDArray[np.int8],
-        band_rows: list[list[npt.NDArray[np.int16]]] | None = None,
-        band_cols: list[list[npt.NDArray[np.int16]]] | None = None,
+        band_rows: object = None,
+        band_cols: object = None,
     ) -> None:
-        self._k, self._n = seqs.shape
-        self.M = self._fn(seqs)
-        self._N = self.M.shape[0]
-        self._MfT = self.M.T.astype(np.float32)
-        if self._dG is None or self._dG.shape != (self._N, self._N):
-            self._dG = np.zeros((self._N, self._N), dtype=np.float32)
-        self.G, self._e = self._gram_energy(self.M)
-        self._rows_band = band_rows
-        self._cols_band = band_cols
+        del band_rows, band_cols
+        self._n = seqs.shape[1]
+        self._seqs = seqs.copy()
+        self._r = self._compute_residual(self._seqs)
+        self._r1 = self._r[1:]
+        self._e = self._energy_from_r1(self._r1)
+        self._delta = _build_delta_cache(self._seqs, self._n)
 
     def energy(self) -> int:
-        """Gram energy (off-diagonal Frobenius² / 2, matches metrics.py)."""
-        return self._e // 2
-
-    # --- fast single-flip delta (closed-form, no dG buffer) -------------------
-
-    def _single(self, rows: npt.NDArray[np.int16], cols: npt.NDArray[np.int16]) -> int:
-        """Energy delta (full Frobenius²) for toggling M[rows, cols].
-
-        E_new = E + 4*T1 + 2*S_O + 2*S_x + 16*trace(Orr) + 16*b
-        where S_O = 4*b*N (every O entry is ±2 since band cols are a permutation).
-        """
-        assert self.M is not None and self.G is not None and self._MfT is not None
-
-        b = rows.size
-        vn = -2.0 * self.M[rows, cols].astype(np.float32)
-        O_T = self._MfT[cols, :] * vn[:, None]
-        Orr = O_T[:, rows]
-
-        T1 = float(np.einsum("ij,ij->", O_T, self.G[rows, :], dtype=np.float64))
-        S_O = 4.0 * b * self._N
-        S_x = float(np.einsum("ij,ji->", Orr, Orr, dtype=np.float64))
-
-        self._O_T_scratch = O_T  # stash for accept
-        return int(4 * T1 + 2 * S_O + 2 * S_x + 16.0 * float(np.trace(Orr)) + 16.0 * b)
-
-    # --- backward-compatible wrapper (used by tests) --------------------------
-
-    def _compute_delta(self, rows: npt.NDArray[np.int16], cols: npt.NDArray[np.int16]) -> int:
-        """Absolute energy after toggling M[rows, cols], full Frobenius².
-
-        Used by tests for sanity checks against fresh builds.  Does NOT
-        divide by 2 — consumers looking for metrics.py compatibility
-        should call ``energy()`` or ``flip()`` instead.
-        """
-        return self._e + self._single(rows, cols)
-
-    # --- flip / accept --------------------------------------------------------
+        return self._e
 
     def flip(self, _seqs: npt.NDArray[np.int8], s: int, c: int) -> int:
-        if not self._rows_band or not self._cols_band:
-            return self._flip_full(_seqs, s, c)
-        return (self._e + self._single(self._rows_band[s][c], self._cols_band[s][c])) // 2
-
-    def _flip_full(self, seqs: npt.NDArray[np.int8], s: int, c: int) -> int:
-        seqs[s, c] *= -1
-        try:
-            assert self.M is not None and self._MfT is not None
-            M_new = self._fn(seqs)
-            dM = np.subtract(M_new, self.M, dtype=np.int16)
-            rn, cn = np.nonzero(dM)
-            if rn.size == 0:
-                return self._e // 2
-            return (self._e + self._single(rn.astype(np.int16), cn.astype(np.int16))) // 2
-        finally:
-            seqs[s, c] *= -1
+        assert self._r1 is not None and self._delta is not None
+        d1 = self._delta[s * self._n + c, 1:]
+        return self._e + self._delta_e(self._r1, d1)
 
     def accept(self, seqs: npt.NDArray[np.int8], s: int, c: int) -> int:
-        if not self._rows_band or not self._cols_band:
-            seqs[s, c] *= -1
-            self.build(seqs)
-            return self._e // 2
-
-        assert self.M is not None and self.G is not None and self._MfT is not None
-
+        assert self._seqs is not None and self._r is not None and self._delta is not None
+        r = self._r
+        d = self._delta[s * self._n + c]
+        self._seqs[s, c] *= -1
         seqs[s, c] *= -1
-        rows = self._rows_band[s][c]
-        cols = self._cols_band[s][c]
+        r += d
+        r1 = r[1:]
+        self._r1 = r1
+        _rebuild_delta_slice(self._delta, self._seqs[s], s, self._n)
+        self._e = self._energy_from_r1(r1)
+        return self._e
 
-        e_new = self._e + self._single(rows, cols)
-        scratch = self._O_T_scratch
-        assert scratch is not None  # set by _single() above
-        O = scratch.T.astype(np.float32)
+    # --- rescue ---------------------------------------------------------------
 
-        self.M[rows, cols] *= -1
-        self._MfT[cols, rows] *= -1
-        self.G[:, rows] += O
-        self.G[rows, :] += O.T
-        np.fill_diagonal(self.G, 0)
-        self._e = e_new
-        return self._e // 2
+    def _combo_delta_native(self, flips: list[tuple[int, int]]) -> int:
+        """Energy after toggling multiple flips.
 
-    # --- correct multi-bit delta (per-band scatter, no duplicate-index) ------------
-
-    def _combo_delta(self, bands: list[tuple[npt.NDArray[np.int16], npt.NDArray[np.int16]]]) -> int:
-        """Energy after toggling multiple flips.  Exact per-band accumulation.
-
-        Each band's rows/cols are unique -> += is exact. Cross-band terms
-        are scattered sparsely along matched column pairs.
+        Cross-sequence:    add cached deltas, closed-form energy delta.
+        Same-sequence 2:   delta1 + delta2 + O(1) correction.
+        Same-sequence 3+:  brute-force rebuild (rare).
         """
-        assert self.M is not None and self.G is not None and self._MfT is not None
-        assert self._dG is not None
+        assert self._r is not None and self._delta is not None and self._seqs is not None
+        n = self._n
 
-        self._dG.fill(0.0)
-        vns: list[tuple[npt.NDArray[np.float32], npt.NDArray[np.int16], npt.NDArray[np.int16]]] = []
+        by_seq: dict[int, list[int]] = {}
+        for s, c in flips:
+            by_seq.setdefault(s, []).append(c)
 
-        for rows, cols in bands:
-            vn = -2.0 * self.M[rows, cols].astype(np.float32)
-            O = self._MfT[cols, :].T * vn
-            self._dG[:, rows] += O
-            self._dG[rows, :] += O.T
-            vns.append((vn, rows, cols))
+        # all different sequences — sum deltas, one dot per flip
+        if all(len(cs) == 1 for cs in by_seq.values()):
+            r1 = self._r[1:].astype(np.int64)
+            e = self._e
+            for s, cs in by_seq.items():
+                d1 = self._delta[s * n + cs[0], 1:]
+                e += self._delta_e(r1, d1)
+                r1 += d1
+            return e
 
-        # cross-band sparse scatter
-        for f in range(len(bands)):
-            for g in range(f + 1, len(bands)):
-                vnA, rowsA, colsA = vns[f]
-                vnB, rowsB, colsB = vns[g]
-                j2: npt.NDArray[np.int64] = np.argsort(colsB)[colsA]
-                vals = vnA * vnB[j2]
-                self._dG[rowsA, rowsB[j2]] += vals
-                self._dG[rowsB[j2], rowsA] += vals
+        # same-sequence pair with O(1) correction
+        if len(flips) == 2 and len(by_seq) == 1:
+            s, cs = next(iter(by_seq.items()))
+            c1, c2 = cs[0], cs[1]
+            r1 = self._r[1:].astype(np.int64)
+            d1_1 = self._delta[s * n + c1, 1:]
+            d1_2 = self._delta[s * n + c2, 1:]
+            e = self._e + self._delta_e(r1, d1_1 + d1_2)
+            t = abs(c1 - c2)
+            if t != 0 and t != n // 2:
+                v1 = int(self._seqs[s, c1])
+                v2 = int(self._seqs[s, c2])
+                # correction adds ±4·v1·v2 at distances t and n-t
+                r_t = int(r1[t - 1]) + int(d1_1[t - 1]) + int(d1_2[t - 1])
+                corr = 4 * v1 * v2
+                e += int(4 * n * r_t * corr + 2 * n * corr * corr)
+                r_nt_pos = n - t - 1
+                r_nt = int(r1[r_nt_pos]) + int(d1_1[r_nt_pos]) + int(d1_2[r_nt_pos])
+                corr2 = -corr
+                e += int(4 * n * r_nt * corr2 + 2 * n * corr2 * corr2)
+            return e
 
-        G_new = self.G + self._dG
-        np.fill_diagonal(G_new, 0)
-        return int(float(np.einsum("ij,ij->", G_new, G_new, dtype=np.float64))) // 2
+        # 3+ flips in same sequence — rare
+        tmp = self._seqs.copy()
+        for s, c in flips:
+            tmp[s, c] *= -1
+        return self._energy_from_r1(self._compute_residual(tmp)[1:])
+
+    def _combo_delta(self, bands: object) -> int:
+        raise NotImplementedError("use _combo_delta_native instead")
+
+    # --- internal -------------------------------------------------------------
+
+    @staticmethod
+    def _energy_from_r1(r1: npt.NDArray[np.int32]) -> int:
+        n_plus_1 = len(r1) + 1
+        return int(2 * n_plus_1 * np.dot(r1, r1))
+
+    @staticmethod
+    def _delta_e(r1: npt.NDArray[np.int64 | np.int32], d1: npt.NDArray) -> int:
+        n_plus_1 = len(r1) + 1
+        return int(4 * n_plus_1 * np.dot(r1, d1) + 2 * n_plus_1 * np.dot(d1, d1))
+
+    @classmethod
+    def _compute_residual(cls, seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int32]:
+        return cls._naf(seqs[0]) + cls._naf(seqs[1]) + cls._naf(seqs[2]) + cls._naf(seqs[3])
+
+    @staticmethod
+    def _naf(a: npt.NDArray[np.int8]) -> npt.NDArray[np.int32]:
+        n = len(a)
+        ai = a.astype(np.int32)
+        naf = np.empty(n, dtype=np.int32)
+        for t in range(n):
+            forward = np.dot(ai[: n - t], ai[t:])
+            wraparound = np.dot(ai[n - t :], ai[:t])
+            naf[t] = forward - wraparound
+        return naf
+
+
+# --- delta cache --------------------------------------------------------------
+
+
+def _compute_delta(a: npt.NDArray[np.int8], c: int, n: int) -> npt.NDArray[np.int32]:
+    v = int(a[c])
+    d = np.zeros(n, dtype=np.int32)
+    d[1 : n - c] = -2 * v * a[c + 1 : n].astype(np.int32)
+    d[n - c : n] = 2 * v * a[:c].astype(np.int32)
+    d[1 : c + 1] += -2 * v * a[c - 1 :: -1].astype(np.int32)[:c]
+    if c < n - 1:
+        d[c + 1 : n] += 2 * v * a[: c - n : -1].astype(np.int32)[: n - c - 1]
+    return d
+
+
+def _build_delta_cache(seqs: npt.NDArray[np.int8], n: int) -> npt.NDArray[np.int32]:
+    cache = np.empty((4 * n, n), dtype=np.int32)
+    for s in range(4):
+        a = seqs[s]
+        for c in range(n):
+            cache[s * n + c] = _compute_delta(a, c, n)
+    return cache
+
+
+def _rebuild_delta_slice(
+    cache: npt.NDArray[np.int32], a: npt.NDArray[np.int8], s: int, n: int
+) -> None:
+    off = s * n
+    for c in range(n):
+        cache[off + c, :] = _compute_delta(a, c, n)

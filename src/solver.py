@@ -8,7 +8,7 @@ from itertools import combinations
 import numpy as np
 import numpy.typing as npt
 
-from tracker_protocol import Tracker
+from tracker import Tracker
 
 
 @lru_cache(maxsize=16)

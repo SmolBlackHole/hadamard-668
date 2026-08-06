@@ -1,0 +1,1820 @@
+{
+  "gs4": {
+    "6": [
+      {
+        "seed": 42,
+        "sha256": "8da9cf6be26ac0a84eed80bcb9e88ae2f0ae1a2166b5478df56137a4da9605fb",
+        "seqs_b64": "/wEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.0,
+        "iterations": 100,
+        "stats": {
+          "singles": 3,
+          "pairs": 1,
+          "triples": 0,
+          "kicks": 0,
+          "restarts": 0
+        },
+        "class": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+      }
+    ],
+    "36": [
+      {
+        "seed": 2,
+        "sha256": "de9b4dff7f108541d617175f1ea285ef97b349d31689a57f75cb549c49297eb1",
+        "seqs_b64": "AQH/AQEBAQH/////AQH//wEB/wH///8B/wH/AQH/AQH///////8B/wH/AQEB/wEB/wH///8BAf8BAQH/Af//AQEBAQEBAQH//wEB/////wH/Af8BAf//Af8B////Af////8BAQEB/wEBAQH/////Af8BAQH//wH///8BAf////8B//8BAQH///8B/wEB//8B",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 7.971,
+        "iterations": 155372,
+        "stats": {
+          "singles": 3413,
+          "pairs": 165,
+          "triples": 7,
+          "kicks": 180,
+          "restarts": 60
+        },
+        "class": "5c2ded104cff569ccfd4f93d11275a88eda6d9c8c383c26b3284abb80a7a30a3"
+      },
+      {
+        "seed": 3,
+        "sha256": "fd241ae16f1a40d6c6729c9bd994ba65d771082810fa654a9c758c597f980b73",
+        "seqs_b64": "Af//Af8BAQH/////AQH///8BAf//Af8B/wH/Af8BAQH/AQH/Af8BAQEBAf8BAQEB//8BAf8BAf8B////Af//Af8BAf8B//8B/wEBAf8B/////wH/Af///////wEBAf//AQEB/wEB/wEB////Af////8B//8BAf//Af8B/////////wEBAQH///////8BAQEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 17.078,
+        "iterations": 325304,
+        "stats": {
+          "singles": 7253,
+          "pairs": 394,
+          "triples": 10,
+          "kicks": 396,
+          "restarts": 132
+        },
+        "class": "73f5b968034f57de9f647903159dd2f97070550410d9426870a91971aa10e0b7"
+      },
+      {
+        "seed": 18,
+        "sha256": "5ded63db18acc0835113c423018b008af351a98fd782fe77603fee9379a0d0e5",
+        "seqs_b64": "Af8BAQEBAQEBAQEB/wH/Af8BAQEB////Af//AQH//wEB/wEBAQH/AQH//////wH/Af///wEBAf///wEBAQEBAQEBAf///wEB//8B////AQEB/wH/Af8B//8B/wEBAQH/Af////8BAf//Af///wH//wH/Af//Af///wEBAf///wH/////AQH/Af//Af//AQH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 16.499,
+        "iterations": 326894,
+        "stats": {
+          "singles": 7041,
+          "pairs": 397,
+          "triples": 5,
+          "kicks": 389,
+          "restarts": 129
+        },
+        "class": "3046b7568c057bf68291c8710fbe69126f0d0195267f53dd1ae7541d1ebed87c"
+      }
+    ],
+    "34": [
+      {
+        "seed": 5,
+        "sha256": "4f8541da9bdc77c0381b69cec6e55702d1f8ae06f1aa57da8a941e451da0128a",
+        "seqs_b64": "/wH/////AQEBAf//AQH/AQH/Af8BAf//Af8B//8BAf///wEBAf//AQH///8B/wEB/wH//wH/Af8B/wEBAf//////////AQH/AQEB////AQEBAf8B/wH/AQEBAf//AQH//wEBAQH/AQEBAQEBAf8B////Af8BAf//AQH/Af///wEB/wEB/////w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 9.705,
+        "iterations": 165995,
+        "stats": {
+          "singles": 3820,
+          "pairs": 205,
+          "triples": 2,
+          "kicks": 212,
+          "restarts": 70
+        },
+        "class": "33fda2b8cbf21c12e9e6bbb8f7088d71d2b6545a4cee9b797edfdf2f162edfeb"
+      },
+      {
+        "seed": 11,
+        "sha256": "9f9090288ce0442267e479bce26c41b7d128f0d477c18322c939d518b2789db2",
+        "seqs_b64": "//8BAQH//wH/AQEBAQH/Af//Af8B/wEB////Af8BAf///wH//wEBAQEBAQEBAf8B/wEB//8BAQEBAf8B//8BAQEBAQH//wEB/wEB////Af8B/wH/AQEBAQH//wEB/wEBAQH//wH//wH/AQH/Af//AQEB/wEBAf8B//////8BAQH//wEBAf8BAQ==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 20.275,
+        "iterations": 321106,
+        "stats": {
+          "singles": 7252,
+          "pairs": 383,
+          "triples": 10,
+          "kicks": 422,
+          "restarts": 140
+        },
+        "class": "ffe37956bab215dae106b4fc4b31f27d70705a9461d8e13ef0dcf46366e85cff"
+      },
+      {
+        "seed": 17,
+        "sha256": "db7e350cd343304209afc16450a7752d34c65f2c1d7ff4856fdb5e3447120665",
+        "seqs_b64": "AQEBAf8BAf//Af8B//8BAQH/AQEB/wEB/wEB////Af///wH/AQEBAf//AQH/AQEB/wH/Af////8B/wEB/////wEBAQEB/wEB/wH/AQH///8BAf8BAQEBAf//AQEBAQH//wEBAf8BAQEB/////wEB/wH/AQEB/wH//////wH//wEB/wH///8B/w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 12.318,
+        "iterations": 199806,
+        "stats": {
+          "singles": 4482,
+          "pairs": 247,
+          "triples": 5,
+          "kicks": 256,
+          "restarts": 85
+        },
+        "class": "6c0176bf4f8274ffd14829ca440e221bd8e75878e221c99d71df44b0092c5f81"
+      },
+      {
+        "seed": 18,
+        "sha256": "2a1ef99aa77099cfd0cb6fc9f4a15eb6cce5ada46281dd1a3464fa8cc1329252",
+        "seqs_b64": "Af///wH/AQEBAf//Af//Af8BAQEB/wH//wEB/wEB//8BAQEB//8B/wEB/////wH/AQEB////Af///wH/AQEBAf//AQEBAQH/Af8B/wH/////AQH/Af//Af8BAQH/////Af////////8BAQH//wH/Af////8BAQH/Af8BAf//////////Af///w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.347,
+        "iterations": 23866,
+        "stats": {
+          "singles": 575,
+          "pairs": 31,
+          "triples": 0,
+          "kicks": 30,
+          "restarts": 10
+        },
+        "class": "236294e9aa3a552c43c2302e302603201605dc17fc62a0618720fb67d80e1e0f"
+      }
+    ],
+    "32": [
+      {
+        "seed": 0,
+        "sha256": "85b0e93d1ed3685b25483f01f567d2410ca7f7786430cb2af9bb85fa9d85deb7",
+        "seqs_b64": "/wEB//8BAQH//wEBAQEBAQH/AQEBAQH/Af8BAf//////AQEB//////8B////AQEB/wEB/wH///8BAf8B/////wH//wH/Af8BAf8BAQH/Af//AQH/AQH/AQEB/////wH/Af///wEBAf8B////AQEBAQH//wH//wH/Af////8B/wE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 10.247,
+        "iterations": 179445,
+        "stats": {
+          "singles": 4164,
+          "pairs": 253,
+          "triples": 3,
+          "kicks": 259,
+          "restarts": 86
+        },
+        "class": "47647135350d16d4fc166033acdf4cce6d6cc70fda2cafca55510a5a9f6e26b9"
+      },
+      {
+        "seed": 1,
+        "sha256": "d5585fc99a768fad28127b624f996fb7122e30ef22897d7fb6bd12e98cfd02f2",
+        "seqs_b64": "/wEBAQEB//8B/wEB/wEB////Af8B/wH//wEBAf///wEB//8B//8B//////8BAf8BAQEBAQEB/wEBAQEB/wH///8BAf///wH/////Af8BAQEB/////wH///8BAQH/Af8B/wH/AQH/AQH//wH/Af8BAf//Af//AQEB////////Af8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 9.557,
+        "iterations": 168713,
+        "stats": {
+          "singles": 3987,
+          "pairs": 218,
+          "triples": 5,
+          "kicks": 252,
+          "restarts": 84
+        },
+        "class": "8470316e0d36c9f75f2e383891e252c9d95ca693b0beb949289d5bfb39f45d68"
+      },
+      {
+        "seed": 4,
+        "sha256": "ad253f9592d9da1704dce57eeaab81fffb17994952bacdbf9a30a92d3a0c0637",
+        "seqs_b64": "AQEB/wH///8B/wEB/wEBAQH/Af8B/wEB/wEBAQEB/wH/AQEB/////wEB////AQEB/wEBAf8B//8B////Af///wEBAQEBAQH/AQH/Af////8B//8BAQH//////wEBAf///wEB////AQH/AQH/Af8BAQH//wEBAf8B//8B/wEB//8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 16.041,
+        "iterations": 287874,
+        "stats": {
+          "singles": 6720,
+          "pairs": 405,
+          "triples": 4,
+          "kicks": 411,
+          "restarts": 137
+        },
+        "class": "7d39e921ddb69cf0eee6dd6dee8401f941eb2a4a409dbb98079a1187a62dfd42"
+      },
+      {
+        "seed": 6,
+        "sha256": "9145f2db23e440df45bda7403f4a7046ba7ec22b482a43c1ab4a47fedbbedf1d",
+        "seqs_b64": "Af//Af8B//8BAf8BAf8B/wEB//8BAf8B/wEBAQEB//8B/wH/AQEB//8B/wEB/wH/AQEBAQEB//8BAQH//wEBAf8BAQH/AQEB/wH//wH///////////8B/wEBAf//AQH//wEB//8B//8BAQH//////wH/Af8BAf///////wEBAQE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.643,
+        "iterations": 24744,
+        "stats": {
+          "singles": 592,
+          "pairs": 34,
+          "triples": 1,
+          "kicks": 36,
+          "restarts": 12
+        },
+        "class": "d58b7c70993f39a0c994f77f99125ad51d7203e64f4c9d0c731055ca564c1d3f"
+      },
+      {
+        "seed": 7,
+        "sha256": "3ae76f413f4cda239039451a84fba542005ff26b23e550d69ff5bfe9315cc1e1",
+        "seqs_b64": "AQH///8BAf8BAf8B/////////wH/AQH/Af////8BAf8BAQEBAf///wH//wH//wEB//8B/wH//wH/Af///////wH/AQH/AQEB////Af//Af8B/wH/Af///wEBAQH//wH//wEB////Af8B/wEBAf///wEBAQEB////AQH//wH///8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 11.904,
+        "iterations": 204466,
+        "stats": {
+          "singles": 4794,
+          "pairs": 302,
+          "triples": 4,
+          "kicks": 307,
+          "restarts": 102
+        },
+        "class": "511ae5bc80a09d7d446604875f5e478992247c15f4e49609c74a138f0ca11c59"
+      },
+      {
+        "seed": 9,
+        "sha256": "1cf61b2c8e5fb2a800e4aa7ec8c3cd084079d84425b57d202259f01fde47e1ee",
+        "seqs_b64": "AQEB//8BAf//Af//Af8B//8B//8BAQH/Af8BAQEB//8BAf8B/wEBAf///wH/Af8BAQH//wEBAQH/AQH/////////AQH/AQH//wH/AQH//wEB/wH/Af//Af8B//8BAf8B/wH///8BAQEB//////////8BAf////8B////////Af8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 2.158,
+        "iterations": 41891,
+        "stats": {
+          "singles": 1056,
+          "pairs": 49,
+          "triples": 1,
+          "kicks": 57,
+          "restarts": 19
+        },
+        "class": "910f61df5a362f62832851a87c2dd2f7a27aa2ba22650309bd1641f84d14be8c"
+      },
+      {
+        "seed": 11,
+        "sha256": "407d84bc33ce78a54c5cc93b4b8cfb2177aa1454aa9ba90d805f0a15f013647e",
+        "seqs_b64": "Af///wH/AQEB/wH/AQH//wEBAf8BAQEBAf8BAQEBAf//AQEB//////8BAQEBAQH///8B/wH//wH/Af8BAf8BAQEB/wEB/wH//wEB/wH/AQH//wEB/wEB/wEB////Af//Af///wEB/wH/Af8BAf//Af8BAQEBAQH///8B//////8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 10.738,
+        "iterations": 180321,
+        "stats": {
+          "singles": 4160,
+          "pairs": 246,
+          "triples": 3,
+          "kicks": 268,
+          "restarts": 89
+        },
+        "class": "5fc6cdecb396985ed080ccb7ac0d69c12bf440a1e486edef3e4def1984f08db0"
+      },
+      {
+        "seed": 13,
+        "sha256": "945f9ca58c8c3867a0930fd1db970ed718650c269a25ed7bcf73dc9c5458d1c3",
+        "seqs_b64": "/wEBAQH//wEBAf8BAf8BAf//Af////////8B/wH//wEB/wH//wH///8B//8B/wH//wEB//8BAQH///8BAf8B////Af///wEB//////8BAQH/AQEB/wH//////wEBAQH//wH/Af8B/wH/Af//Af8BAQEBAQH//wEBAQEBAf////8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 4.664,
+        "iterations": 80548,
+        "stats": {
+          "singles": 1884,
+          "pairs": 111,
+          "triples": 1,
+          "kicks": 117,
+          "restarts": 39
+        },
+        "class": "05e1e329023a52a5c6c0935f479907b08ca637aaf532eb09c762f3aa9c4ebe8c"
+      },
+      {
+        "seed": 14,
+        "sha256": "1d843dbaf702e48bce1f0479a0e14e36dc318d2f79d647cb256a15ce5dc5dcb7",
+        "seqs_b64": "/wH//wEBAf//Af//Af8B/////wEB/wEB////AQH/AQH/Af//Af8B/////wEBAQEB//8B//////8BAf8B//8BAQH///8BAf8B//8BAf8BAQEB////Af///wH/AQH/Af//AQEBAf8BAQEB//8BAf//////Af8B/wH/Af8B//////8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 6.965,
+        "iterations": 114261,
+        "stats": {
+          "singles": 2746,
+          "pairs": 152,
+          "triples": 0,
+          "kicks": 169,
+          "restarts": 56
+        },
+        "class": "c03644f98a2b947b6a0c25025b54f888b3a93794b1e59d6a639e782fb0a5957c"
+      },
+      {
+        "seed": 15,
+        "sha256": "c82a2f0601ef747f33a962bf5ae64cf76449d6e4c0b2b46c04a8e4dd74d3ef06",
+        "seqs_b64": "Af8B/wH/Af8BAQH/AQEBAQEBAf///wH/AQH/Af//Af8B////Af8B/////wEB//8B/wEB/wH/Af8BAf//Af////8B//8BAQEBAQH///8BAf///wH//wEBAQEB/wEB////Af////8B//8BAQEB////AQEB/wEBAQEBAf8BAf//AQE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 20.455,
+        "iterations": 343440,
+        "stats": {
+          "singles": 8147,
+          "pairs": 439,
+          "triples": 9,
+          "kicks": 505,
+          "restarts": 168
+        },
+        "class": "be40da2c795bae6964d00af00ca05d40297db9b74025bec0350741872b69f76d"
+      },
+      {
+        "seed": 16,
+        "sha256": "7780fd0c8bf2936ee1354b0be135aaae5d3732deba50b2440ef00cb3a294ac57",
+        "seqs_b64": "/wEB////AQH//////wEB////AQH///8B/wH//wH///8B/wEB//8BAQEBAf8BAf//AQH/////AQH/Af//////Af//Af8BAf8B//8BAf8B/wH//wH/AQEBAQEB//////8B//8B////////AQH/AQEBAQEBAf//AQH/Af8B/wH/Af8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 10.017,
+        "iterations": 156514,
+        "stats": {
+          "singles": 3684,
+          "pairs": 219,
+          "triples": 4,
+          "kicks": 235,
+          "restarts": 78
+        },
+        "class": "10ad446dd9aa74a47b012d9d392e3b98f92c0729021beb1a7e26ca60be5c30ee"
+      },
+      {
+        "seed": 19,
+        "sha256": "606b16351651d7ea28d93554dc01b790eb5cd4978c30c4a9cf474665c1d747d0",
+        "seqs_b64": "/wH/AQEBAf//Af//AQH//wEB/wH//wEBAQH//wH/Af8B/wEBAQH/AQH///8BAf////8BAQH/Af///wEBAQEB//8B/wH/AQEB/wEB/////wEB//8B/wEBAf//AQH/Af8BAf//////////Af//Af////8BAQEBAQEBAf8B/wH/AQE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 10.433,
+        "iterations": 177127,
+        "stats": {
+          "singles": 4211,
+          "pairs": 226,
+          "triples": 5,
+          "kicks": 267,
+          "restarts": 89
+        },
+        "class": "159f871f36b80d472ba2d27434a883af15ec57bffeca9ddb0e79b19df53fabcd"
+      }
+    ],
+    "30": [
+      {
+        "seed": 0,
+        "sha256": "bed4ebd90ba7b82487e1d85b5edabbb106efafde609cf2112bd602df47fabc8a",
+        "seqs_b64": "/wH/AQEB//8B/////wEB/////wH/Af//////Af8BAf///wEB/wEBAf8B/////wEB/wEBAf8B/wEBAQEBAf////8BAQH/AQH/Af8B/wEBAQH///8B/////wH//wH//wEB//8B//8BAQEB/wEBAQEB/wH//wEB////",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 21.875,
+        "iterations": 357153,
+        "stats": {
+          "singles": 8709,
+          "pairs": 548,
+          "triples": 12,
+          "kicks": 587,
+          "restarts": 195
+        },
+        "class": "7ca4698c8c9b2fa13492b89971773c60a9b95f1bbfc476a538728345cec121df"
+      },
+      {
+        "seed": 1,
+        "sha256": "9d05cf338517dc0c605a461f4fe4f09e6444006680de89a74e6541e2765567fb",
+        "seqs_b64": "//8B/wH/AQH/AQH/Af//Af8BAf///wH/AQEBAQEB//8BAf8BAQEBAQEBAf8BAf///wEBAf///wH/Af///wH///8BAQH/Af////8BAQH//wEBAf8BAf8BAQH/AQEBAf//Af///wEB/wEB/wEBAf8B/wH//wEBAQH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.324,
+        "iterations": 20575,
+        "stats": {
+          "singles": 484,
+          "pairs": 27,
+          "triples": 0,
+          "kicks": 34,
+          "restarts": 11
+        },
+        "class": "98e0104bd35767ecf85d4f7b21a5812c4c34644d48febd0b6808f33b374e5f0e"
+      },
+      {
+        "seed": 2,
+        "sha256": "57a18e4e400ffe1366388ee6a4ce6371b4838fe2dadb4fc9b7b1bdd604733d50",
+        "seqs_b64": "/wH//wEB//8B//8BAQEB/wH/AQH/AQEB/////wH/Af//AQH/////Af8B/wH/AQH//wH//wH/AQH/Af///wEBAf///wH///////8BAf///wEBAQH/AQH/AQEB/wEBAQEBAQH///8B/wH/Af////////8B//8BAf8B",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 9.58,
+        "iterations": 160684,
+        "stats": {
+          "singles": 3958,
+          "pairs": 241,
+          "triples": 4,
+          "kicks": 263,
+          "restarts": 87
+        },
+        "class": "14ab83a8fbfefdf816222b5babb5af2127e1ae02366596c887a5112dacf0aeab"
+      },
+      {
+        "seed": 3,
+        "sha256": "a3de5ca65ed59d9a57f25caf2341bbc1eafaed007c921579e62c3aaf414327df",
+        "seqs_b64": "Af///////wEB//8B/wH//wH//wEBAf///wEB//8BAQH///8BAQH/////Af8BAf8B////AQH///////8BAf//Af///wH//wH/AQH//wH//wH/Af8B////Af//Af////////////8B/wEBAf8B//8BAQEB/wH/Af//",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 5.511,
+        "iterations": 88928,
+        "stats": {
+          "singles": 2230,
+          "pairs": 122,
+          "triples": 4,
+          "kicks": 146,
+          "restarts": 48
+        },
+        "class": "24fe93feb95a88f343ceb6393d18719c5ba0ff6a16bc385f15d2cda8e4a1ebda"
+      },
+      {
+        "seed": 4,
+        "sha256": "5fb35369771d966feb88d635fdca460d7287978145427fd17dbf74a981033fc1",
+        "seqs_b64": "/wEBAQEBAf////8B/wH//wH//wH/Af8B////Af8B////////Af8B////AQH/Af///wH/////AQH/AQH/AQEB////////////AQEB/wH/Af//Af8BAQH///8BAf8BAf8BAQH//wEBAf///wEB/wEB////AQH//wH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 11.239,
+        "iterations": 190666,
+        "stats": {
+          "singles": 4610,
+          "pairs": 281,
+          "triples": 5,
+          "kicks": 313,
+          "restarts": 104
+        },
+        "class": "03622c5e061a352653562256ed2d486a3333445a5711e154e1aca110591da2ae"
+      },
+      {
+        "seed": 5,
+        "sha256": "8a06becfd5aab14617e7cb471041d477ffad0f8c1538b9a610caf8813416ee94",
+        "seqs_b64": "Af//Af//AQH/AQEB////Af//////AQEB/wEBAQEBAf//////Af8BAf////8B//8BAf8B/wH/Af8BAf//Af////8B/wEB/wH/AQH//wEB/wEBAQEBAQEB/////wEBAf8B/wEBAf//AQH/AQEBAf8B/wEB/wH///8B",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 3.12,
+        "iterations": 52869,
+        "stats": {
+          "singles": 1287,
+          "pairs": 79,
+          "triples": 1,
+          "kicks": 86,
+          "restarts": 28
+        },
+        "class": "1542ee82431a1d7ab114557d88e5721550e185aa9139185df2f2980b8a6d055a"
+      },
+      {
+        "seed": 6,
+        "sha256": "a6608e260a652930c7b21a3d21b8901e24e1b3daf80c74479adf715fd162ca5f",
+        "seqs_b64": "/wH//wEBAf8BAf8B////Af//Af8BAf///wEBAf8BAQEB/wH/AQEBAQH/AQEB/////////wH//wH//wH/AQEB/wEB////AQEB/wEBAf//Af//Af////8BAQEBAf8B/wH/Af8BAQEB//////8B/wH/////AQH//wEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 17.578,
+        "iterations": 286906,
+        "stats": {
+          "singles": 6968,
+          "pairs": 421,
+          "triples": 13,
+          "kicks": 462,
+          "restarts": 154
+        },
+        "class": "54a8e210af446bbd42c74ac33005b9ab4cc88eef9994046e74e283fba61db335"
+      },
+      {
+        "seed": 7,
+        "sha256": "9165ed20d268e51b9e27d32700c6dae72c742593125aa5823bf90715bb3cf1fd",
+        "seqs_b64": "AQEBAQEBAQEBAQEB////Af8BAQEBAf8B/wH/AQEB/wEBAQH//wEBAf//AQEBAf///wH/AQEB/wH//wH//wEBAQH///8B//8BAf//AQH//wH/Af//AQH//wH//wH//wH/AQEBAQH/AQH/Af//Af//AQEB/wH//wEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.877,
+        "iterations": 13115,
+        "stats": {
+          "singles": 326,
+          "pairs": 18,
+          "triples": 0,
+          "kicks": 23,
+          "restarts": 7
+        },
+        "class": "e5591ebc5d8ed3b955cc125acf953370f03abd9c1db710248aaae694c65981d1"
+      },
+      {
+        "seed": 8,
+        "sha256": "026d1e75ea9ff84b00d94653c222a1baa4584c5930eadfed516fc49f48be8e14",
+        "seqs_b64": "Af8BAf///wEB////AQEB/wH/Af///wEBAQEBAf8BAf//AQEBAf8BAf8BAQH/AQH///8B//8B//////8BAf////8B////Af//AQH/Af///wEB/wH//wEB/wH//wEBAQH/Af///////wH/AQEB//8BAQEBAQH/Af8B",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 3.395,
+        "iterations": 61725,
+        "stats": {
+          "singles": 1443,
+          "pairs": 102,
+          "triples": 1,
+          "kicks": 98,
+          "restarts": 32
+        },
+        "class": "c3521bff5b4754ac9bc2ccd1de45e5340b05506c20618add94c7d0d4ae37c9dd"
+      },
+      {
+        "seed": 9,
+        "sha256": "f7f7c65569e4e8b297a64c0ff83912ac8d7b08dbe22487f96916e28eb7acb71f",
+        "seqs_b64": "Af//Af8B/wEBAf8BAf8BAf8B/wH/AQEBAQEB/wH/AQH///8B////////AQEB////Af8B/wEB//////8B/wEBAf8BAQEBAf///wEBAQH/Af///wH//wH//wEB////Af//AQEB//8BAQEB/wEBAQH/Af//Af//Af//",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.328,
+        "iterations": 6022,
+        "stats": {
+          "singles": 130,
+          "pairs": 10,
+          "triples": 0,
+          "kicks": 9,
+          "restarts": 3
+        },
+        "class": "19cd10b477c3cc4907d4fcc44a5b04cda79d165860e840005cd9b71e85aa0d2d"
+      },
+      {
+        "seed": 10,
+        "sha256": "b5906335ce8dca6b8e097280a7201c046b22dcc14bc560811b0a1d5b38d2bb98",
+        "seqs_b64": "AQEB////Af//AQEBAQEB//8BAf8B/wH/AQH/Af8BAQH/AQH/AQH//wH/AQH///8BAf///wEB//////////8B/wEBAf///wH/AQEBAf8B//////8BAf//Af8BAQEBAf8BAf8BAQH///8B/wEB/wEBAQEBAf8B/wEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 2.007,
+        "iterations": 35293,
+        "stats": {
+          "singles": 855,
+          "pairs": 52,
+          "triples": 3,
+          "kicks": 55,
+          "restarts": 18
+        },
+        "class": "66407a6e67db2517b3b72f889a224b9d08ca751cfa4620c5a2995c36c179ae06"
+      },
+      {
+        "seed": 11,
+        "sha256": "5e5d41fa03f4b5c9eb6139486c76eb88eba66fc1f90e3c00744c8319fd8798be",
+        "seqs_b64": "AQH/Af///wEBAf8BAQEB//8B////AQEB/////wEBAQEB/wEB/wH/Af///wH//wEB/////wEBAf8BAf8BAQH//wH/AQEBAQEBAQEBAQH///8B/wH/AQH//wEBAQEB//8B/wEB/wH//wH/Af8B/////wEB/wH/////",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 2.314,
+        "iterations": 39872,
+        "stats": {
+          "singles": 996,
+          "pairs": 65,
+          "triples": 0,
+          "kicks": 68,
+          "restarts": 22
+        },
+        "class": "84f3cbf035360b6b58b62bdc7b17fcbf7d9ec4ba4fbbcf60848ba9e235c390aa"
+      },
+      {
+        "seed": 12,
+        "sha256": "c877c8a864530e4d32e8465e6979054ca3028e95d173e7914df8473d29328745",
+        "seqs_b64": "/wEB/wH/AQH/AQH//wEB//////8BAf8B//8BAf//AQH///8BAQEB////Af///wEBAQH/Af8BAf8B//////8B/////wH/AQEBAf8B/wEBAQEBAQH/AQH/Af//Af////8B////AQEB/wEBAf8BAQH/AQEB/wH/Af//",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 7.968,
+        "iterations": 131346,
+        "stats": {
+          "singles": 3122,
+          "pairs": 207,
+          "triples": 4,
+          "kicks": 212,
+          "restarts": 70
+        },
+        "class": "9423d58e905146a68636be81211251e7aed24ce9122018d3a4cc73edf2ae080c"
+      },
+      {
+        "seed": 13,
+        "sha256": "2f8e4b10059c7d2b767f76d29c144a6632141d6dbaf7201ddeff40f8fc02698a",
+        "seqs_b64": "Af////8BAQH/AQH/Af//Af8B//////8BAf//AQEB/wEBAQEBAQEBAf8B////Af8BAQH///8B////AQH///8B/wEB//8BAf8BAf8BAQEB/////wEBAQH/Af8BAf8BAf8B/wH//wEBAf///wH///8B/////wH/AQH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 10.09,
+        "iterations": 165374,
+        "stats": {
+          "singles": 3985,
+          "pairs": 261,
+          "triples": 4,
+          "kicks": 270,
+          "restarts": 90
+        },
+        "class": "947db59a17a1aaa791496a075afab9d419adbd0d1b5df5da7302a4f92b4efe19"
+      },
+      {
+        "seed": 14,
+        "sha256": "72a09b15bafcaf3af0c989b04da26f3edf02e0f1f05148a1942e6caa109c314c",
+        "seqs_b64": "AQH//wH/Af//AQEB/wH/AQEBAQEBAf//AQH/Af///wEB//8B////Af///wEB/wH///8BAf////8B////AQEBAQEBAQH//wH///8B/wH/AQH/////AQH/Af8B////AQH/////AQH/AQH/Af//////AQEB/wH//wH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 10.115,
+        "iterations": 160212,
+        "stats": {
+          "singles": 3994,
+          "pairs": 222,
+          "triples": 9,
+          "kicks": 271,
+          "restarts": 90
+        },
+        "class": "6d9f278aafc334469302a0f815ea910f65157b03e30eab2a26d0f68a26926987"
+      },
+      {
+        "seed": 15,
+        "sha256": "3c3a1b133f9a55b69fc43128017d23ad2102e8d6ac39d14f802bc0f924f88e9a",
+        "seqs_b64": "Af///wEBAQEB/wEB//////8BAf//Af8B/wEBAf8B//8BAf8B/////wEBAQEB/////wH///8B/wEB//8B/wH//wEB//8BAQH/////Af8B/wH/////Af8BAf8BAQEBAQH/Af8BAf8BAQH//wEB//8B/wH//wH/////",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 11.77,
+        "iterations": 192308,
+        "stats": {
+          "singles": 4809,
+          "pairs": 285,
+          "triples": 6,
+          "kicks": 320,
+          "restarts": 106
+        },
+        "class": "64a3447ee003233bf79a0cee638b7f38509dec871db63f844449e386c3fc9ef4"
+      },
+      {
+        "seed": 16,
+        "sha256": "c86a5af6e48b38cfa5e8748defc08bc5d50635272071d4c5f74a865ebd4c5d1b",
+        "seqs_b64": "AQH/Af8BAQEBAf//Af//Af8B//8BAQEBAf//AQEBAf//AQH/AQH//wH//wEBAQEBAQEBAf8B/wEBAQEB////AQH/AQH///8BAQEB//8BAf///wEBAf8BAQH/AQEBAf//Af8BAf8B/////wH/Af8B/wH/AQEBAf8B",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.881,
+        "iterations": 29131,
+        "stats": {
+          "singles": 686,
+          "pairs": 53,
+          "triples": 1,
+          "kicks": 46,
+          "restarts": 15
+        },
+        "class": "7d47b2935ab78172284bf71668b4c18d64e41d8f65776e4ea443fe0b0f534330"
+      },
+      {
+        "seed": 17,
+        "sha256": "36512c06c692b817ad3bf3df90e5f5389e3829218111cbe266b4b01fab126830",
+        "seqs_b64": "Af8BAQH//wEBAf//////AQEBAf8BAf//AQH//wEBAf8BAf//Af8B////AQEBAQH///8B////////////AQEBAf//Af///wH//wH/Af//Af8B////Af8B/wEB//8B/wEBAf////8BAf8B/wH/////Af///wH/AQH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 8.56,
+        "iterations": 139753,
+        "stats": {
+          "singles": 3429,
+          "pairs": 191,
+          "triples": 4,
+          "kicks": 230,
+          "restarts": 76
+        },
+        "class": "61fda3946830be01b0fbc569cc3b02cef1959ba86116ef3af7481cdfa5b77c4f"
+      },
+      {
+        "seed": 18,
+        "sha256": "1cb3b964996eebd623837e76c2d348d977f605ccc3390a177fe3cc6f15c7ae23",
+        "seqs_b64": "/wH/Af8BAf//Af////////8B/wH///8B//8BAQH/AQH//wEB/wEBAf8B/wH//wEB////////Af8BAf//Af//AQEBAQEB/wEB/////wEBAQH//wEB//8BAQEB/wH///8B/wEB/wH/AQEBAf///wEB/wH//wH/AQEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.258,
+        "iterations": 22740,
+        "stats": {
+          "singles": 548,
+          "pairs": 36,
+          "triples": 1,
+          "kicks": 35,
+          "restarts": 11
+        },
+        "class": "18b9026ad5b5737d420c845ae5ccd7f5150d32ec995da5f9dde52957715f57bb"
+      },
+      {
+        "seed": 19,
+        "sha256": "4fc54452314c7b36bdbfc9c73ecb1171d47a157f2a662849f9e5c77fac016e53",
+        "seqs_b64": "Af8B//8B/wEBAf8BAf//AQH//wEBAQH//////wEBAf8BAf8B/wEB//8B//8BAf//Af8BAQH/////////Af8BAQEB/wH/Af///wH///////8BAf///wEB/////wH/AQEBAf//Af8B/wEBAf//////Af8BAf8B/wEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.256,
+        "iterations": 24630,
+        "stats": {
+          "singles": 609,
+          "pairs": 36,
+          "triples": 0,
+          "kicks": 37,
+          "restarts": 12
+        },
+        "class": "15f8ad0375b5e66756a101ecb71cab1ffe9e696f6524557a33b93eaee493af2b"
+      }
+    ],
+    "28": [
+      {
+        "seed": 0,
+        "sha256": "eba4fab3fd7d9319a3b86b26c817e7ca6f244457362d0fe540648140a9e15490",
+        "seqs_b64": "Af///wH/AQEB/wEB/wH/AQEB/wH/AQEBAQEBAf///wEB/wH/AQEBAQEB//8B/wEB/////wEB/wH//wH/AQH//wEB/wEBAf//Af8B//8BAQH//////wH///////8BAQEB/wH/Af///wEB/wEBAf//AQ==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.353,
+        "iterations": 6271,
+        "stats": {
+          "singles": 170,
+          "pairs": 13,
+          "triples": 0,
+          "kicks": 10,
+          "restarts": 3
+        },
+        "class": "1e11919768e29ed3f086563e78043e2c585ce076705df77f5f1a4b882b2d3fe8"
+      },
+      {
+        "seed": 1,
+        "sha256": "6ff81f6e96a8eaca7382902f994f65e62ff912bf87d7d3357e90dafb3e1da0f1",
+        "seqs_b64": "////AQEBAf8B/wH/Af8B/wEB/wH//wH/////AQEB/wEBAQEBAf///wEB/wEB/wEBAQEB/wEB//////8BAf8BAQH/Af8B//8BAf8BAQEBAQH/AQH/Af8BAQH//wH/AQEB/wEB/////wEB////AQEB/w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.235,
+        "iterations": 4258,
+        "stats": {
+          "singles": 113,
+          "pairs": 5,
+          "triples": 0,
+          "kicks": 7,
+          "restarts": 2
+        },
+        "class": "d25721185f738badbc9f0e4ba4895461e35cbb763a9958032d19c1f83ecbd2e3"
+      },
+      {
+        "seed": 2,
+        "sha256": "96900517efc5063245752dd7e4be1653cd47ce204d455593f2cf93659c507960",
+        "seqs_b64": "////////Af//Af//Af8BAf//Af///wH/////AQH/AQEBAf//AQH/Af8B////AQH//////wEB/wH/Af///wH//wEB////Af8B/////wEB/wH//wEBAf8BAQH/////AQEBAQEBAf8B/wH///8BAf8B/w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.661,
+        "iterations": 12802,
+        "stats": {
+          "singles": 326,
+          "pairs": 19,
+          "triples": 0,
+          "kicks": 21,
+          "restarts": 7
+        },
+        "class": "9f1078ca350cda1e83cf3cfafe2d4c3761d79c04b59b5e3a06e75c442d3ff14b"
+      },
+      {
+        "seed": 3,
+        "sha256": "3ff6ec498e6a5cba737815e5e99b26b91a89e3185c5b8999d0ed99a3c9409512",
+        "seqs_b64": "/////wEBAQH/Af//AQEB/wH/AQH/AQEBAQH//wH/////AQH/Af//AQH/Af//Af///wH//wEB/wEB/wH/AQH///////////8BAf//AQH/AQEBAf8BAf8BAQH///8B//8BAQH//wH///////8BAQH/AQ==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 4.653,
+        "iterations": 71959,
+        "stats": {
+          "singles": 1789,
+          "pairs": 118,
+          "triples": 4,
+          "kicks": 138,
+          "restarts": 46
+        },
+        "class": "beab4fe3f71a8bf5fc809a00e4c7759f173181adb684d67a9f95eaeb7257121f"
+      },
+      {
+        "seed": 4,
+        "sha256": "e42c7821c0ed933ffebb8b41c30934a37fe435c13923ae5134db3466e9c10c53",
+        "seqs_b64": "AQEBAQEB/////wEB////////Af///wH///8BAQEB//////8B/wH//wH/Af///wEBAf//AQH/////////Af//AQH/AQEB/wH//wH///8B/wH/Af//Af8BAf8B/wH///8B//8B//8B////AQEBAf8BAQ==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.541,
+        "iterations": 21811,
+        "stats": {
+          "singles": 528,
+          "pairs": 42,
+          "triples": 1,
+          "kicks": 41,
+          "restarts": 13
+        },
+        "class": "b922d346af9c68889b13e6529d8a969c4ce408faaebfc6a8cb27f56f810f672b"
+      },
+      {
+        "seed": 5,
+        "sha256": "9ee5c7cc987364554e9629a17dd46a7e75ae3cb73478726c6b3933a4a3a73ff4",
+        "seqs_b64": "AQEBAf////8B/wH/AQEBAQEB//8B/wH///8B////////AQH//wH/AQEBAQH/AQEBAf8BAQH/Af8BAf////8B/wEB/wH/////AQEB//8BAf//Af8BAf///wH//wEBAf8B//8BAQH/AQH/AQH//wH//w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.946,
+        "iterations": 31747,
+        "stats": {
+          "singles": 778,
+          "pairs": 64,
+          "triples": 0,
+          "kicks": 59,
+          "restarts": 19
+        },
+        "class": "da944af3016382c614fb89120a41adb07553f4a38e7083e92bb7ec51646efe06"
+      },
+      {
+        "seed": 6,
+        "sha256": "7b728c362aca3b5556a205957b84cdabfbe678cbb5e9088259fb70ad35c6a018",
+        "seqs_b64": "AQEB////////AQH/Af////8BAQEBAQEB/wEB/wH///8BAf8B/wH/AQEBAf8BAf8B////AQH///8B/wEBAf//AQH/Af8BAQH/AQEBAQEB/wEBAf//AQH//wH/AQH/Af//AQH/AQH/Af8B/wEBAf8BAQ==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 11.931,
+        "iterations": 162782,
+        "stats": {
+          "singles": 4130,
+          "pairs": 270,
+          "triples": 3,
+          "kicks": 306,
+          "restarts": 102
+        },
+        "class": "75a6e097e6d815aa54b004c126d51f85dbbc9426542ff6d28e631bf6b098c040"
+      },
+      {
+        "seed": 7,
+        "sha256": "45f6c9326550dee3a75b5e68193cb166cb1db59a5a9fd4432e154faccf227ed9",
+        "seqs_b64": "AQH/Af//AQH/////////Af///wH/AQEBAQH//wEB//8BAf//Af8B//8BAf///wEB/wH/AQEB////AQEB/wH//wEBAQEBAQH/Af8B//8BAQH/AQH//wH//wEBAQH/Af8BAQEB/wEB/wEB////Af///w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 2.34,
+        "iterations": 37607,
+        "stats": {
+          "singles": 909,
+          "pairs": 67,
+          "triples": 0,
+          "kicks": 67,
+          "restarts": 22
+        },
+        "class": "64e3da09349dc8db40d6a70d22f8d3f68bf9ccf53103f57004871f324fad9a3a"
+      },
+      {
+        "seed": 8,
+        "sha256": "4f6d674dc38453b683cb9b39b6d7570d2a3109fe7c53ba4a30691552b8f12231",
+        "seqs_b64": "/wH/AQEB////AQEB//8BAf8BAQH/Af8B//8B/wH/AQH/AQH///8B/wH//////wH/////AQEBAQEBAf8BAQH/////AQH//wEB//8B//8BAf8BAQEBAf8B/wEBAQH/Af//////Af////////8BAf8B/w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.801,
+        "iterations": 12427,
+        "stats": {
+          "singles": 324,
+          "pairs": 20,
+          "triples": 0,
+          "kicks": 23,
+          "restarts": 7
+        },
+        "class": "5b1655c9665895cd014fe8e3420fc7a527c18ea19dc9ea4e6efe11d90d3df2df"
+      },
+      {
+        "seed": 9,
+        "sha256": "2b607d45a2a85a0605e0c7f2b652185e5de412bc19e216db8f2927ffb5cd8382",
+        "seqs_b64": "/wEB/////wEBAQH///////8B/wEB/wEB//8B//8BAf///wH/////Af///////wEB/wEB//8BAf8BAQH//wH/Af///wEB/wEBAf8B/wH//////wH/AQH//wEBAQEBAf8B/wH/Af8BAf///wEB/wEB/w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 2.327,
+        "iterations": 37731,
+        "stats": {
+          "singles": 934,
+          "pairs": 64,
+          "triples": 1,
+          "kicks": 69,
+          "restarts": 23
+        },
+        "class": "5569921661e8888cf6c7f2f087a9b3e8bef2ef4ebbfdf57b3557e8088a001988"
+      },
+      {
+        "seed": 10,
+        "sha256": "909d149b8847f6a40648c8f5aa3fdb06a61d6542b2718c7fbff0ba183f29ae30",
+        "seqs_b64": "//8BAQH/AQH/AQEB////AQEBAQH/Af//Af//AQEB//8BAQH/AQH//////wEB/wEBAf8B/wEB////////AQEB/wH/AQH/Af////8B////Af///wH//wH/Af//Af//AQH///////////8B/wH//wEB/w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 8.285,
+        "iterations": 127542,
+        "stats": {
+          "singles": 3252,
+          "pairs": 219,
+          "triples": 6,
+          "kicks": 235,
+          "restarts": 78
+        },
+        "class": "5280fbfb6f850ea4ba40ea7a990015dface470942a0f3bbf1556e6717924459f"
+      },
+      {
+        "seed": 11,
+        "sha256": "4180f3d6d9cae485caecedee98e450410b9384a5e3730fcf3845538e105aed33",
+        "seqs_b64": "AQEB//8B/wH/Af8BAf8B/wEB/wEB//8B/wEBAQH//wH///8BAQEB//8BAQEB//8BAQEBAQEBAf//AQEB/wEB//8B/wH/Af8BAQH//////wH/Af///wH//wH///8BAQEBAQEB//8B/////wEB/wEBAQ==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 8.497,
+        "iterations": 132033,
+        "stats": {
+          "singles": 3430,
+          "pairs": 217,
+          "triples": 0,
+          "kicks": 246,
+          "restarts": 82
+        },
+        "class": "29a8ebff240f23e70a2c5dda87751a868c3fe1d42093d70bfdb38484942ac5fd"
+      },
+      {
+        "seed": 12,
+        "sha256": "5eff2057989e4ac50c61a4207d7b067fb6eecbc15ff2ab17abcd61e212a027fe",
+        "seqs_b64": "/wH/AQEBAQH/AQH/AQEBAQEB/wEB//////8B//8B/////wH/Af8BAf//Af8BAf//////Af//Af8B////AQEB/wEBAf////8BAf///wEBAQH///8B//8B/wEB/wEB/wH/AQH//wEB//8BAf//AQEBAQ==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.777,
+        "iterations": 13367,
+        "stats": {
+          "singles": 363,
+          "pairs": 18,
+          "triples": 0,
+          "kicks": 24,
+          "restarts": 8
+        },
+        "class": "f75cb9afde4da455280fdbf8e1e05cef27b1b5c18345e743c8e3af7c030edc6c"
+      },
+      {
+        "seed": 13,
+        "sha256": "7765bf6d503c2b2ce4fc5d958b631145701c2bf7c3f654a8a39351aa06b5a65d",
+        "seqs_b64": "AQEB//8BAf8BAf8BAQH//wH/Af8BAQEB/wH/Af8B////////Af////8BAQEB/wH/Af///wH/AQH//////wEB/wEBAQH//wEBAf//Af//Af8B//////8B/wEBAQEB//8BAf8BAQEB/wEB/wEB/////w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.223,
+        "iterations": 18090,
+        "stats": {
+          "singles": 497,
+          "pairs": 30,
+          "triples": 1,
+          "kicks": 35,
+          "restarts": 11
+        },
+        "class": "10c79aa1028b48db8d36e76bd99b2397ec20ed33933dd444efbb197d8ee4726c"
+      },
+      {
+        "seed": 14,
+        "sha256": "d48d6fab3a7fea98dc3b8510357d4530ea7bb5487aade07b74a6d8b27cf73709",
+        "seqs_b64": "/////wH//wH///8B/wH/Af///wEB/wH///8B/wH///8BAQEBAQH//wH//wEBAf///wH//////wH/////AQH/AQEBAQEBAf//AQEB//8B/wEB/wH/Af//Af8BAf//AQEBAQH/AQEB//8B/wH///8BAQ==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.027,
+        "iterations": 472,
+        "stats": {
+          "singles": 16,
+          "pairs": 1,
+          "triples": 1,
+          "kicks": 0,
+          "restarts": 0
+        },
+        "class": "c33ce4f90b36c3630ed20bd53c4b8095445869c912fc7e4ed18688746a230455"
+      },
+      {
+        "seed": 15,
+        "sha256": "13d517e0709284a3c6f3388912fc6d291d14588aeb7871d43b095603408ee405",
+        "seqs_b64": "Af///wEBAf8BAQEB/wH/Af8BAf8B/wEB/wH//wH/AQH/AQH/AQH/AQEB////AQEB/wH/////AQH//////wH/AQEBAQEBAQEB////Af8B/wEBAf//AQH/Af//AQH/AQEBAQEBAf//AQH//wEB/wEB/w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 3.562,
+        "iterations": 57303,
+        "stats": {
+          "singles": 1494,
+          "pairs": 79,
+          "triples": 3,
+          "kicks": 103,
+          "restarts": 34
+        },
+        "class": "7cd289b7bb2d94a17f6313aa9f451273d79aa035bbb71c693112f6a5c5965a87"
+      },
+      {
+        "seed": 16,
+        "sha256": "542e30d5ee480d4af6cdde7ceac72aa9b09ebe9eda65073b28834414992e5498",
+        "seqs_b64": "//8BAf8B//////8B//8B/////wEB/wEBAQEBAf///wEB/////////wEBAf8B/wEB/wH/////Af8B////AQEB//8BAQH//////wH/Af8BAf//Af///wEB//8BAf//Af8BAQH/Af8BAf8B/wH/AQH//w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 11.584,
+        "iterations": 179852,
+        "stats": {
+          "singles": 4489,
+          "pairs": 311,
+          "triples": 7,
+          "kicks": 340,
+          "restarts": 113
+        },
+        "class": "04e1603920cfd70ec56f455f21195736c6b70d09168d67378be350452659ba70"
+      },
+      {
+        "seed": 17,
+        "sha256": "9487a53d7c36995a1a4db01d2c71fa08a42d64cf427a45791404b5b0b0339ad9",
+        "seqs_b64": "/wEB//8B/wEB/////wEBAf////8B//8BAQH/////Af//AQH//////////wEBAf8BAQEBAQH/AQEBAf8B//8B////Af8B/wH/AQEBAf//Af///wEBAQEB/wEBAf//////AQH/Af8B/wH//wH/AQH/AQ==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.366,
+        "iterations": 21431,
+        "stats": {
+          "singles": 535,
+          "pairs": 39,
+          "triples": 1,
+          "kicks": 39,
+          "restarts": 13
+        },
+        "class": "c456e608c351794644a96ab0517d0626863ef9ee4dff15e7ef10d63919f3fd42"
+      },
+      {
+        "seed": 18,
+        "sha256": "9b589eccc50fe46dad5c96843156f49524938a0fba1957c1528abb14f6b3e495",
+        "seqs_b64": "AQEBAf//////AQEB////AQEBAQEBAf8B////AQEB/wH///8BAf///wH///////8B////AQH/Af8B//////8B//8B//8B//8B/wH/AQEBAf//AQH//wEB//8B////AQEB/wEB/wH//wH/AQH/Af8B/w==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.499,
+        "iterations": 25825,
+        "stats": {
+          "singles": 620,
+          "pairs": 49,
+          "triples": 2,
+          "kicks": 44,
+          "restarts": 14
+        },
+        "class": "44b23935a7d734d97a1ceaeb675515155497afd2704c2fdbb7d35ac9637894e3"
+      },
+      {
+        "seed": 19,
+        "sha256": "b1a5dd847ef2049822d8d6bf48dbb7d7c5cd8d7ddc379cb8a2e3c6b711dc33cc",
+        "seqs_b64": "AQH/Af8B/wEB/////wH/AQEB//8BAQH/Af////8BAf///wH/////Af//////Af////8BAf//Af8B/wEBAf//Af///wH//wEBAQEBAQH//wH//wEB//8BAQEB////Af8B//8BAf8B/////wH//wH/AQ==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 9.773,
+        "iterations": 161536,
+        "stats": {
+          "singles": 4071,
+          "pairs": 266,
+          "triples": 6,
+          "kicks": 286,
+          "restarts": 95
+        },
+        "class": "948e34e3f073fdf08c47c563ce69d12f49d13322b483c662094c1d491e63c840"
+      }
+    ],
+    "26": [
+      {
+        "seed": 0,
+        "sha256": "023a7647f2460f7e5fd30cf99d67dbb7009194116e68d28833943dc203604689",
+        "seqs_b64": "Af//Af///wEB/wH/AQEBAQEBAQEB//8BAQH/AQEBAQH///8B/wEBAf8B/wH///8BAQH///8B//8B/wH//wEBAQEB/wH/AQH//wH//wH/AQH/AQH/////AQEBAf8BAQH/AQH/////AQE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 2.365,
+        "iterations": 35111,
+        "stats": {
+          "singles": 960,
+          "pairs": 52,
+          "triples": 2,
+          "kicks": 72,
+          "restarts": 24
+        },
+        "class": "f727e9e3ed6a0bc85968cd7077c4e56bd73c70932569b338ba7f764458d82bca"
+      },
+      {
+        "seed": 1,
+        "sha256": "a178228951349ba6b0042dc3585295650e0d19a613f9c2899bd541acfe55f8ce",
+        "seqs_b64": "/wEBAf//////Af8B//8B////Af8B/wEB////////Af//////AQH//wH/Af8BAf//Af8BAf//AQEB////AQEB/wEB/wH///////8B//8B//8B/wEBAQH///8B/////wH/AQH/AQH//wE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.581,
+        "iterations": 8709,
+        "stats": {
+          "singles": 234,
+          "pairs": 18,
+          "triples": 0,
+          "kicks": 17,
+          "restarts": 5
+        },
+        "class": "0146a24d6fc49bdda044f54ee66e1776b217ca63df9a5afefc236f20512c915a"
+      },
+      {
+        "seed": 2,
+        "sha256": "b922049edea50a284e8a735dad8e942c3e088932247413cc13abe8d4bd4dd505",
+        "seqs_b64": "/////wEB////AQH/////Af8BAf8BAf8BAQEB/wEBAQEB/wH///////8B/wEBAf8B////Af////8BAf///wEB/wH//wH///8BAf8B//8B//8B////AQEB//8B////Af//Af8B/wH///8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 2.769,
+        "iterations": 39376,
+        "stats": {
+          "singles": 1016,
+          "pairs": 85,
+          "triples": 1,
+          "kicks": 85,
+          "restarts": 28
+        },
+        "class": "9f53986b9d86410836de1193edbc5fe13b3c1b07e14ca40d5331626b03716745"
+      },
+      {
+        "seed": 3,
+        "sha256": "4c6e9fd1ab5e33b0800108a75275a78667a28a068131a0e130136aaa83be6c28",
+        "seqs_b64": "/wEBAf////8B/wH///8BAf////8B/wEBAf8B/wH/AQH/Af////8BAf8BAQEB////////////Af///wEB//8BAf////8BAf8B//8BAQEBAQH//wH/Af8B/wH/////Af//Af//Af//AQE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 3.12,
+        "iterations": 44109,
+        "stats": {
+          "singles": 1149,
+          "pairs": 95,
+          "triples": 1,
+          "kicks": 98,
+          "restarts": 32
+        },
+        "class": "135dbb2c61f6a8a216c7509246965e595e4971f5b793a2c1c33361dbe13615de"
+      },
+      {
+        "seed": 4,
+        "sha256": "098f8153ebbd56537c3d8d3f3800460f70808ff669507c76561422a2d80fcc70",
+        "seqs_b64": "Af8B/wEB/////wEBAQH/Af8BAQEBAQH//wEBAf//Af8B/wH//wEBAQH/AQEB////Af8BAQH/////////AQH//wH/////Af//Af//Af///wH/AQEBAf//AQH/////Af///wH//wH/AQE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.097,
+        "iterations": 15943,
+        "stats": {
+          "singles": 401,
+          "pairs": 33,
+          "triples": 1,
+          "kicks": 33,
+          "restarts": 11
+        },
+        "class": "e03bb40a710a6a55a7565664ac0468ffffc30a3655e70bd6dbbea6a63ec4ecd9"
+      },
+      {
+        "seed": 5,
+        "sha256": "6648966002ba79217b87d4c517aeefc2dfc64157a11af1dd25627f95d7ca37eb",
+        "seqs_b64": "AQH///8B//8BAQH/Af8BAf8BAQEBAQH//wH///8B/////wH///8B////Af//Af8B/////wEB/wEB//////8BAf8B//8B/wEB/////wEB//8BAQH/Af8BAQH/Af8B//////8BAQEB/wE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.793,
+        "iterations": 27056,
+        "stats": {
+          "singles": 769,
+          "pairs": 48,
+          "triples": 0,
+          "kicks": 60,
+          "restarts": 20
+        },
+        "class": "03bb7ef4332042dcebc65713a5efd37fbd0de814cbc47601bfe017352a975a2f"
+      },
+      {
+        "seed": 6,
+        "sha256": "7cbe85d534d243920307ae30bb083e167ab26afac7fcec5ad59ae1303010fda6",
+        "seqs_b64": "//8BAf8BAf8B//////8BAQH///8BAf8BAQEB/////wEB/////wH//wEBAf8B/wH/Af///wH//wH///8B/wH/////Af//Af///////wEBAf8BAQH//wH/Af8BAf8BAf8BAQH///8B//8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.699,
+        "iterations": 11834,
+        "stats": {
+          "singles": 321,
+          "pairs": 21,
+          "triples": 0,
+          "kicks": 23,
+          "restarts": 7
+        },
+        "class": "2e1c5d4a5869c2af1e16131586f615aa9fe1962eed7bb5c219e57155b48a5c92"
+      },
+      {
+        "seed": 7,
+        "sha256": "9b1422d0f42331522aa4b810e3a85014c730ae0d03a7f114e35242b67e8bb19d",
+        "seqs_b64": "/wH/////AQH/Af8B//8BAQEB/wEB/wEBAQEB/wH/AQH//wH//wEBAf8B////AQH/////Af8BAQH///8B//8B/wH/Af8BAQEBAQEBAf//Af////8BAf//AQH/Af//AQEBAQH//wH///8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.417,
+        "iterations": 6295,
+        "stats": {
+          "singles": 180,
+          "pairs": 11,
+          "triples": 0,
+          "kicks": 14,
+          "restarts": 4
+        },
+        "class": "75e7105ccf363d5e2eee2b12917746325e584bf9dcbfd4f1a41080250d444d92"
+      },
+      {
+        "seed": 8,
+        "sha256": "a8a3dcbbbad7dfa6dc852fbeb087e09b2635df5fbdb2b0b8a0e02b5f12139971",
+        "seqs_b64": "/wH/Af8B//////8B////AQEB/////wH//wEBAQEB/wEB//8BAQH//wH/Af//Af///wH/////Af//AQEB/wH/////Af8B/wEBAQEB////Af//Af//Af8BAQH/AQEBAf//////AQH//wE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.283,
+        "iterations": 5792,
+        "stats": {
+          "singles": 149,
+          "pairs": 12,
+          "triples": 1,
+          "kicks": 8,
+          "restarts": 2
+        },
+        "class": "36c042031123dd01a2ef06cb7a996dfe40d139201c8786ce1beb7a163fdd65e0"
+      },
+      {
+        "seed": 9,
+        "sha256": "84d9c0c60df8cbef1eb1de75880d6cb0d2e80d9c7b8dc8fe6b49ad3afe4f8fc9",
+        "seqs_b64": "Af//Af///wEBAf//AQEB/wH//////wH//wEBAQEBAf8B//8B//8BAf8BAQH/Af//AQEB//8BAQEBAQEB/wH/AQEBAQH//wEB/wEBAf//AQEB////AQEB/wEBAf8B/wH/AQH/Af8BAf8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.297,
+        "iterations": 20940,
+        "stats": {
+          "singles": 582,
+          "pairs": 34,
+          "triples": 0,
+          "kicks": 44,
+          "restarts": 14
+        },
+        "class": "634cf6389a7dad9da66b098581fb0f9a816199f87fb5a68312282b0d9b16852f"
+      },
+      {
+        "seed": 10,
+        "sha256": "ee0e05e346563d1b5aecb451333938293398307e79b4168bfc70839adc95837a",
+        "seqs_b64": "//8B//////8BAQEBAf8BAf8B/wH/Af//Af///wH//wH/Af8BAf8BAQEB//8BAf8B/wEBAQH/AQEB/wEB//8BAQEB////Af//AQH///8BAQH/Af///wEBAf//////AQH//wEB//////8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.515,
+        "iterations": 10111,
+        "stats": {
+          "singles": 261,
+          "pairs": 18,
+          "triples": 1,
+          "kicks": 18,
+          "restarts": 6
+        },
+        "class": "921dcf5cae5568192f0e2b2d1bb8f73b35b0f56c03228267db218b651a33bf2f"
+      },
+      {
+        "seed": 11,
+        "sha256": "2bd1031982a3a811c299666712cd81719ffd78aacd7c99d61c438447472d1f98",
+        "seqs_b64": "AQEBAQEB/wH/AQH//wH/AQEB/wEBAQH///////8BAQH/AQH//wEBAf8B//8B/wH/AQH//wH//wH///8B//8B/wH//wEBAQH//wH/AQH/Af8B////AQEBAQEB/wH/AQEB/wEBAQH///8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.824,
+        "iterations": 27120,
+        "stats": {
+          "singles": 781,
+          "pairs": 40,
+          "triples": 0,
+          "kicks": 56,
+          "restarts": 18
+        },
+        "class": "c59948e26b2b7fa74c0e04c298fe3bd607652d7557b0c648e770563230d4006f"
+      },
+      {
+        "seed": 12,
+        "sha256": "56cb622dbac7ce294c2c9d80824712e9c229251f002df968cd309aba54065f4a",
+        "seqs_b64": "AQEBAf///wH//wH/AQEBAf8BAQH/AQH/Af8BAQEBAf///wH/AQH//wH/Af///wEB//8BAf///wH//wEBAf8B/wH//wH/////AQEB/////wEBAQEB/wEBAQEBAQH/Af8B//8B//8BAf8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.226,
+        "iterations": 19236,
+        "stats": {
+          "singles": 465,
+          "pairs": 39,
+          "triples": 0,
+          "kicks": 41,
+          "restarts": 13
+        },
+        "class": "46a97442eab746298f52f64b14f08dc8a6cbd15878b5d7506db51a0787d0e6e5"
+      },
+      {
+        "seed": 13,
+        "sha256": "125d16813c211105dfef0d4eeb07759152ff1885ed9cad8636dd92cdf6e27710",
+        "seqs_b64": "/wH//wH//wEBAQH//wH//wEB////Af////8BAQH/////Af//Af////8B////Af8B/wEBAQH/Af8B////////Af8BAQH///8BAQEB//8B/wH/AQH/AQEB/wEB/wEB////AQH/AQEBAQE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 2.943,
+        "iterations": 42071,
+        "stats": {
+          "singles": 1061,
+          "pairs": 92,
+          "triples": 2,
+          "kicks": 91,
+          "restarts": 30
+        },
+        "class": "c72452d20358fb995a56330c71fa73fa28344e1f9472da80c78e964f104a33ae"
+      },
+      {
+        "seed": 14,
+        "sha256": "f440f0d80c101eb47054395967de454b4ddf3d35ac45873e3a5bf83c5dc61237",
+        "seqs_b64": "/wH/AQH/////AQH/Af//Af//Af///wH/Af//Af8B//8BAQH//wEBAf//Af///////wEBAf8BAQH/AQEB//8BAQEBAf8B//8BAQEBAQH///8BAQH/Af//Af8BAf//AQEBAQEB/wEBAf8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.363,
+        "iterations": 5994,
+        "stats": {
+          "singles": 166,
+          "pairs": 10,
+          "triples": 0,
+          "kicks": 11,
+          "restarts": 3
+        },
+        "class": "a7ff5cecd271d279d5fc4a787ced2be03ff0e438dd1582f612c993a32428ec2a"
+      },
+      {
+        "seed": 15,
+        "sha256": "4f4d7e2cdfb8ecfae88f393d70c2b0d24ea6f41ef63ac1ccd5992e3e3621b502",
+        "seqs_b64": "////Af8B////AQEB/wEB/wEBAf8BAf8BAQEBAQH/Af//AQEBAf//Af//AQEBAQEBAQH//wH/Af8BAf//AQH/////Af8B//8BAf8B/wEBAf8B/wEBAQH///8BAf///wEB/wEBAf8B//8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.0,
+        "iterations": 15167,
+        "stats": {
+          "singles": 390,
+          "pairs": 25,
+          "triples": 2,
+          "kicks": 31,
+          "restarts": 10
+        },
+        "class": "2be19ced1ffc6bd78517e51b5587468e714d34f61246fdb57f9e80a5781f55c6"
+      },
+      {
+        "seed": 16,
+        "sha256": "6be2407084034c9bfd51c605a3a278cf62a3a1468e8b22b8b968c6938a32bee2",
+        "seqs_b64": "/wEB/wH///8B/////wEBAf8BAf////8B/wH/Af//Af8B//8BAQH/AQEBAQH/AQEBAf8BAQEB//////8BAQEB/wEB/wH/Af//Af//AQH//wH/Af8BAf//Af//////AQEBAQH//wEBAf8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.193,
+        "iterations": 16259,
+        "stats": {
+          "singles": 408,
+          "pairs": 29,
+          "triples": 3,
+          "kicks": 35,
+          "restarts": 11
+        },
+        "class": "dbccda2528d61a953255239c520971514bfa6ac014a55168efcb3d7113b70524"
+      },
+      {
+        "seed": 17,
+        "sha256": "04d7a59ce5e30e4b973d510965689a33767e129f881fd2b22881efa68b96c223",
+        "seqs_b64": "Af////////8BAf//AQEBAQEBAf//AQH//wEB////Af8BAQH//wEBAQEB/wEB/wH/AQH/////Af//AQEBAQH//wH/Af8BAQEBAf8B//8B/wH/AQH/Af//AQEB/wEB/wH///8B/wH///8=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.361,
+        "iterations": 19063,
+        "stats": {
+          "singles": 498,
+          "pairs": 33,
+          "triples": 1,
+          "kicks": 40,
+          "restarts": 13
+        },
+        "class": "1ab0f69acf379658d09d1e1040f3b6ac350528c3adc3ae6f76c3b28cbcbbde8e"
+      },
+      {
+        "seed": 18,
+        "sha256": "7a639b9a2d7ebcfd1d21625c7cc52a86532f8403af6e451fe1108aa8245b8dcf",
+        "seqs_b64": "AQEBAf8B/wEBAf///wEB/wH//wH//wEB//8B/wEB/wEB/wH/Af8B////Af////8B////AQEB/////wEB/wH///8BAf//AQEB/wEB/wEB//8BAQEBAQH/Af////8B/wEB////AQEBAQE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.959,
+        "iterations": 11971,
+        "stats": {
+          "singles": 328,
+          "pairs": 23,
+          "triples": 0,
+          "kicks": 24,
+          "restarts": 8
+        },
+        "class": "69e347dd00756d46900c19139e542a99034970eacdab43103521e0c864aff09f"
+      },
+      {
+        "seed": 19,
+        "sha256": "5f99a0b8bf8d11347c1f22570e584b39fabfb954923bf8eb254b2c9bd921e624",
+        "seqs_b64": "////Af///wH/Af8BAf////8BAQEBAf//Af////8BAf//AQH/AQEB/wH//wEB/wH/AQH/AQEBAQEB/wEB/wH//wEBAf///wEBAQH/AQH/Af///////wH/Af8BAf///wH///8B/wEBAQE=",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 3.74,
+        "iterations": 57348,
+        "stats": {
+          "singles": 1516,
+          "pairs": 91,
+          "triples": 2,
+          "kicks": 120,
+          "restarts": 40
+        },
+        "class": "751d739f2def06e9197dfa2cd7625acb8b5a023abc27a74979b152bbbb71420f"
+      }
+    ],
+    "24": [
+      {
+        "seed": 0,
+        "sha256": "4e6ad887c142f28cc1d26855533e9e4a9e45d83c771e53e6b55ddc92207a34f3",
+        "seqs_b64": "/wH/Af8B/wH/AQH//////wH/AQH///8BAQH/Af//AQEBAf///wEBAf8BAf////8BAQH//wEBAQEB//8B//8BAQEBAQEBAQEBAf//Af8B/wH/AQH//wH//wEBAf8BAQEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.847,
+        "iterations": 9341,
+        "stats": {
+          "singles": 275,
+          "pairs": 21,
+          "triples": 1,
+          "kicks": 23,
+          "restarts": 7
+        },
+        "class": "a524c27c45259e45838775b5b93371f32926fe67b3e63c8993d180cbced88162"
+      },
+      {
+        "seed": 1,
+        "sha256": "8bd58bb4d213671180a6e0ab0de790a94b07278a9cb066a9a9df7d2e517994d0",
+        "seqs_b64": "AQEB/wEBAQEB//8BAf8BAf8B/wEBAf8BAf8BAf8BAf8BAQH///8BAf8B/wEBAf////8BAf8B/////wH//wEBAQH/Af///wEB/wEBAf8BAQEBAQEBAf///wH//wH/Af8B",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.06,
+        "iterations": 13702,
+        "stats": {
+          "singles": 441,
+          "pairs": 18,
+          "triples": 0,
+          "kicks": 35,
+          "restarts": 11
+        },
+        "class": "db4148ec55eeaaea9a390b2778d722069d28f6e816b938618347b70dd317ba56"
+      },
+      {
+        "seed": 2,
+        "sha256": "1acc3ad1268cef437732879a2ae13d03fb450b5cb6f257056977d519e211ebd4",
+        "seqs_b64": "Af8BAf//AQH/Af//////////////AQEBAf8B//8B/wH/////AQH//wH/AQH//////wH//////wH/Af8BAf///wEB//8BAf///wH/Af////8BAf8B////AQH/AQEB////",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.722,
+        "iterations": 10931,
+        "stats": {
+          "singles": 315,
+          "pairs": 20,
+          "triples": 0,
+          "kicks": 25,
+          "restarts": 8
+        },
+        "class": "463886b15f8d1b7477e4d5541d33bdb581cabee98e6ddaf7d9e61cbf5cb27d3b"
+      },
+      {
+        "seed": 3,
+        "sha256": "158c3e1b7d6001a171aa66933a740be6f8cc38635ffc8fe3172a2bcb1fc80376",
+        "seqs_b64": "Af8BAQH/AQH///8B//8BAQH/AQEB/////wEBAQEB/wEB/wEB/wEBAf//////Af8B/////wEBAf//Af//AQEBAf8B/wEBAf//AQH/Af//Af////8B/wH/Af8B//////8B",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.252,
+        "iterations": 3881,
+        "stats": {
+          "singles": 113,
+          "pairs": 7,
+          "triples": 0,
+          "kicks": 9,
+          "restarts": 3
+        },
+        "class": "f65319829908ed752ee7bddc5b5ba1b9ca2875ce8fa604ed62bc0c257a4e7869"
+      },
+      {
+        "seed": 4,
+        "sha256": "161370cf6bc3aa8f600e8e8f2c4d038e55efe5a76a9b1ceb617f5fff64cc149f",
+        "seqs_b64": "AQH/Af8BAf//Af//Af8B/wEB/wH/AQH/Af//AQH//////wEBAf//AQEB/wH//////////wEB/wEBAf//AQEBAQEBAQH//wEB////Af8B//8B//8BAf8B////Af8B/wEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.031,
+        "iterations": 712,
+        "stats": {
+          "singles": 17,
+          "pairs": 2,
+          "triples": 0,
+          "kicks": 1,
+          "restarts": 0
+        },
+        "class": "a7b2504c2c9de5c0079ef5153b0ed6fe53775dc4d2b025e0808dba4be6f7df26"
+      },
+      {
+        "seed": 5,
+        "sha256": "3f703b16050aded0c5bf8c5671eb0a35cd8a52c88e25bb5c3252ea280eeb1aa5",
+        "seqs_b64": "/wH//wH/AQEBAf//Af//////////AQH/Af8BAQEBAf///wH/Af8B//8BAf//Af///wEBAf//Af8B////Af8B//8B/////wH//wEB/////wEB//8BAf//////AQEBAf//",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.06,
+        "iterations": 914,
+        "stats": {
+          "singles": 20,
+          "pairs": 4,
+          "triples": 0,
+          "kicks": 2,
+          "restarts": 0
+        },
+        "class": "18ef10345eeb4b9a8a0bcedb3510ed28b0736a0e9a71977405d4ab480b2e2e75"
+      },
+      {
+        "seed": 6,
+        "sha256": "c45c9c9ff6138266feeab6cdb3e506f6c0c0c8b6e17a6ffe37581c4efeb051be",
+        "seqs_b64": "Af////8B////Af////8B//8BAQEBAf8B/////////wEBAQEB/////wH//wEB//8BAf//Af8B/wH/Af//AQH/Af8B/wEB//8B//8B//8B//8BAQH/////AQEB//8BAQH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.09,
+        "iterations": 1832,
+        "stats": {
+          "singles": 48,
+          "pairs": 5,
+          "triples": 0,
+          "kicks": 3,
+          "restarts": 1
+        },
+        "class": "66097fabe7bd786ccc13f8ef4ce1d8ec76604f699a69a1e2ae6e5b87051f4b10"
+      },
+      {
+        "seed": 7,
+        "sha256": "0ca34d244ecb67eaac3ef13fa78017a32968532bcc5f1cb42d35289e31a975ee",
+        "seqs_b64": "AQEB//8BAQEB/wH/AQH/Af///wH//wEBAQH///8BAQEBAf8BAf////8B/wEB/wH//wH//////wH//wH///8BAQEB/wEBAf//////Af//AQH/Af8B////Af///////wH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 1.301,
+        "iterations": 19618,
+        "stats": {
+          "singles": 526,
+          "pairs": 47,
+          "triples": 0,
+          "kicks": 50,
+          "restarts": 16
+        },
+        "class": "9341e0891b3d963409649ce6630d1f4dd551daa39039a255999455f1f596b4e8"
+      },
+      {
+        "seed": 8,
+        "sha256": "1c7f0ff9f1385ff55bf09bb3b019ecc4fe840c04d399cb69d0e85655a075eee5",
+        "seqs_b64": "/wH/AQH/AQEBAQH/Af8BAQEB/wEB/wH/AQH/Af//////Af//Af8B//8BAQEBAQH/Af8BAf8BAf///wH/AQH//wEB////AQH/AQEBAf8B////AQEB//8BAQEBAf///wH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.214,
+        "iterations": 3378,
+        "stats": {
+          "singles": 91,
+          "pairs": 9,
+          "triples": 0,
+          "kicks": 8,
+          "restarts": 2
+        },
+        "class": "25cbf16b8796faf02e63e056303d31417a32b61aab96c5fbaab31a7f9fae48a2"
+      },
+      {
+        "seed": 9,
+        "sha256": "8f6fed82fa590b18b5e1cc2d8b67aaf9826f8212ac5590556e47990a0bebc6a3",
+        "seqs_b64": "Af//AQH/Af8B//////8BAQEBAf8BAf//Af//Af///////wEB/wH//wEBAQH/AQEBAf////8BAf//Af///wEB/wH//wH///8BAQH//////wH//wH/Af8B/wH/////AQH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.146,
+        "iterations": 2602,
+        "stats": {
+          "singles": 83,
+          "pairs": 6,
+          "triples": 0,
+          "kicks": 5,
+          "restarts": 1
+        },
+        "class": "5b64dae3d77f04006fb6f51053e2030e6032bf3d368a257a38bd3dfef24ed9b7"
+      },
+      {
+        "seed": 10,
+        "sha256": "31e8ac812179460e3e275325d599f6313008391aa9e796403da4045f8d16295e",
+        "seqs_b64": "//8BAf///////wEBAf8B/wH/Af//AQH///8B/////wEB/wH//wH/AQH///8BAf8B//8B////AQEBAQEBAf////8BAf8B//8B////Af8B//8BAQH/Af8BAf8BAQEBAQH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.642,
+        "iterations": 9554,
+        "stats": {
+          "singles": 282,
+          "pairs": 14,
+          "triples": 0,
+          "kicks": 24,
+          "restarts": 8
+        },
+        "class": "6ce0487059ffc737c3cfe715e054edb7437b34e19fd36bd9a93b5a2189f64e30"
+      },
+      {
+        "seed": 11,
+        "sha256": "586bd007394156ab90374283708dbbc15318a51fb9de96d4ebc2741ea0f1b4b5",
+        "seqs_b64": "Af//Af//Af8B/wH/Af//AQH///8BAf//Af//Af8BAQH/Af//AQEB//8B/wEB//8B/////////wEBAQH///8BAf8BAf///wH/////Af8B/wEBAQEBAQEBAf//AQH/AQEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.136,
+        "iterations": 1857,
+        "stats": {
+          "singles": 46,
+          "pairs": 5,
+          "triples": 0,
+          "kicks": 5,
+          "restarts": 1
+        },
+        "class": "11c9e0a446b59f762d2bd7a04dd4e9c01a1892da066834c7037aeb3f1b904752"
+      },
+      {
+        "seed": 12,
+        "sha256": "3b62eca3d88771d8788ef188697b93338f192eeb0c9577389b41b9bc782dbc74",
+        "seqs_b64": "/wH///8BAQEBAQEB/wH///8BAQEBAQH//wH//wH/Af8BAf//Af//AQEBAf8B/wEBAQH/AQEBAf8B//8BAf///wH///8BAf//////AQH/Af8BAQH//wH//wH/AQH//wEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.2,
+        "iterations": 3228,
+        "stats": {
+          "singles": 93,
+          "pairs": 4,
+          "triples": 0,
+          "kicks": 7,
+          "restarts": 2
+        },
+        "class": "ecb0245e811a29bbac28c178ea6b5411667795cab4cb5058e4a966ce08960e43"
+      },
+      {
+        "seed": 13,
+        "sha256": "02747bf643b2e7a878efad36de0fe132b3a1263db3974c78e148eed502de97c4",
+        "seqs_b64": "////AQEBAf8BAf///wH///8B/////wEB/wH//wEBAQH/Af8BAf//Af8BAQH//wEB/wEBAQH/AQEBAQH/Af8BAf///////wH/AQH/Af8BAQH/Af//Af//AQEB/wH//wEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.762,
+        "iterations": 12296,
+        "stats": {
+          "singles": 306,
+          "pairs": 28,
+          "triples": 0,
+          "kicks": 31,
+          "restarts": 10
+        },
+        "class": "4860e3f3b1ddf07cf241fc2ca6886b61a8820f2924bfc33f472f3d53aac7e1af"
+      },
+      {
+        "seed": 14,
+        "sha256": "0f4c46ea8d59fd51571f6f90a52f5a3979005277b0b18c0f03c434581449b903",
+        "seqs_b64": "/wEB//8B/wH/Af8BAQEB/wH/AQEBAQH/AQEBAf//AQH//wEBAQEB/wH//wH/Af///wEB////AQH///////8BAQEBAf8BAf//AQH///8B/wH/////Af//Af8BAf//AQH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.09,
+        "iterations": 1241,
+        "stats": {
+          "singles": 23,
+          "pairs": 4,
+          "triples": 1,
+          "kicks": 2,
+          "restarts": 0
+        },
+        "class": "8e33c78f4f137e52cea678d144d6e398bae551dda7d4b301cde1241efd70dc69"
+      },
+      {
+        "seed": 15,
+        "sha256": "5b491aa93ccc318159ce4e49ce1f128bb2220d4fa4da54265a74c415254955e6",
+        "seqs_b64": "AQH//wEB/wH/AQEBAQEBAQH/AQH/Af8BAf8BAf8B//////8BAf//Af8BAf///wH///8B//8BAQH///8BAf8B////AQEB/wEBAQH//////wH/Af8B////AQEBAQH//wH/",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.739,
+        "iterations": 13152,
+        "stats": {
+          "singles": 361,
+          "pairs": 24,
+          "triples": 0,
+          "kicks": 29,
+          "restarts": 9
+        },
+        "class": "10dd5327de741f37f2be04a2f5cb8b7c0cba00a5cde3cd6ea43afd59b14c9157"
+      },
+      {
+        "seed": 16,
+        "sha256": "fe0a48563a9c942d182a07156a45b717da36565dca6f7eb98cad30e07765c365",
+        "seqs_b64": "AQEBAQEBAQEBAQH///8BAf///wEB/wEB/wH///8B////Af8BAf////8B//8BAf//Af8B//8BAf8BAQEBAf//Af8B//8B//8B/wH/Af8B/wEB////AQEBAf8B////AQEB",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.031,
+        "iterations": 682,
+        "stats": {
+          "singles": 27,
+          "pairs": 0,
+          "triples": 0,
+          "kicks": 1,
+          "restarts": 0
+        },
+        "class": "9a6bc4bb761bedcfeaff3fa2e448793bae9a0a181e6484acd0018d1f6e01274c"
+      },
+      {
+        "seed": 17,
+        "sha256": "9c228025f1562225b56c1cf798bfeb1e2fcc7e68991ead86ad8b98404f641a79",
+        "seqs_b64": "////AQH/////AQEBAf8B//8B/wEB/wEB/wEBAQH/Af//AQEB/wEBAf//AQEB/wH///8B//8B////Af//AQH/Af///wEBAf//Af8B/////////wEB/wH/Af///wH/////",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.635,
+        "iterations": 10379,
+        "stats": {
+          "singles": 278,
+          "pairs": 23,
+          "triples": 1,
+          "kicks": 24,
+          "restarts": 8
+        },
+        "class": "19a77437db86143fa17d08618831790776f6bae0946d8268fce4e1123a946051"
+      },
+      {
+        "seed": 18,
+        "sha256": "616839fb408ad6874e8b87cc21d80f58ae8f0ad1c1e92b19a53e4ad6f2a3c80d",
+        "seqs_b64": "////Af8B/wH/AQH///////8BAf8B//8BAQH/////////AQH/AQH///8BAf//Af8BAf//Af///wH/////////Af//AQEB////AQEB/wEB/wH/Af8B//8BAQEB//8BAf8B",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.787,
+        "iterations": 14914,
+        "stats": {
+          "singles": 422,
+          "pairs": 28,
+          "triples": 0,
+          "kicks": 33,
+          "restarts": 11
+        },
+        "class": "1e2edaa270e4a6d805041031ecd92f763a0dbf1091f8e7b9b4ab28ec474ddc41"
+      },
+      {
+        "seed": 19,
+        "sha256": "13157dd52e7216cc00bba12d1b02c075e2a8b97e39196a4454faf56498bc3151",
+        "seqs_b64": "/wH/Af//AQEB/wH//wEBAf8B/wEB//8B////AQH//wH/AQEBAQEBAf8BAf///wEBAQH/AQEBAQH//wH//wEBAQH/Af//Af//Af8B//8BAf///////wH/Af8BAQH///8B",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.115,
+        "iterations": 1723,
+        "stats": {
+          "singles": 41,
+          "pairs": 6,
+          "triples": 0,
+          "kicks": 4,
+          "restarts": 1
+        },
+        "class": "e28f8f229663ade3dcbedfa7715da21d4224a06da4b2a1bf6520956e18868776"
+      }
+    ]
+  }
+}

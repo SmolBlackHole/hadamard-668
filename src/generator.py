@@ -35,12 +35,7 @@ class Result:
 
 
 class Generator:
-    """Hadamard search via KFlip + GramTracker.
-
-    ``Generator(kind="gs4", n)`` — 4 negacyclic blocks, Goethals-Seidel.
-    ``Generator(kind="golay_2n", n)`` — 2 negacyclic blocks, Golay pair.
-    ``Generator(kind="gs4_group", n)`` — 4 group-circulant blocks, GS4.
-    """
+    """Hadamard search via KFlip + NAF Tracker (Goethals-Seidel GS4)."""
 
     def __init__(self, *, kind: str, n: int) -> None:
         self._builder = Builder(kind=kind, n=n)
@@ -67,7 +62,7 @@ class Generator:
     def name(self) -> str:
         return self._builder.kind
 
-    def search(self, steps: int, seed: int, *, autocorr: bool = False) -> Result:
+    def search(self, steps: int, seed: int) -> Result:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
 
@@ -78,17 +73,11 @@ class Generator:
 
         sequences = rng.choice(np.array([-1, 1], dtype=np.int8), size=(b.k, b.n))
 
-        if autocorr:
-            from autocorr import AutocorrTracker
+        from tracker import Tracker
 
-            tracker = AutocorrTracker()
-            tracker.build(sequences)
-        else:
-            from tracker import GramTracker
-
-            tracker = GramTracker(b.build)
-            tracker.build(sequences, band_rows=b.band_rows, band_cols=b.band_cols)
-        best_seq, best_e, iters, stats = ils_search(sequences, tracker, rng, steps=steps)  # type: ignore[reportArgumentType]
+        tracker = Tracker()
+        tracker.build(sequences)
+        best_seq, best_e, iters, stats = ils_search(sequences, tracker, rng, steps=steps)
         elapsed = time.perf_counter() - started
 
         matrix = b.build(best_seq)

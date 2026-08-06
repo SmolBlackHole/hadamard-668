@@ -14,8 +14,6 @@ def test_generator_uses_expected_order() -> None:
 
 def test_generator_from_cli_parses_strategy_names() -> None:
     assert Generator.from_cli("gs4", 40).order == 40
-    assert Generator.from_cli("golay_2n", 40).order == 40
-    assert Generator.from_cli("gs4_group", 40).order == 40
     assert Generator.from_cli("tensor", 240).order == 240
 
 

@@ -1,8 +1,8 @@
-"""Fast invariant hashes for GS4 and NGP sequence sets.
+"""Fast invariant hash for GS4 sequence sets.
 
-Covers negashift + reverse per sequence, then lexicographic sort
-(resp. swap for NGP).  Does NOT cover decimation — this is a
-diversity bound, not a full canonicalizer.
+Covers negashift + reverse per sequence, then lexicographic sort.
+Does NOT cover decimation — this is a diversity bound, not a full
+canonicalizer.
 
 Different hashes => different equivalence class.
 Same hash => possibly same class (dedup signal).
@@ -47,29 +47,11 @@ def _to_int(seq: np.ndarray) -> int:
     return result
 
 
-# --- public API ---------------------------------------------------------------
-
-
-def golay_class_hash(a: np.ndarray, b: np.ndarray) -> str:
-    """Fast invariant hash for Golay 2N sequence pair.
-
-    Canonizes each sequence under negashift+reverse, then takes the
-    lexicographic minimum of (a,b) and swapped (b,a).
-
-    """
-    n = len(a)
-    ca = _canon_int(_to_int(a), n)
-    cb = _canon_int(_to_int(b), n)
-    ordered = (ca, cb) if ca < cb else (cb, ca)
-    payload = ordered[0].to_bytes((n + 7) // 8, "big") + ordered[1].to_bytes((n + 7) // 8, "big")
-    return hashlib.sha256(payload).hexdigest()
-
-
 def gs4_class_hash(seqs: np.ndarray) -> str:
     """Fast invariant hash for four GS4 sequences.
 
-    Canonizes each of the four sequences under negashift+reverse,
-    sorts them, and returns sha256.
+    Canonizes each sequence under negashift+reverse, sorts them
+    lexicographically, and returns sha256.
     """
     n = seqs.shape[1]
     ints = sorted(_canon_int(_to_int(seqs[s]), n) for s in range(4))
