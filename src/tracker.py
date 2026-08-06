@@ -128,13 +128,16 @@ class GramTracker:
             return self._e // 2
 
         assert self.M is not None and self.G is not None and self._MfT is not None
+        assert self._O_T_scratch is not None  # set by _single() below
 
         seqs[s, c] *= -1
         rows = self._rows_band[s][c]
         cols = self._cols_band[s][c]
 
         e_new = self._e + self._single(rows, cols)
-        O = self._O_T_scratch.T  # N x b, from _single
+        scratch = self._O_T_scratch
+        assert scratch is not None
+        O = scratch.T.astype(np.float32)
 
         self.M[rows, cols] *= -1
         self._MfT[cols, rows] *= -1
