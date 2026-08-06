@@ -1,0 +1,772 @@
+{
+  "gs4": {
+    "26": [
+      {
+        "seed": 0,
+        "sha256": "023a7647f2460f7e5fd30cf99d67dbb7009194116e68d28833943dc203604689",
+        "seqs_b64": "Af//Af///wEB/wH/AQEBAQEBAQEB//8BAQH/AQEBAQH///8B/wEBAf8B/wH///8BAQH///8B//8B/wH//wEBAQEB/wH/AQH//wH//wH/AQH/AQH/////AQEBAf8BAQH/AQH/////AQE=",
+        "elapsed_s": 5.778,
+        "iterations": 21127,
+        "stats": {
+          "singles": 515,
+          "pairs": 17,
+          "triples": 1,
+          "kicks": 72,
+          "restarts": 24
+        }
+      },
+      {
+        "seed": 0,
+        "sha256": "023a7647f2460f7e5fd30cf99d67dbb7009194116e68d28833943dc203604689",
+        "seqs_b64": "Af//Af///wEB/wH/AQEBAQEBAQEB//8BAQH/AQEBAQH///8B/wEBAf8B/wH///8BAQH///8B//8B/wH//wEBAQEB/wH/AQH//wH//wH/AQH/AQH/////AQEBAf8BAQH/AQH/////AQE=",
+        "elapsed_s": 5.823,
+        "iterations": 21127,
+        "stats": {
+          "singles": 515,
+          "pairs": 17,
+          "triples": 1,
+          "kicks": 72,
+          "restarts": 24
+        }
+      },
+      {
+        "seed": 1,
+        "sha256": "e2fd9c57dc15c62c72aed1c96646b57ec75971a001b1b9584a8b8cb86b6d6246",
+        "seqs_b64": "AQH/AQH/AQH/////////////Af8B/wH/AQH/AQEBAQEBAf8B////AQH/AQEB/////wEB/wH/Af8B/wEB////Af8B//8B/wEB/wH/////////AQEBAf//AQH/AQH///8BAf//AQH///8=",
+        "elapsed_s": 11.907,
+        "iterations": 40848,
+        "stats": {
+          "singles": 983,
+          "pairs": 47,
+          "triples": 0,
+          "kicks": 147,
+          "restarts": 49
+        }
+      },
+      {
+        "seed": 1,
+        "sha256": "e2fd9c57dc15c62c72aed1c96646b57ec75971a001b1b9584a8b8cb86b6d6246",
+        "seqs_b64": "AQH/AQH/AQH/////////////Af8B/wH/AQH/AQEBAQEBAf8B////AQH/AQEB/////wEB/wH/Af8B/wEB////Af8B//8B/wEB/wH/////////AQEBAf//AQH/AQH///8BAf//AQH///8=",
+        "elapsed_s": 11.629,
+        "iterations": 40848,
+        "stats": {
+          "singles": 983,
+          "pairs": 47,
+          "triples": 0,
+          "kicks": 147,
+          "restarts": 49
+        }
+      },
+      {
+        "seed": 2,
+        "sha256": "f596fd92bf78b2eae27460dc85da9a92f5e1efd0b7e6adeb3e52577a012670cd",
+        "seqs_b64": "AQEB//8B/wEBAf//Af//AQEBAf////8B/wEBAf8BAf///wEB/wH/////Af///wH/Af////8B////////Af//Af8BAQH/Af8B////Af8BAf8BAQEB//8BAf//AQEB//8B/wEBAQEBAf8=",
+        "elapsed_s": 11.274,
+        "iterations": 39242,
+        "stats": {
+          "singles": 892,
+          "pairs": 56,
+          "triples": 0,
+          "kicks": 144,
+          "restarts": 48
+        }
+      },
+      {
+        "seed": 2,
+        "sha256": "f596fd92bf78b2eae27460dc85da9a92f5e1efd0b7e6adeb3e52577a012670cd",
+        "seqs_b64": "AQEB//8B/wEBAf//Af//AQEBAf////8B/wEBAf8BAf///wEB/wH/////Af///wH/Af////8B////////Af//Af8BAQH/Af8B////Af8BAf8BAQEB//8BAf//AQEB//8B/wEBAQEBAf8=",
+        "elapsed_s": 11.387,
+        "iterations": 39242,
+        "stats": {
+          "singles": 892,
+          "pairs": 56,
+          "triples": 0,
+          "kicks": 144,
+          "restarts": 48
+        }
+      },
+      {
+        "seed": 3,
+        "sha256": "49a09c62aeda1b6b402cd0846be9c0b5e44877bdc4d8c5060587c4de4214f5a3",
+        "seqs_b64": "//8BAQEB//8BAf8B/////wEB/////////wH/AQEBAf///wEB/wEBAf//Af///wEB/wH///8B//8BAQH/Af8B/wH/Af//Af//Af8BAQH/AQH///////8B//8BAf//Af8B/////////wE=",
+        "elapsed_s": 9.576,
+        "iterations": 32974,
+        "stats": {
+          "singles": 764,
+          "pairs": 35,
+          "triples": 1,
+          "kicks": 123,
+          "restarts": 41
+        }
+      },
+      {
+        "seed": 3,
+        "sha256": "49a09c62aeda1b6b402cd0846be9c0b5e44877bdc4d8c5060587c4de4214f5a3",
+        "seqs_b64": "//8BAQEB//8BAf8B/////wEB/////////wH/AQEBAf///wEB/wEBAf//Af///wEB/wH///8B//8BAQH/Af8B/wH/Af//Af//Af8BAQH/AQH///////8B//8BAf//Af8B/////////wE=",
+        "elapsed_s": 9.625,
+        "iterations": 32974,
+        "stats": {
+          "singles": 764,
+          "pairs": 35,
+          "triples": 1,
+          "kicks": 123,
+          "restarts": 41
+        }
+      },
+      {
+        "seed": 4,
+        "sha256": "098f8153ebbd56537c3d8d3f3800460f70808ff669507c76561422a2d80fcc70",
+        "seqs_b64": "Af8B/wEB/////wEBAQH/Af8BAQEBAQH//wEBAf//Af8B/wH//wEBAQH/AQEB////Af8BAQH/////////AQH//wH/////Af//Af//Af///wH/AQEBAf//AQH/////Af///wH//wH/AQE=",
+        "elapsed_s": 2.728,
+        "iterations": 9357,
+        "stats": {
+          "singles": 210,
+          "pairs": 13,
+          "triples": 1,
+          "kicks": 33,
+          "restarts": 11
+        }
+      },
+      {
+        "seed": 4,
+        "sha256": "098f8153ebbd56537c3d8d3f3800460f70808ff669507c76561422a2d80fcc70",
+        "seqs_b64": "Af8B/wEB/////wEBAQH/Af8BAQEBAQH//wEBAf//Af8B/wH//wEBAQH/AQEB////Af8BAQH/////////AQH//wH/////Af//Af//Af///wH/AQEBAf//AQH/////Af///wH//wH/AQE=",
+        "elapsed_s": 2.695,
+        "iterations": 9357,
+        "stats": {
+          "singles": 210,
+          "pairs": 13,
+          "triples": 1,
+          "kicks": 33,
+          "restarts": 11
+        }
+      },
+      {
+        "seed": 5,
+        "sha256": "6648966002ba79217b87d4c517aeefc2dfc64157a11af1dd25627f95d7ca37eb",
+        "seqs_b64": "AQH///8B//8BAQH/Af8BAf8BAQEBAQH//wH///8B/////wH///8B////Af//Af8B/////wEB/wEB//////8BAf8B//8B/wEB/////wEB//8BAQH/Af8BAQH/Af8B//////8BAQEB/wE=",
+        "elapsed_s": 4.685,
+        "iterations": 16285,
+        "stats": {
+          "singles": 413,
+          "pairs": 18,
+          "triples": 0,
+          "kicks": 60,
+          "restarts": 20
+        }
+      },
+      {
+        "seed": 5,
+        "sha256": "6648966002ba79217b87d4c517aeefc2dfc64157a11af1dd25627f95d7ca37eb",
+        "seqs_b64": "AQH///8B//8BAQH/Af8BAf8BAQEBAQH//wH///8B/////wH///8B////Af//Af8B/////wEB/wEB//////8BAf8B//8B/wEB/////wEB//8BAQH/Af8BAQH/Af8B//////8BAQEB/wE=",
+        "elapsed_s": 4.628,
+        "iterations": 16285,
+        "stats": {
+          "singles": 413,
+          "pairs": 18,
+          "triples": 0,
+          "kicks": 60,
+          "restarts": 20
+        }
+      },
+      {
+        "seed": 6,
+        "sha256": "6f984ce37f3f833e93c023169377c59e20118f1a66ebff0587811cd4c4f19905",
+        "seqs_b64": "AQEBAf////////8BAf8B/wEBAf8B/wH//wEB////Af//Af////8BAf////8B////Af//AQH/Af8B//8BAQEB//8BAf//Af//AQH///8BAQH//////wEBAf8BAf8B/wEB/wEBAQEBAf8=",
+        "elapsed_s": 6.887,
+        "iterations": 25384,
+        "stats": {
+          "singles": 663,
+          "pairs": 25,
+          "triples": 0,
+          "kicks": 87,
+          "restarts": 29
+        }
+      },
+      {
+        "seed": 6,
+        "sha256": "6f984ce37f3f833e93c023169377c59e20118f1a66ebff0587811cd4c4f19905",
+        "seqs_b64": "AQEBAf////////8BAf8B/wEBAf8B/wH//wEB////Af//Af////8BAf////8B////Af//AQH/Af8B//8BAQEB//8BAf//Af//AQH///8BAQH//////wEBAf8BAf8B/wEB/wEBAQEBAf8=",
+        "elapsed_s": 6.916,
+        "iterations": 25384,
+        "stats": {
+          "singles": 663,
+          "pairs": 25,
+          "triples": 0,
+          "kicks": 87,
+          "restarts": 29
+        }
+      },
+      {
+        "seed": 7,
+        "sha256": "ff3872f6e0434a8f8dbdee82c63544859290f7a00cc44464d9b6c237cab74745",
+        "seqs_b64": "/////wH///8B/wEB/wEB//8BAQH//wEBAQEBAf8BAQH/AQH//wEB//8BAQEBAf8B/wH/////Af///wH/AQH/Af8BAQH/////AQH/Af8BAQH/AQH/Af////8BAQEBAf////8BAf8B/wE=",
+        "elapsed_s": 4.441,
+        "iterations": 14483,
+        "stats": {
+          "singles": 334,
+          "pairs": 18,
+          "triples": 0,
+          "kicks": 57,
+          "restarts": 19
+        }
+      },
+      {
+        "seed": 7,
+        "sha256": "ff3872f6e0434a8f8dbdee82c63544859290f7a00cc44464d9b6c237cab74745",
+        "seqs_b64": "/////wH///8B/wEB/wEB//8BAQH//wEBAQEBAf8BAQH/AQH//wEB//8BAQEBAf8B/wH/////Af///wH/AQH/Af8BAQH/////AQH/Af8BAQH/AQH/Af////8BAQEBAf////8BAf8B/wE=",
+        "elapsed_s": 4.537,
+        "iterations": 14483,
+        "stats": {
+          "singles": 334,
+          "pairs": 18,
+          "triples": 0,
+          "kicks": 57,
+          "restarts": 19
+        }
+      },
+      {
+        "seed": 8,
+        "sha256": "2bb3a14f5aa347845266598de8c7782298c627285d4ffecc44e7c6e8c60c31a0",
+        "seqs_b64": "/wH/AQEB/wEB//////8B/wEBAf//AQEB/wEB////Af8BAQEB//8B////AQH/Af//Af8BAf8BAQEBAQEB/wH/Af8BAQH/Af//AQEB//////8BAQH///8BAf8B/////////wH//wH//wE=",
+        "elapsed_s": 11.042,
+        "iterations": 39612,
+        "stats": {
+          "singles": 994,
+          "pairs": 38,
+          "triples": 0,
+          "kicks": 141,
+          "restarts": 47
+        }
+      },
+      {
+        "seed": 8,
+        "sha256": "2bb3a14f5aa347845266598de8c7782298c627285d4ffecc44e7c6e8c60c31a0",
+        "seqs_b64": "/wH/AQEB/wEB//////8B/wEBAf//AQEB/wEB////Af8BAQEB//8B////AQH/Af//Af8BAf8BAQEBAQEB/wH/Af8BAQH/Af//AQEB//////8BAQH///8BAf8B/////////wH//wH//wE=",
+        "elapsed_s": 11.116,
+        "iterations": 39612,
+        "stats": {
+          "singles": 994,
+          "pairs": 38,
+          "triples": 0,
+          "kicks": 141,
+          "restarts": 47
+        }
+      },
+      {
+        "seed": 9,
+        "sha256": "54f912b9f4439320996ec62a53e8a1c377a4df0819a6b15b3b7702865c43aed8",
+        "seqs_b64": "//8BAf8BAQH/AQH/AQEB////AQEBAQEBAQEB/wEB////AQH/Af8BAf//AQEBAf8B/wH//wEB/wH/Af///wH/AQEB//8B//8B/wEB/////wEBAf8BAf8BAQEB////AQEBAf//Af8B//8=",
+        "elapsed_s": 31.587,
+        "iterations": 114984,
+        "stats": {
+          "singles": 2807,
+          "pairs": 111,
+          "triples": 2,
+          "kicks": 408,
+          "restarts": 136
+        }
+      }
+    ],
+    "36": [
+      {
+        "seed": 2,
+        "sha256": "de9b4dff7f108541d617175f1ea285ef97b349d31689a57f75cb549c49297eb1",
+        "seqs_b64": "AQH/AQEBAQH/////AQH//wEB/wH///8B/wH/AQH/AQH///////8B/wH/AQEB/wEB/wH///8BAf8BAQH/Af//AQEBAQEBAQH//wEB/////wH/Af8BAf//Af8B////Af////8BAQEB/wEBAQH/////Af8BAQH//wH///8BAf////8B//8BAQH///8B/wEB//8B",
+        "elapsed_s": 29.368,
+        "iterations": 91834,
+        "stats": {
+          "singles": 1969,
+          "pairs": 57,
+          "triples": 2,
+          "kicks": 180,
+          "restarts": 60
+        }
+      },
+      {
+        "seed": 3,
+        "sha256": "fd241ae16f1a40d6c6729c9bd994ba65d771082810fa654a9c758c597f980b73",
+        "seqs_b64": "Af//Af8BAQH/////AQH///8BAf//Af8B/wH/Af8BAQH/AQH/Af8BAQEBAf8BAQEB//8BAf8BAf8B////Af//Af8BAf8B//8B/wEBAf8B/////wH/Af///////wEBAf//AQEB/wEB/wEB////Af////8B//8BAf//Af8B/////////wEBAQH///////8BAQEB",
+        "elapsed_s": 64.811,
+        "iterations": 193394,
+        "stats": {
+          "singles": 4238,
+          "pairs": 139,
+          "triples": 3,
+          "kicks": 396,
+          "restarts": 132
+        }
+      }
+    ],
+    "32": [
+      {
+        "seed": 1,
+        "sha256": "d5585fc99a768fad28127b624f996fb7122e30ef22897d7fb6bd12e98cfd02f2",
+        "seqs_b64": "/wEBAQEB//8B/wEB/wEB////Af8B/wH//wEBAf///wEB//8B//8B//////8BAf8BAQEBAQEB/wEBAQEB/wH///8BAf///wH/////Af8BAQEB/////wH///8BAQH/Af8B/wH/AQH/AQH//wH/Af8BAf//Af//AQEB////////Af8=",
+        "elapsed_s": 34.173,
+        "iterations": 99393,
+        "stats": {
+          "singles": 2232,
+          "pairs": 80,
+          "triples": 2,
+          "kicks": 252,
+          "restarts": 84
+        }
+      },
+      {
+        "seed": 4,
+        "sha256": "ad253f9592d9da1704dce57eeaab81fffb17994952bacdbf9a30a92d3a0c0637",
+        "seqs_b64": "AQEB/wH///8B/wEB/wEBAQH/Af8B/wEB/wEBAQEB/wH/AQEB/////wEB////AQEB/wEBAf8B//8B////Af///wEBAQEBAQH/AQH/Af////8B//8BAQH//////wEBAf///wEB////AQH/AQH/Af8BAQH//wEBAf8B//8B/wEB//8=",
+        "elapsed_s": 56.529,
+        "iterations": 168938,
+        "stats": {
+          "singles": 3847,
+          "pairs": 150,
+          "triples": 2,
+          "kicks": 411,
+          "restarts": 137
+        }
+      },
+      {
+        "seed": 6,
+        "sha256": "9145f2db23e440df45bda7403f4a7046ba7ec22b482a43c1ab4a47fedbbedf1d",
+        "seqs_b64": "Af//Af8B//8BAf8BAf8B/wEB//8BAf8B/wEBAQEB//8B/wH/AQEB//8B/wEB/wH/AQEBAQEB//8BAQH//wEBAf8BAQH/AQEB/wH//wH///////////8B/wEBAf//AQH//wEB//8B//8BAQH//////wH/Af8BAf///////wEBAQE=",
+        "elapsed_s": 4.906,
+        "iterations": 14909,
+        "stats": {
+          "singles": 352,
+          "pairs": 8,
+          "triples": 1,
+          "kicks": 36,
+          "restarts": 12
+        }
+      },
+      {
+        "seed": 9,
+        "sha256": "1cf61b2c8e5fb2a800e4aa7ec8c3cd084079d84425b57d202259f01fde47e1ee",
+        "seqs_b64": "AQEB//8BAf//Af//Af8B//8B//8BAQH/Af8BAQEB//8BAf8B/wEBAf///wH/Af8BAQH//wEBAQH/AQH/////////AQH/AQH//wH/AQH//wEB/wH/Af//Af8B//8BAf8B/wH///8BAQEB//////////8BAf////8B////////Af8=",
+        "elapsed_s": 7.696,
+        "iterations": 24454,
+        "stats": {
+          "singles": 585,
+          "pairs": 12,
+          "triples": 0,
+          "kicks": 57,
+          "restarts": 19
+        }
+      }
+    ],
+    "30": [
+      {
+        "seed": 1,
+        "sha256": "a632cba8b91323ef9f80e3d5d7f7a676b1cb20d52fd93df1017a65708d5d09d5",
+        "seqs_b64": "Af//AQEBAQH/////AQEBAf8BAf8B/wEB//8BAf8B/wEBAf//Af8B//8B//8B////AQEBAf8BAQH/AQEBAf8B/wEBAQH//wEB/wEB//8BAf///////wH/Af8BAQEBAf8B/////wEBAQH/AQEBAQH/AQEB/wEB//8B",
+        "elapsed_s": 5.057,
+        "iterations": 18697,
+        "stats": {
+          "singles": 436,
+          "pairs": 15,
+          "triples": 0,
+          "kicks": 48,
+          "restarts": 16
+        }
+      },
+      {
+        "seed": 2,
+        "sha256": "068a16ebe9b4485c016582204dbeed381079cb2c1476eefabe206a9e2d5a413b",
+        "seqs_b64": "/wEBAf8B/wEBAQH/Af8B/wEBAQH/AQEBAf//////AQH//wEB//8B/wEB/wEB/wEB////AQH///////8B//8B/wEBAQEB/wEB/wEB/wH/Af//AQEBAf///wEBAQEB//8BAf8B/wEBAf8BAf///wH///8BAQEBAf8B",
+        "elapsed_s": 38.167,
+        "iterations": 131147,
+        "stats": {
+          "singles": 3085,
+          "pairs": 104,
+          "triples": 6,
+          "kicks": 366,
+          "restarts": 122
+        }
+      },
+      {
+        "seed": 3,
+        "sha256": "e22d758d190258257f146f1efb43c4c407bac246345b27a38461b81b8aec034b",
+        "seqs_b64": "AQH//wH/Af//AQH/AQH/AQEB/////wH/AQEBAf//Af//Af8BAf//Af////8B/wH/AQH///8BAf8BAQH//wH//wH///8BAf//Af///////wH/Af8BAQEBAQEBAf//AQEB////AQEBAQH/Af8B/wH//////wEB//8B",
+        "elapsed_s": 26.03,
+        "iterations": 93322,
+        "stats": {
+          "singles": 2218,
+          "pairs": 67,
+          "triples": 0,
+          "kicks": 252,
+          "restarts": 84
+        }
+      },
+      {
+        "seed": 4,
+        "sha256": "abb09fe2e450e862f7d9f4a6f8fdb9789e49a861f38cb5a0e36c20b4c695f3f3",
+        "seqs_b64": "AQEB//8BAf8B////Af8B/wEB/wEBAQEBAQEB/wEBAf//AQEBAf///wEBAf//Af///wH/Af///////wEBAf//Af8B/wEBAf//Af8B//////8BAf//Af8BAf//AQEBAQH/AQH/Af//AQEB/wEB//8B/wH/AQEBAQH/",
+        "elapsed_s": 33.804,
+        "iterations": 115343,
+        "stats": {
+          "singles": 2648,
+          "pairs": 94,
+          "triples": 1,
+          "kicks": 330,
+          "restarts": 110
+        }
+      },
+      {
+        "seed": 5,
+        "sha256": "4a8cab8dfdb56c3bcbad68bf65e4d481ce650150bc6eec5b6e18dc705db718f7",
+        "seqs_b64": "//8B/////wEB/wEBAQH/AQH/Af8B/wEBAQH/AQEBAQH//////wEB/wEB//8B//8B//8BAQEB/wH/AQH/AQH//wH///8BAQH/AQEB/wEBAQH//////wH/AQEB//8B/wH/Af//Af//AQEBAQH/Af8BAQH///8BAQH/",
+        "elapsed_s": 12.881,
+        "iterations": 45435,
+        "stats": {
+          "singles": 1026,
+          "pairs": 46,
+          "triples": 1,
+          "kicks": 123,
+          "restarts": 41
+        }
+      },
+      {
+        "seed": 6,
+        "sha256": "a6608e260a652930c7b21a3d21b8901e24e1b3daf80c74479adf715fd162ca5f",
+        "seqs_b64": "/wH//wEBAf8BAf8B////Af//Af8BAf///wEBAf8BAQEB/wH/AQEBAQH/AQEB/////////wH//wH//wH/AQEB/wEB////AQEB/wEBAf//Af//Af////8BAQEBAf8B/wH/Af8BAQEB//////8B/wH/////AQH//wEB",
+        "elapsed_s": 48.679,
+        "iterations": 170726,
+        "stats": {
+          "singles": 3929,
+          "pairs": 133,
+          "triples": 7,
+          "kicks": 462,
+          "restarts": 154
+        }
+      },
+      {
+        "seed": 7,
+        "sha256": "6c9a4a98a9eb17e91cd0c12bc460f6d31560958453f8253f3f112fece8c71fc4",
+        "seqs_b64": "/wEBAQH/Af8B/wH/Af8B//////8BAQEB/wH/AQEBAf//Af8B/wEB/wEBAQEBAf//Af///wEB/wEBAf8BAQH//wEBAf///wEB/wEBAQEB//8BAf//AQEBAQEB//8B////////AQH/////AQH//wH//wH/AQH/AQH/",
+        "elapsed_s": 33.368,
+        "iterations": 112973,
+        "stats": {
+          "singles": 2612,
+          "pairs": 98,
+          "triples": 1,
+          "kicks": 318,
+          "restarts": 106
+        }
+      },
+      {
+        "seed": 8,
+        "sha256": "e011846ec09f743aceb994c13745852c79af857205f88bf6ca98bcb0df0bc766",
+        "seqs_b64": "/wH/Af8B/////wEB////////Af8BAf///wH/AQH//wH/Af8BAQEBAf8B/wEB////AQEBAQH/AQH/////Af8B//8BAf///////wEB//8BAf8B//8B//8B//8BAQH///8BAf//AQH/AQH//////wH///8BAQEBAQEB",
+        "elapsed_s": 28.891,
+        "iterations": 100153,
+        "stats": {
+          "singles": 2265,
+          "pairs": 89,
+          "triples": 3,
+          "kicks": 273,
+          "restarts": 91
+        }
+      },
+      {
+        "seed": 9,
+        "sha256": "f7f7c65569e4e8b297a64c0ff83912ac8d7b08dbe22487f96916e28eb7acb71f",
+        "seqs_b64": "Af//Af8B/wEBAf8BAf8BAf8B/wH/AQEBAQEB/wH/AQH///8B////////AQEB////Af8B/wEB//////8B/wEBAf8BAQEBAf///wEBAQH/Af///wH//wH//wEB////Af//AQEB//8BAQEB/wEBAQH/Af//Af//Af//",
+        "elapsed_s": 1.038,
+        "iterations": 3701,
+        "stats": {
+          "singles": 81,
+          "pairs": 4,
+          "triples": 0,
+          "kicks": 9,
+          "restarts": 3
+        }
+      }
+    ],
+    "28": [
+      {
+        "seed": 0,
+        "sha256": "7d7f7a926386f9933fd7c9611a5ed2e2f394b06d444edfaa23905f84a2324cd9",
+        "seqs_b64": "AQEBAf8BAQEBAQEB//8BAf8BAf8BAQH//wEBAQEBAQEB////AQEBAQEBAf////8BAf8B//8B/wH//wH//wEBAf8B/wEB////Af//Af8B////Af8B/wEB/wEB/wEBAf///wH//wH/Af8BAQH/AQEB/w==",
+        "elapsed_s": 10.321,
+        "iterations": 36407,
+        "stats": {
+          "singles": 884,
+          "pairs": 33,
+          "triples": 0,
+          "kicks": 117,
+          "restarts": 39
+        }
+      },
+      {
+        "seed": 1,
+        "sha256": "9e5d9d8b2a45efd40a21dff5da736f6b962878148b6b540ef0be2482fd5b1a9b",
+        "seqs_b64": "/////wH/AQH///8BAQEB/wEB/wEB/wH/////Af8BAf//AQEBAf//Af8B/////wH/Af8B//8BAQH//////wH/Af8B/wH//wEBAQEBAf8BAf//AQH/Af8B/wEB/wEBAQEBAQH//wEB//8BAf8BAQH//w==",
+        "elapsed_s": 42.724,
+        "iterations": 148571,
+        "stats": {
+          "singles": 3494,
+          "pairs": 138,
+          "triples": 3,
+          "kicks": 471,
+          "restarts": 157
+        }
+      },
+      {
+        "seed": 2,
+        "sha256": "96900517efc5063245752dd7e4be1653cd47ce204d455593f2cf93659c507960",
+        "seqs_b64": "////////Af//Af//Af8BAf//Af///wH/////AQH/AQEBAf//AQH/Af8B////AQH//////wEB/wH/Af///wH//wEB////Af8B/////wEB/wH//wEBAf8BAQH/////AQEBAQEBAf8B/wH///8BAf8B/w==",
+        "elapsed_s": 2.052,
+        "iterations": 8422,
+        "stats": {
+          "singles": 193,
+          "pairs": 7,
+          "triples": 0,
+          "kicks": 21,
+          "restarts": 7
+        }
+      },
+      {
+        "seed": 3,
+        "sha256": "3ff6ec498e6a5cba737815e5e99b26b91a89e3185c5b8999d0ed99a3c9409512",
+        "seqs_b64": "/////wEBAQH/Af//AQEB/wH/AQH/AQEBAQH//wH/////AQH/Af//AQH/Af//Af///wH//wEB/wEB/wH/AQH///////////8BAf//AQH/AQEBAf8BAf8BAQH///8B//8BAQH//wH///////8BAQH/AQ==",
+        "elapsed_s": 12.605,
+        "iterations": 42299,
+        "stats": {
+          "singles": 965,
+          "pairs": 44,
+          "triples": 2,
+          "kicks": 138,
+          "restarts": 46
+        }
+      },
+      {
+        "seed": 4,
+        "sha256": "8177454626d87f72da577917e9a5621594ffdb91bf3dfd1bd0ca32b7ebdbb335",
+        "seqs_b64": "/wH//wEBAQEBAf8B/wEBAf//Af8BAQEBAQH//wH/Af8BAQH//wH/Af///wEB/wEB////AQH///8BAf//AQH///8B//////8B/wEBAQH//wH//wH///////8BAf//Af//////Af8BAf8B////Af8B/w==",
+        "elapsed_s": 25.655,
+        "iterations": 91219,
+        "stats": {
+          "singles": 2186,
+          "pairs": 82,
+          "triples": 2,
+          "kicks": 282,
+          "restarts": 94
+        }
+      },
+      {
+        "seed": 5,
+        "sha256": "592689fffb6bf166678e9a8d94fd1db945014c4b0fc0cb8eb018865d1c2f6d6c",
+        "seqs_b64": "//8BAQH//wH/AQEBAf///wH/AQH///8B////Af///wH//wH//wEBAQH//wH/Af8BAQEBAf8B/////wEB/wEBAQEB//8B/wEBAf8BAQEB/wEB/wH/AQEB/wEBAf8BAf///////wH//wEBAf8B/wH//w==",
+        "elapsed_s": 45.054,
+        "iterations": 152907,
+        "stats": {
+          "singles": 3557,
+          "pairs": 147,
+          "triples": 2,
+          "kicks": 495,
+          "restarts": 165
+        }
+      },
+      {
+        "seed": 6,
+        "sha256": "7b728c362aca3b5556a205957b84cdabfbe678cbb5e9088259fb70ad35c6a018",
+        "seqs_b64": "AQEB////////AQH/Af////8BAQEBAQEB/wEB/wH///8BAf8B/wH/AQEBAf8BAf8B////AQH///8B/wEBAf//AQH/Af8BAQH/AQEBAQEB/wEBAf//AQH//wH/AQH/Af//AQH/AQH/Af8B/wEBAf8BAQ==",
+        "elapsed_s": 27.955,
+        "iterations": 96681,
+        "stats": {
+          "singles": 2287,
+          "pairs": 92,
+          "triples": 1,
+          "kicks": 306,
+          "restarts": 102
+        }
+      },
+      {
+        "seed": 7,
+        "sha256": "b7b1adfdc57c66d3ecb1ace8303e7b482a98a13acd28e6bc21ce3f054a1fe9f6",
+        "seqs_b64": "Af//////AQH/AQEBAf8B//////8BAQH//wH/AQEBAQH/Af//Af8B////////AQH/Af//AQH/Af///wH//wEB////AQEB////AQH//wH/Af8B////////////AQH//wH///8B/wH//wEBAf8BAf8BAQ==",
+        "elapsed_s": 22.957,
+        "iterations": 75507,
+        "stats": {
+          "singles": 1724,
+          "pairs": 77,
+          "triples": 2,
+          "kicks": 246,
+          "restarts": 82
+        }
+      },
+      {
+        "seed": 8,
+        "sha256": "935da55210de56d75d7aa7873ec91ba28848164fd7397eddfa83a3bac0ffb50f",
+        "seqs_b64": "//8B/wEB/wEB////AQH//wEBAf8BAf8BAQEBAQEBAf8BAf//Af///wH/////AQEBAf////8B////////Af8BAf8B/wH/Af////8BAQEB//8B/wEBAQH/Af//AQH/AQEB////AQH/Af8B/wH///8BAQ==",
+        "elapsed_s": 30.159,
+        "iterations": 102451,
+        "stats": {
+          "singles": 2480,
+          "pairs": 90,
+          "triples": 1,
+          "kicks": 333,
+          "restarts": 111
+        }
+      },
+      {
+        "seed": 9,
+        "sha256": "2b607d45a2a85a0605e0c7f2b652185e5de412bc19e216db8f2927ffb5cd8382",
+        "seqs_b64": "/wEB/////wEBAQH///////8B/wEB/wEB//8B//8BAf///wH/////Af///////wEB/wEB//8BAf8BAQH//wH/Af///wEB/wEBAf8B/wH//////wH/AQH//wEBAQEBAf8B/wH/Af8BAf///wEB/wEB/w==",
+        "elapsed_s": 6.431,
+        "iterations": 22473,
+        "stats": {
+          "singles": 512,
+          "pairs": 26,
+          "triples": 1,
+          "kicks": 69,
+          "restarts": 23
+        }
+      }
+    ],
+    "24": [
+      {
+        "seed": 0,
+        "sha256": "3881fbe5bf39ec778e4ddce366e9eb30b08e4aa03e2f3b70f05a0769857dbe0f",
+        "seqs_b64": "Af8B////Af////////8B/wH///8B/wH//wH//wEBAQEB//////8B/wH/AQH/Af//Af8B////AQH/AQEBAf8BAQH/AQH///////8B//8BAf///wEBAf///wEB////Af//",
+        "elapsed_s": 7.659,
+        "iterations": 26941,
+        "stats": {
+          "singles": 728,
+          "pairs": 22,
+          "triples": 1,
+          "kicks": 114,
+          "restarts": 38
+        }
+      },
+      {
+        "seed": 1,
+        "sha256": "2887a117630323543ff2f7dd0f7b1db68d1ae9ded171b2d44b6d860eac14432d",
+        "seqs_b64": "/wH/AQH//wH/AQH//wH//wH/Af////8BAf////8B////AQEB/wH/AQEBAQEB////AQH/Af8B//8BAQEBAQH/AQH//wH///8BAQH//wEBAf8B/wH///////8BAf///wH/",
+        "elapsed_s": 4.033,
+        "iterations": 13909,
+        "stats": {
+          "singles": 367,
+          "pairs": 13,
+          "triples": 0,
+          "kicks": 57,
+          "restarts": 19
+        }
+      },
+      {
+        "seed": 2,
+        "sha256": "804f4a1d030aa8d942e0d014d81a76b08bc8b7bc43a7a43175b815f63513ccda",
+        "seqs_b64": "AQEB//8BAf8B//8B////Af8B/wEBAf///wEB/wH//wH/AQEBAf8B////AQEB/////wEBAQEB/wEBAQH///8B/wEBAQH/AQH//wEBAf8BAQEBAQH/AQEB//8BAf//AQH/",
+        "elapsed_s": 3.722,
+        "iterations": 13441,
+        "stats": {
+          "singles": 350,
+          "pairs": 10,
+          "triples": 0,
+          "kicks": 54,
+          "restarts": 18
+        }
+      },
+      {
+        "seed": 3,
+        "sha256": "158c3e1b7d6001a171aa66933a740be6f8cc38635ffc8fe3172a2bcb1fc80376",
+        "seqs_b64": "Af8BAQH/AQH///8B//8BAQH/AQEB/////wEBAQEB/wEB/wEB/wEBAf//////Af8B/////wEBAf//Af//AQEBAf8B/wEBAf//AQH/Af//Af////8B/wH/Af8B//////8B",
+        "elapsed_s": 0.613,
+        "iterations": 2359,
+        "stats": {
+          "singles": 57,
+          "pairs": 2,
+          "triples": 0,
+          "kicks": 9,
+          "restarts": 3
+        }
+      },
+      {
+        "seed": 4,
+        "sha256": "b0206c9af67838c8d60c5ffc5e54a40ac2a0733c49995eb3fbb36e6eb28c9b55",
+        "seqs_b64": "Af8BAQEBAf8B/wH/Af////8BAQEB//8BAf8B//8BAQH///8B//8B/wEB//8B/////wH/AQEB//////8B//8BAQH//wEB//8B/wH///8B//8B/wEB////Af8BAQEBAQEB",
+        "elapsed_s": 2.487,
+        "iterations": 8639,
+        "stats": {
+          "singles": 205,
+          "pairs": 10,
+          "triples": 1,
+          "kicks": 36,
+          "restarts": 12
+        }
+      },
+      {
+        "seed": 5,
+        "sha256": "079af66e11b8da5253c2203e36cd6e13e49286a773503793ad10a433e7fbcc76",
+        "seqs_b64": "Af///wEBAQEBAf//Af//Af8B////Af//AQEB/wEBAQH/AQEBAf///wEB/wEB/wEB/////wH/Af///wEB/wEBAf8BAf//Af8BAQEBAf8B////Af8B//8B/wEBAf////8B",
+        "elapsed_s": 3.312,
+        "iterations": 11217,
+        "stats": {
+          "singles": 271,
+          "pairs": 17,
+          "triples": 1,
+          "kicks": 48,
+          "restarts": 16
+        }
+      },
+      {
+        "seed": 6,
+        "sha256": "c45c9c9ff6138266feeab6cdb3e506f6c0c0c8b6e17a6ffe37581c4efeb051be",
+        "seqs_b64": "Af////8B////Af////8B//8BAQEBAf8B/////////wEBAQEB/////wH//wEB//8BAf//Af8B/wH/Af//AQH/Af8B/wEB//8B//8B//8B//8BAQH/////AQEB//8BAQH/",
+        "elapsed_s": 0.257,
+        "iterations": 1303,
+        "stats": {
+          "singles": 33,
+          "pairs": 3,
+          "triples": 0,
+          "kicks": 3,
+          "restarts": 1
+        }
+      },
+      {
+        "seed": 7,
+        "sha256": "03b0e0b5714dc7b284f7b417de44638cb3a9304d03c2b879722330d830f26165",
+        "seqs_b64": "Af//AQEBAf//Af8BAf8B/wH//wEBAQH//wEBAf////8B//8B//////8B/wEBAQH//////wEB/wH///8BAf//Af8B/wH/Af///wEB/wEBAQEBAQEBAf///wH///8B//8B",
+        "elapsed_s": 11.317,
+        "iterations": 41587,
+        "stats": {
+          "singles": 1047,
+          "pairs": 55,
+          "triples": 1,
+          "kicks": 165,
+          "restarts": 55
+        }
+      },
+      {
+        "seed": 8,
+        "sha256": "b8c185a8082710cf14290f58cabd9367a166c4ce88170c342ff3d3b4a521357f",
+        "seqs_b64": "////AQH///8BAf////////8BAf8BAf8BAQH//wEBAf8B//8B/wH/AQEB/wH//wH///8B////Af8B/wH///////8BAQEBAf8BAf////8BAf8BAf8BAQH//wH/AQH/Af//",
+        "elapsed_s": 8.547,
+        "iterations": 31757,
+        "stats": {
+          "singles": 799,
+          "pairs": 37,
+          "triples": 3,
+          "kicks": 126,
+          "restarts": 42
+        }
+      },
+      {
+        "seed": 9,
+        "sha256": "5c92f137a43929a9287bde5a032fb101a475b062e84cc374c3f2c42363e7a650",
+        "seqs_b64": "AQEB////AQEBAQEB/wEBAQH/AQEB////Af8B/wEB/wH//////wEBAQH//wEB////Af//Af//Af8B/wEBAf8B/wH/AQH//wEB////Af////8B/wH/AQH//wH//wEB//8B",
+        "elapsed_s": 0.411,
+        "iterations": 1701,
+        "stats": {
+          "singles": 65,
+          "pairs": 1,
+          "triples": 0,
+          "kicks": 6,
+          "restarts": 2
+        }
+      }
+    ]
+  }
+}
