@@ -28,9 +28,17 @@ def _update_best(
 
 
 class SearchStats:
-    """Per-phase hit counters for solver diagnostics."""
+    """Hit counters + streak histogram.  One place for all solver diagnostics."""
 
-    __slots__ = ("kicks", "pairs", "restarts", "singles", "triples")
+    __slots__ = (
+        "_streak",
+        "kicks",
+        "pairs",
+        "restarts",
+        "singles",
+        "singles_streaks",
+        "triples",
+    )
 
     def __init__(self) -> None:
         self.singles: int = 0
@@ -38,12 +46,51 @@ class SearchStats:
         self.triples: int = 0
         self.kicks: int = 0
         self.restarts: int = 0
+        self.singles_streaks: list[int] = []
+        self._streak: int = 0
 
-    def __repr__(self) -> str:
-        return (
-            f"single={self.singles} pair={self.pairs} triple={self.triples}"
-            f" kick={self.kicks} restart={self.restarts}"
-        )
+    def _hit_single(self) -> None:
+        self.singles += 1
+        self._streak += 1
+
+    def _hit_other(self) -> None:
+        if self._streak > 0:
+            self.singles_streaks.append(self._streak)
+            self._streak = 0
+
+    def _flush(self) -> None:
+        if self._streak > 0:
+            self.singles_streaks.append(self._streak)
+            self._streak = 0
+
+    def to_dict(self) -> dict[str, object]:
+        """Full stats for JSON persistence.  All keys are stable public API."""
+        self._flush()
+        return {
+            "singles": self.singles,
+            "pairs": self.pairs,
+            "triples": self.triples,
+            "kicks": self.kicks,
+            "restarts": self.restarts,
+            "singles_streaks": self.singles_streaks,
+        }
+
+    def display(self) -> str:
+        """Compact one-line summary for CLI output."""
+        self._flush()
+        parts = [
+            f"S={self.singles}",
+            f"P={self.pairs}",
+            f"T={self.triples}",
+            f"K={self.kicks}",
+            f"R={self.restarts}",
+        ]
+        if self.singles_streaks:
+            s = self.singles_streaks
+            parts.append(f"strk={sum(s) / len(s):.1f}/{max(s)}")
+        else:
+            parts.append("strk=-")
+        return " ".join(parts)
 
 
 def search(
@@ -94,7 +141,7 @@ def search(
             if e < cur_e:
                 cur_e = tracker.accept(cur_seq, s, c)
                 improved = True
-                stats.singles += 1
+                stats._hit_single()
                 break
 
         if steps <= 0:
@@ -118,6 +165,7 @@ def search(
                 cur_e = result
                 improved = True
                 stats.pairs += 1
+                stats._hit_other()
                 rescue_streak += 1
                 if rescue_streak >= 2:
                     rescue_mode = True
@@ -131,6 +179,7 @@ def search(
                     cur_e = result
                     improved = True
                     stats.triples += 1
+                    stats._hit_other()
 
         # Phase 4: Kick — test via band, commit via build, hard-restart if stuck
         if not improved and steps > 0 and cur_e > 0:
@@ -150,7 +199,6 @@ def search(
                     kick_streak = 0
                 else:
                     kick_streak += 1
-                    # hard restart after 3 failed kicks: new random seq
                     if kick_streak >= 3:
                         for s in range(n_seqs):
                             cur_seq[s] = rng.choice(np.array([-1, 1], dtype=np.int8), size=n_cols)
@@ -158,6 +206,7 @@ def search(
                         cur_e = tracker.energy()
                         kick_streak = 0
                         stats.restarts += 1
+                        stats._hit_other()
             else:
                 for s in range(n_seqs):
                     cur_seq[s, int(cols[s])] *= -1
@@ -165,6 +214,7 @@ def search(
                 cur_e = tracker.energy()
             steps -= 1
             stats.kicks += 1
+            stats._hit_other()
             rescue_mode = False
             rescue_streak = 0
 
@@ -183,12 +233,7 @@ def _rescue(
     mode: str = "first",
     narrowed: list[tuple[int, int]] | None = None,
 ) -> int | None:
-    """Try width-bit combinations. Returns improved energy or None.
-
-    mode="first": stop at first improvement (fast descent).
-    mode="best":  scan all, take best (for deep plateaus).
-    narrowed:     optional pre-filtered candidate list for "best" mode.
-    """
+    """Try width-bit combinations. Returns improved energy or None."""
     band_rows = tracker._rows_band
     band_cols = tracker._cols_band
     if not band_rows or not band_cols:

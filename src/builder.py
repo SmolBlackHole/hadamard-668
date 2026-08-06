@@ -117,8 +117,6 @@ class Builder:
             "gs4_group": self._build_group,
         }[kind]
 
-        self.label: str = " [2N]" if kind == "golay_2n" else ""
-
         # lazy band-index tables (int16, ~4n entries per position)
         self._band: (
             tuple[list[list[npt.NDArray[np.int16]]], list[list[npt.NDArray[np.int16]]]] | None

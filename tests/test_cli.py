@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from run import derive_seeds
+from run import _execute_single, _fmt_time
 
 
 def test_run_help_works() -> None:
@@ -26,5 +26,13 @@ def test_run_help_works() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_derive_seeds() -> None:
-    assert derive_seeds(40, 3) == [40, 41, 42]
+def test_fmt_time() -> None:
+    assert _fmt_time(0.0005) == "500us"
+    assert _fmt_time(0.5) == "500ms"
+    assert _fmt_time(5.0) == "5.0s"
+
+
+def test_execute_single_smoke() -> None:
+    r = _execute_single("gs4", 5, 2000, 42)
+    assert r.metrics.energy == 0
+    assert r.sequences is not None

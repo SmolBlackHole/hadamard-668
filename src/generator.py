@@ -10,6 +10,7 @@ import numpy.typing as npt
 
 from builder import Builder
 from metrics import Metrics, check_orthogonality
+from solver import SearchStats
 from solver import search as ils_search
 from tracker import GramTracker
 
@@ -22,7 +23,15 @@ class Result:
     seed: int
     iterations: int = 0
     sequences: npt.NDArray[np.int8] | None = None
-    stats: dict[str, int] | None = None
+    stats: SearchStats | None = None
+
+    def __str__(self) -> str:
+        order = self.matrix.shape[0]
+        head = f"OK {order}x{order}" if self.metrics.energy == 0 else f"e={self.metrics.energy}"
+        line = f"seed={self.seed:<4} {head}  {self.elapsed:.1f}s"
+        if self.stats:
+            line += "  " + self.stats.display()
+        return line
 
 
 class Generator:
@@ -79,12 +88,6 @@ class Generator:
         )
 
         metrics = check_orthogonality(matrix)
-        label = b.label
-        if best_e == 0 and metrics.energy == 0:
-            print(f"  seed={seed} VALID {matrix.shape[0]}x{matrix.shape[1]}{label} {elapsed:.1f}s")
-        else:
-            print(f"  seed={seed} best_e={best_e}{label} {elapsed:.1f}s")
-
         return Result(
             matrix=matrix,
             metrics=metrics,
@@ -92,13 +95,7 @@ class Generator:
             seed=seed,
             iterations=iters,
             sequences=best_seq,
-            stats={
-                "singles": stats.singles,
-                "pairs": stats.pairs,
-                "triples": stats.triples,
-                "kicks": stats.kicks,
-                "restarts": stats.restarts,
-            },
+            stats=stats,
         )
 
     def _tensor_search(self, steps: int, seed: int, started: float) -> Result:
@@ -123,9 +120,4 @@ class Generator:
         H = np.kron(r1.matrix, r2.matrix)
         m = check_orthogonality(H)
         elapsed = time.perf_counter() - started
-        if m.energy == 0:
-            print(
-                f"  seed={seed} VALID {H.shape[0]}x{H.shape[1]}"
-                f" [tensor {r1.matrix.shape[0]}x{r2.matrix.shape[0]}] {elapsed:.1f}s"
-            )
         return Result(matrix=H, metrics=m, elapsed=elapsed, seed=seed)

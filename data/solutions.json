@@ -767,6 +767,55 @@
           "restarts": 2
         }
       }
+    ],
+    "6": [
+      {
+        "seed": 0,
+        "sha256": "8da9cf6be26ac0a84eed80bcb9e88ae2f0ae1a2166b5478df56137a4da9605fb",
+        "seqs_b64": "/wEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB",
+        "solved": true,
+        "energy": 0,
+        "elapsed_s": 1.0,
+        "iterations": 100
+      },
+      {
+        "seed": 42,
+        "sha256": "452eeda01e540bd5ad00a797787a7cb39a3ebb7f60a49bb6751281c76969c659",
+        "seqs_b64": "AQEB//8B/wH//wEBAQEBAQH/Af8B//8B",
+        "solved": true,
+        "energy": 0,
+        "elapsed_s": 0.352,
+        "iterations": 1,
+        "stats": {
+          "singles": 1,
+          "pairs": 0,
+          "triples": 0,
+          "kicks": 0,
+          "restarts": 0,
+          "singles_streaks": [
+            1
+          ]
+        }
+      },
+      {
+        "seed": 42,
+        "sha256": "8da9cf6be26ac0a84eed80bcb9e88ae2f0ae1a2166b5478df56137a4da9605fb",
+        "seqs_b64": "/wEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB",
+        "solved": true,
+        "energy": 0,
+        "elapsed_s": 1.0,
+        "iterations": 100,
+        "stats": {
+          "singles": 3,
+          "pairs": 1,
+          "triples": 0,
+          "kicks": 0,
+          "restarts": 0,
+          "singles_streaks": [
+            3
+          ]
+        }
+      }
     ]
   }
 }

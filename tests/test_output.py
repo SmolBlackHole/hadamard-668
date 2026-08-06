@@ -2,55 +2,96 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import numpy as np
 
+from generator import Result
 from metrics import Metrics
-from output import save
+from output import load_runs, save_run
+from solver import SearchStats
 
 
-def test_save_writes_csv_and_json(tmp_path: Path) -> None:
-    matrix = np.array([[1, 1], [1, -1]], dtype=np.int8)
-    sha = save(
-        matrix,
-        Metrics(energy=0, orthogonal_pairs=0, max_abs_correlation=0),
-        tmp_path / "run",
-        strategy="gs4",
-        seed=42,
-        steps=5000,
-        elapsed=1.5,
-        order=2,
-        iterations=10,
+def _make_result(
+    seed: int,
+    energy: int,
+    elapsed: float = 1.0,
+    iterations: int = 100,
+    stats: SearchStats | None = None,
+) -> Result:
+    seqs = np.ones((4, 6), dtype=np.int8)
+    if energy == 0:
+        seqs[0, 0] = -1
+    order = 24
+    matrix = np.ones((order, order), dtype=np.int8) if energy > 0 else _hadamard_24(seqs)
+    return Result(
+        matrix=matrix,
+        metrics=Metrics(energy=energy, orthogonal_pairs=0, max_abs_correlation=0),
+        elapsed=elapsed,
+        seed=seed,
+        iterations=iterations,
+        sequences=seqs,
+        stats=stats,
     )
-    assert len(sha) == 64
-    assert (tmp_path / "run" / "run.json").exists()
-
-    data = json.loads((tmp_path / "run" / "run.json").read_text())
-    assert data["strategy"] == "gs4"
-    assert data["seed"] == 42
-    assert data["steps"] == 5000
-    assert data["elapsed"] == 1.5
-    assert data["energy"] == 0
-    assert data["max_abs_correlation"] == 0
-    assert data["is_solution"] is True
-    assert data["iterations"] == 10
 
 
-def test_save_non_solution_skips_audit(tmp_path: Path) -> None:
-    matrix = np.ones((4, 4), dtype=np.int8)
-    sha = save(
-        matrix,
-        Metrics(energy=16, orthogonal_pairs=0, max_abs_correlation=0),
-        tmp_path / "run",
-        strategy="gs4",
-        seed=1,
-        steps=100,
-        elapsed=0.1,
-        order=4,
-    )
-    data = json.loads((tmp_path / "run" / "run.json").read_text())
-    assert data["is_solution"] is False
-    assert data["energy"] == 16
-    assert len(sha) == 64
+def _hadamard_24(seqs: np.ndarray) -> np.ndarray:
+    """Build a real Hadamard matrix from sequences for testing."""
+    from builder import Builder
+
+    b = Builder(kind="gs4", n=6)
+    return b.build(seqs)
+
+
+def test_save_and_load_solution(tmp_path: Path) -> None:
+    stats = SearchStats()
+    stats.singles = 3
+    stats.pairs = 1
+    stats.singles_streaks = [3]
+    stats._flush()
+
+    path = tmp_path / "runs.json"
+    save_run(path, "gs4", 6, _make_result(42, energy=0, stats=stats))
+
+    data = load_runs(path)
+    runs = data["gs4"]["6"]
+    assert len(runs) == 1
+    r = runs[0]
+    assert r["seed"] == 42
+    assert r["solved"]
+    assert r["energy"] == 0
+    assert r["elapsed_s"] == 1.0
+    assert r["iterations"] == 100
+    assert r["stats"]["singles"] == 3
+    assert r["stats"]["pairs"] == 1
+    assert r["stats"]["singles_streaks"] == [3]
+    assert len(r["sha256"]) == 64
+    assert len(r["seqs_b64"]) > 0
+
+
+def test_save_and_load_failure(tmp_path: Path) -> None:
+    path = tmp_path / "runs.json"
+    save_run(path, "gs4", 6, _make_result(1, energy=16, elapsed=3.0, iterations=5000))
+
+    data = load_runs(path)
+    r = data["gs4"]["6"][0]
+    assert not r["solved"]
+    assert r["energy"] == 16
+    assert r["elapsed_s"] == 3.0
+    assert r["iterations"] == 5000
+
+
+def test_load_empty_dataset(tmp_path: Path) -> None:
+    assert load_runs(tmp_path / "nonexistent.json") == {}
+
+
+def test_multiple_runs_same_n(tmp_path: Path) -> None:
+    path = tmp_path / "runs.json"
+    save_run(path, "gs4", 6, _make_result(0, energy=0, elapsed=1.0, iterations=100))
+    save_run(path, "gs4", 6, _make_result(1, energy=4, elapsed=2.0, iterations=200))
+
+    data = load_runs(path)
+    runs = data["gs4"]["6"]
+    assert len(runs) == 2
+    assert [r["seed"] for r in runs] == [0, 1]
+    assert [r["solved"] for r in runs] == [True, False]
