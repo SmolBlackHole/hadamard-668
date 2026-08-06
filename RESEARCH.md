@@ -23,6 +23,53 @@ findet lokales Minimum, aber Kick/Restart kommen nicht ins richtige Becken.
 
 ---
 
+## Baseline (Schritt 0) — ERGEBNISSE ✓
+
+Sweep `n=32,34,36` je 10 Seeds, 200k Steps, 8 Worker, Commit `af00bf0`.
+
+```bash
+PYTHONPATH=src python run.py --sweep gs4 32 34 36 --seeds 10 --steps 200000 --workers 8 --output data/baseline.json
+```
+
+| n | Ordnung | Gelöst | Fehlschlag-Energie | Ø S | Ø P | Ø T | Ø K | Ø R | Ø Strk |
+| ---: | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 32 | 128 | 4/10 | 133.169.152 | 4.400 | 155 | 3 | 500 | 170 | 23,5 |
+| 34 | 136 | 0/10 | 169.793.280 | 4.400 | 143 | 3 | 458 | 152 | 24,9 |
+| 36 | 144 | 2/10 | 213.497.856 | 4.330 | 135 | 3 | 417 | 139 | 26,2 |
+
+### Kernbefunde
+
+**1. Alle Fehlschläge landen bei derselben Energie pro n.** 6 Fehlschläge bei
+n=32: alle 133.169.152. 10 bei n=34: alle 169.793.280. Kein Seed-Rauschen.
+
+**2. Die Energien sind strukturell, nicht zufällig:**
+
+```text
+energy / pairs = N²
+```
+
+Das heißt jedes Zeilenpaar hat Dot-Produkt ±N — die Matrix ist de facto Rang 1,
+alle Zeilen sind parallel oder negiert. Es handelt sich um ein degeneriertes,
+flaches Plateau, keine zufällige Konfiguration.
+
+**3. Unterschiedliche Sequenzen, gleiche Energie.** Paarweise Bit-Vergleiche
+innerhalb der Fehlschläge zeigen ~45-55% Differenz — die Fehlschläge sind
+verschiedene Teiläquivalente im selben Plateau, kein einzelner Punkt.
+
+**4. iters = 199.999 bei allen Fehlschlägen.** Budget komplett ausgeschöpft,
+der Solver hat nie aufgegeben — konnte aber nicht entkommen.
+
+**5. Triples fast irrelevant.** 1-5 pro 200k-Step-Run, 0 in manchen gelösten
+Runs. Der Triple-Code kostet CPU und liefert nichts.
+
+**Schlussfolgerung:** Kein Budget-Problem, kein Seed-Problem. Das Plateau ist
+riesig und flach — der Solver läuft darin herum (50% Bit-Änderungen zwischen
+Fehlschlägen) aber die Energie bleibt identisch. Wir brauchen einen
+Mechanismus, der **gerichtet bergauf** aus dem Plateau läuft. Tabu-Walk
+(Schritt 4) ist der dafür vorgesehene Escape-Mechanismus.
+
+---
+
 ## Referenz: pzinn/hadamard
 
 Öffentliches Repository: `pzinn/hadamard` auf GitHub. Das zugehörige Paper
@@ -49,8 +96,8 @@ Unser KFlip beschränkt sich auf Breite 2 und 3. Deren Variante fragt dagegen:
 Kombination?"
 
 **Gray-Code-Mechanismus**: Zwischen zwei aufeinanderfolgenden Kombinationen
-ändert sich genau ein Bit. Dadurch kann das Spektrum (bzw. die Energie)
-inkrementell aktualisiert werden:
+ändert sich genau ein Bit. Dadurch kann die Energie inkrementell aktualisiert
+werden:
 
 ```text
 Kombination 1:  {Bit 3}
@@ -71,14 +118,15 @@ k=9  → 511 Kombinationen
 k=10 → 1023 Kombinationen
 ```
 
-Nicht sofort k=11 nehmen. Erst bei n=32,36 testen.
+Nicht sofort k=11 nehmen und den Rechner wegen menschlicher Ungeduld anzünden.
+Erst bei n=32,36 testen.
 
 **Implementierungsstufen**:
 
 1. Naiv mit `_combo_delta()` pro Teilmenge (einfach, korrekt)
 2. Gray-Code mit inkrementellem `_single`-Add/Remove (schnell, komplex)
 
-Erst Wirkung nachweisen, dann optimieren.
+Erst Wirkung nachweisen, dann drei Nächte lang optimieren.
 
 ### 2. Tabu-Walk
 
@@ -114,9 +162,9 @@ Single-Minimum
 → erst danach Restart (wenn immer noch kein besserer Zustand)
 ```
 
-Vermutlich der **stärkste Einzelkandidat** — unser Problem ist nicht "kein
-Weg existiert", sondern "der Solver findet das richtige Becken nicht". Der
-Tabu-Walk ist ein gezielter Spaziergang aus dem falschen Becken heraus,
+Vermutlich der **stärkste Einzelkandidat** — unser Baseline-Befund zeigt ein
+degeneriertes Rang-1-Plateau, aus dem der Solver mit reinem Descent nicht
+entkommt. Der Tabu-Walk ist ein gezielter Spaziergang aus dem Plateau heraus,
 während unser Kick ein zufälliger Tritt mit verbundenen Augen ist.
 
 Testparameter: 50, 100, 200 Schritte. Tenure: n/4.
@@ -161,31 +209,12 @@ ist unklar (siehe Schritt 7: rescue_mode-Ablation).
 
 ## Was wir NICHT sofort übernehmen sollten
 
-Diese Komponenten aus pzinn/hadamard sind für uns aktuell nicht sinnvoll:
-
 | Komponente | Grund |
 | --- | --- |
-| **Transformer** | 1M parallele Kandidaten — Infrastruktur bevor wir wissen welche Suchbewegungen helfen |
+| **Transformer** | 1M parallele Kandidaten — Infrastruktur bevor wir wissen welche Moves helfen |
 | **Parallel Tempering** | Mehrere Temperatur-Ketten — Overkill solange die Basis-Suche nicht stabil ist |
-| **Feste Segment-Summen** | Beruht auf dem Fourier-Nullmodus zirkulanter Konstruktionen — nicht auf negazyklisch übertragbar |
+| **Feste Segment-Summen** | Beruht auf dem Fourier-Nullmodus zirkulanter Konstruktionen — nicht übertragbar |
 | **1M parallele Kandidaten** | Braucht GPU-Infrastruktur — lohnt sich erst wenn die Suchstrategie steht |
-
----
-
-## Baseline (Schritt 0)
-
-Für n=32,34,36 mit 200k Steps, gleiche Seeds, gleiche Hardware erfassen:
-
-```text
-solved, best_energy, evals, elapsed_s,
-singles, pairs, triples, kicks, restarts
-```
-
-Restenergie bei Fehlschlägen ist die wichtigste Kennzahl.
-
-```bash
-PYTHONPATH=src python scripts/bench.py --sweep gs4 32 34 36 --seeds 10 --dataset data/baseline.json
-```
 
 ---
 
@@ -193,66 +222,93 @@ PYTHONPATH=src python scripts/bench.py --sweep gs4 32 34 36 --seeds 10 --dataset
 
 ### 1. Single-Scan-Reihenfolge
 
-Aktuell: Bits immer in derselben Reihenfolge, erstes besseres wird genommen.
+Aktuell prüfst du die Bits immer in derselben Reihenfolge und nimmst das erste
+bessere.
 
-**Variante A**: Zufälliger Startindex pro Sweep, dann zyklisch (fast kostenlos,
-weniger verzerrt).
+```text
+Baseline: feste Reihenfolge
+Variante A: zufälliger Startindex pro Sweep, dann zyklisch
+Variante B: komplette Reihenfolge pro Sweep mischen
+```
 
-**Variante B**: Komplette Reihenfolge pro Sweep mischen.
+Zuerst Variante A. Fast kostenlos und weniger verzerrt.
 
-Datei: `solver.py` — `_positions` und Scan-Loop (Zeile 88)
+Datei: `solver.py` — `_positions` und Scan-Loop
 
 ### 2. Echter Kick
 
-Aktuell: Kick nur übernehmen wenn `_combo_delta < cur_e`. Das ist ein
-zufälliger Mehrbit-Move mit falschem Namensschild, kein echter Kick.
-
-**Variante A**: Kick immer übernehmen (best_seq bleibt erhalten, current darf
-schlechter werden). Der Solver läuft dann aus dem verschlechterten Zustand
-weiter — dadurch kann er Becken wechseln.
-
-**Variante B**: Adaptive Kick-Stärke:
+Aktuell wird ein Kick nur übernommen, wenn er sofort besser ist. Das ist eher
+ein zufälliger Mehrbit-Move mit falschem Namensschild.
 
 ```text
-1 Bit pro Sequenz → 2 Bits → 4 Bits → Restart
+Baseline: Kick nur übernehmen, wenn besser
+Variante A: Kick immer übernehmen
+Variante B: Kick-Stärke adaptiv erhöhen
 ```
 
-Datei: `solver.py` — Phase 4 (Zeile 136-169)
+Adaptive Variante etwa:
 
-### 3. Teil-Restart
+```text
+1 Bit pro Sequenz
+2 Bits pro Sequenz
+4 Bits pro Sequenz
+danach Restart
+```
 
-Aktuell: Nach 3 gescheiterten Kicks werden alle 4 Sequenzen neu gewürfelt.
+`best_seq` bleibt erhalten, also darf der aktuelle Zustand ruhig vorübergehend
+schlechter werden.
 
-**Variante A**: Eine zufällige Sequenz neu.
-**Variante B**: Zwei Sequenzen neu.
-**Variante C**: Schlechteste Sequenz neu (braucht row-energy Metrik).
+Datei: `solver.py` — Phase 4
 
-Zuerst Variante A testen. Vielleicht sind 3 Folgen schon brauchbar und werden
-aus Prinzip verbrannt.
+### 3. Teil-Restart statt kompletter Restart
 
-Datei: `solver.py` — `kick_streak >= 3` Block (Zeile 154-160)
+Aktuell wird nach mehreren gescheiterten Kicks alles neu gewürfelt.
+
+```text
+Baseline: alle vier Sequenzen neu
+Variante A: eine zufällige Sequenz neu
+Variante B: zwei Sequenzen neu
+Variante C: schlechteste Sequenz neu
+```
+
+Erst Variante A. Vielleicht sind drei Folgen schon brauchbar und du verbrennst
+sie momentan aus Prinzip.
+
+Datei: `solver.py` — `kick_streak >= 3` Block
 
 ### 4. Tabu-Walk (aus pzinn/hadamard)
 
 ```text
 lokales Minimum erreicht
-→ bestes erlaubtes Single-Bit flippen (auch wenn schlechter)
+→ bestes erlaubtes Single-Bit flippen
+→ auch wenn es schlechter wird
 → kürzlich verwendete Bits tabu setzen (Tenure ~n/4)
 → besten unterwegs gefundenen Zustand behalten
-→ 50-200 Schritte, dann zurück zum Besten oder Restart
 ```
 
-Parameter: 50, 100, 200 Schritte.
+Testparameter zunächst:
 
-Vor dem Hard-Restart einsetzen. Vermutlich stärkster Einzelkandidat — das
-Problem ist nicht "kein Weg", sondern "falsches Becken".
+```text
+50 Schritte
+100 Schritte
+200 Schritte
+```
+
+Tabu-Walk vor dem Hard-Restart einsetzen.
+
+Das ist wahrscheinlich einer der stärksten Kandidaten, weil dein aktuelles
+Problem offenbar nicht "kein Weg", sondern "falsches Becken" ist. Die
+Baseline bestätigt das: ein degeneriertes Rang-1-Plateau, aus dem der Solver
+mit reinem Descent nicht entkommt.
 
 Datei: neu `src/tabu.py` oder in `solver.py` integrieren
 
 ### 5. Top-k Subset-Rescue (aus pzinn/hadamard)
 
-Statt nur Pairs/Triples: ALLE 2^k-1 Teilmengen der besten k Single-Kandidaten
-testen.
+Dein Solver testet derzeit Pairs und Triples. Deren Solver nimmt die besten k
+Single-Kandidaten und testet alle Teilmengen.
+
+Start klein:
 
 ```text
 k=8  → 255 Kombinationen
@@ -260,40 +316,51 @@ k=9  → 511 Kombinationen
 k=10 → 1023 Kombinationen
 ```
 
-**Stufe 1**: Naiv mit `_combo_delta()` pro Teilmenge. `itertools.combinations`
-für jede Größe 1..k durchiterieren.
+Erst `k=8`.
 
-**Stufe 2** (nach Wirkungsnachweis): Gray-Code mit inkrementellem
-Single-Band-Update. Ein Bit ändert sich pro Schritt → O(b) statt O(b²) für
-Cross-Terms. Architektonisch nah an unserem `_combo_delta`-Design.
-
-Zuerst k=8 bei n=32,36 testen.
+Zunächst naiv mit `_combo_delta()` testen. Falls es hilft, danach Gray-Code
+beziehungsweise inkrementelle Updates bauen. Erst Wirkung nachweisen, dann
+optimieren. Eine ungewohnte, aber brauchbare Reihenfolge.
 
 Datei: `solver.py` — `_rescue` ersetzen/erweitern
 
 ### 6. K/K3-Tuning
 
-Aktuell: `K = min(B-1, max(16, int(B**0.5 * 3)))`, `K3 = min(K//2, 10)`.
+Aktuell ungefähr:
 
-Testen: K = 3√B, 4√B, 5√B; K3 = 8, 10, 12.
+```python
+K = min(B-1, max(16, int(B**0.5 * 3)))
+K3 = min(K // 2, 10)
+```
 
-Nicht alle Kombinationen, erst K variieren, dann K3.
+Testen:
 
-Datei: `solver.py` Zeile 73-74
+```text
+K = 3√B, 4√B, 5√B
+K3 = 8, 10, 12
+```
+
+Nicht alle Kombinationen. Erst K verändern, danach K3.
+
+Datei: `solver.py` — K, K3 Initialisierung
 
 ### 7. rescue_mode-Ablation
 
-Im aktuellen Code: `rescue_mode` + `narrowed`-Pool. Prüfen ob `narrowed`
-praktisch identisch mit `top_candidates` ist (dann ist der Mode wirkungslos).
+Dein `narrowed`-Pool ist praktisch identisch mit `top_candidates`.
 
-**Variante A**: rescue_mode komplett entfernen.
-**Variante B**: Best-Mode nur auf `top_candidates[:K//2]`.
+```text
+Baseline: aktueller Modus
+Variante A: rescue_mode komplett entfernen
+Variante B: Best-Mode nur auf top_candidates[:K//2]
+```
 
-Könnte Rechenzeit sparen oder den Deep-Rescue tatsächlich sinnvoll machen.
+Das könnte Rechenzeit sparen oder den Deep-Rescue tatsächlich sinnvoll machen.
 
 Datei: `solver.py` — rescue_mode, narrowed, Phase 2/3
 
 ### 8. Ablationen (Beitrag jeder Komponente)
+
+Damit findest du heraus, welche Teile wirklich etwas beitragen:
 
 ```text
 Singles only
@@ -305,22 +372,29 @@ mit Tabu statt Kick
 mit Subset-Rescue statt Pair/Triple
 ```
 
-Kernfrage: Wie viele erfolgreiche n=36 Runs brauchen ≥1 Triple-Move?
-Falls ≈0: Triple-Code ist teurer Ballast.
+Besonders wichtig:
+
+> Wie viele erfolgreiche (n=36)-Runs benötigen mindestens einen Triple-Move?
+
+Die Baseline sagt ≈0 — der Triple-Code ist vermutlich teurer Ballast.
 
 ### 9. Budget-Skalierung
 
-Erst NACHDEM Suchpfade verbessert wurden:
+Erst nachdem die Suchpfade verbessert wurden:
 
 ```text
-200k → 500k → 1M
+200k
+500k
+1M
 ```
 
-Für n=32,34,36. Unterscheidet Rechenlimit von Suchdynamiklimit:
+für n=32,34,36.
+
+Dann siehst du:
 
 ```text
-Mehr Budget hilft stark → Rechenlimit (einfach mehr Steps geben)
-Mehr Budget hilft kaum → Suchdynamiklimit (braucht bessere Moves)
+mehr Budget hilft stark → Rechenlimit
+mehr Budget hilft kaum → Suchdynamiklimit
 ```
 
 ### 10. Negazyklische Spektralreparatur (längerfristig)
@@ -345,11 +419,11 @@ Suche ausgereizt ist.
 ## Priorisierte Reihenfolge
 
 ```text
-0. Baseline einfrieren
+0. Baseline einfrieren ✓ (Commit af00bf0, data/baseline.json)
 1. Zufälliger Scan-Start (billig, testet Verzerrung)
 2. Kick immer akzeptieren
 3. Teil-Restart (eine Sequenz)
-4. Tabu-Walk (stärkster Kandidat)
+4. Tabu-Walk (stärkster Kandidat gegen Plateau)
 5. Top-8 Subset-Rescue
 6. K/K3-Tuning
 7. rescue_mode-Ablation
@@ -359,7 +433,9 @@ Suche ausgereizt ist.
 ```
 
 Immer nur **eine Änderung pro Testlauf**. Kein "SuperSolver" bei dem niemand
-weiß ob es am Tabu, am Kick oder am Seed lag.
+weiß, ob es am Tabu, am Kick oder am zufällig günstigeren Seed lag. Die
+Wissenschaft nennt das dann gern "komplexes Zusammenspiel", weil "wir haben
+den Überblick verloren" weniger elegant klingt.
 
 ---
 
@@ -378,5 +454,6 @@ weiß ob es am Tabu, am Kick oder am Seed lag.
 | --- | --- |
 | `src/solver.py` | Scan-Order, Kick-Logik, Restart, Rescue, K-Parameter |
 | `src/tabu.py` (neu) | Tabu-Walk als Escape-Phase |
-| `scripts/bench.py` | Baseline-Sweep mit Stats-Export |
-| `data/baseline.json` | Baseline-Ergebnisse |
+| `run.py` | --sweep mit ProcessPoolExecutor (fertig) |
+| `src/output.py` | save_run Auto-Solutions +_write_entry (fertig) |
+| `data/baseline.json` | Baseline-Ergebnisse Commit af00bf0 (fertig) |
