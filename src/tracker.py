@@ -3,7 +3,7 @@
 For four negacyclic sequences of length ``n``, let ``r_t`` be the sum of
 their negaperiodic autocorrelations.  Antisymmetry gives ``r_{n-t} = -r_t``
 and every residual is divisible by four.  The tracker therefore stores only
-``u_t = r_t / 4`` for ``t = 1..floor(n / 2)``:
+``u_t = r_t / 4`` for ``t = 1..floor((n - 1) / 2)``:
 
     E = 64 n * sum(u_t**2)
 
@@ -37,7 +37,7 @@ class Tracker:
     def build(self, seqs: npt.NDArray[np.int8]) -> None:
         self._n = seqs.shape[1]
         self._seqs = seqs.copy()
-        m = self._n // 2
+        m = (self._n - 1) // 2
         residual = self._compute_residual(self._seqs)
         self._u = (residual[1 : m + 1] // 4).astype(np.int32)
         self._q = int(np.dot(self._u, self._u))
@@ -180,7 +180,7 @@ class Tracker:
 def _build_delta_cache(seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
     """Build every reduced singleton delta without Python loops."""
     n = seqs.shape[1]
-    m = n // 2
+    m = (n - 1) // 2
     c: npt.NDArray[np.intp] = np.arange(n, dtype=np.intp)[:, None]
     t: npt.NDArray[np.intp] = np.arange(1, m + 1, dtype=np.intp)[None, :]
     forward = (c + t) % n

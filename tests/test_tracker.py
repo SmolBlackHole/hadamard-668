@@ -18,6 +18,22 @@ def _full_energy(builder: Builder, seqs: np.ndarray) -> int:
     return int(np.sum(gram * gram) // 2)
 
 
+@pytest.mark.parametrize("n", (6, 8, 38, 52))
+def test_even_tracker_omits_dead_midpoint_lag(n: int) -> None:
+    builder = Builder(kind="gs4", n=n)
+    seqs = np.random.default_rng(100 + n).choice((-1, 1), size=(builder.k, n)).astype(np.int8)
+    tracker = Tracker()
+    tracker.build(seqs)
+
+    residual = Tracker._compute_residual(seqs)
+    width = (n - 1) // 2
+
+    assert residual[n // 2] == 0
+    assert tracker._u is not None and tracker._u.shape == (width,)
+    assert tracker._delta is not None and tracker._delta.shape == (4 * n, width)
+    assert tracker.energy() == _full_energy(builder, seqs)
+
+
 @pytest.mark.parametrize("n", (3, 4, 5, 6, 7))
 def test_single_flip_energies_match_full_gram(n: int) -> None:
     builder = Builder(kind="gs4", n=n)
