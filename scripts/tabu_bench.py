@@ -18,20 +18,13 @@ def _run_one(args: tuple[int, int, int, SolverConfig]) -> dict[str, Any]:
 
 
 def main() -> None:
-    cfg = lambda tenure=5, decay=0.7, noise=0.0: SolverConfig(
-        tabu=True, tabu_steps=200, tabu_tenure=tenure, tabu_decay=decay, tabu_noise=noise
-    )
-    N_VALS = [35, 37, 39, 41, 43]
-    n_val, seeds, steps = 0, 100, 200_000
+    BUDGETS = [2000, 5000, 10000, 20000, 50000]
+    N_VAL = 32
+    seeds = 100
 
-    all_configs = [("default (5,0.7,0.0)", cfg())]
-
-    tasks = []
-    for n in N_VALS:
-        for c in all_configs:
-            for s in range(seeds):
-                tasks.append((n, s, steps, c[1]))
-    print(f"Odd-n with Tabu: n={N_VALS}, {seeds} seeds, {len(tasks)} runs\n")
+    cfg = SolverConfig()
+    tasks = [(N_VAL, s, b, cfg) for b in BUDGETS for s in range(seeds)]
+    print(f"Minimal budget n={N_VAL}, {seeds} seeds, {len(tasks)} runs\n")
 
     started = time.perf_counter()
     results: list[dict[str, Any]] = []
@@ -44,24 +37,19 @@ def main() -> None:
     wall = time.perf_counter() - started
     print(f"\n  done in {wall:.0f}s\n")
 
-    print(f"  {'n':>4}  {'solved':>7}  {'95% CI':>16}  {'mean_e':>8}  {'avg':>8}  {'per_sol':>8}  {'TB_hits':>8}  {'TB_walks':>8}")
-    print(f"  {'-'*90}")
-    for ni, n in enumerate(N_VALS):
-        runs = results[ni * seeds : (ni + 1) * seeds]
+    print(f"  {'budget':>7}  {'solved':>7}  {'95% CI':>16}  {'mean_e':>8}  {'avg':>8}")
+    print(f"  {'-' * 60}")
+    for bi, b in enumerate(BUDGETS):
+        runs = results[bi * seeds : (bi + 1) * seeds]
         solved = sum(1 for r in runs if r["energy"] == 0)
         avg_t = sum(r["elapsed"] for r in runs) / len(runs)
         mean_e = sum(r["energy"] for r in runs) / len(runs)
-        tb_hits = sum(r["stats"].get("tabu_hits", 0) for r in runs)
-        tb_walks = sum(r["stats"].get("tabu_walks", 0) for r in runs)
         lo, hi = wilson_ci(solved, len(runs))
-        per_sol = avg_t * len(runs) / solved if solved else float("inf")
 
         print(
-            f"  {n:>4}  {solved:>4}/{seeds:<3}  "
-            f"[{lo:.4f},{hi:.4f}]  {mean_e:>8.0f}  {avg_t * 1000:>6.0f}ms  "
-            f"{per_sol:>6.2f}s  {tb_hits:>8}  {tb_walks:>8}"
+            f"  {b:>7}  {solved:>4}/{seeds:<3}  "
+            f"[{lo:.4f},{hi:.4f}]  {mean_e:>8.0f}  {avg_t * 1000:>6.0f}ms"
         )
-
 
 
 if __name__ == "__main__":
