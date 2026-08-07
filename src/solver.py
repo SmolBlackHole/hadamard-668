@@ -1,4 +1,4 @@
-"""Iterated local search — singles scan + pair rescue + kick."""
+"""Iterated local search — greedy singles, Tabu walk, and random kick."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from .benchmark_stats import fmt_e
 from .tracker import Tracker
 
 SINGLE_BATCH_SIZE = 64
-TRACE_EVAL_INTERVAL = 100_000
 _jit: Any = njit
 
 
@@ -110,27 +109,12 @@ def tabu_walk_kernel(
 class SolverConfig:
     """Feature flags for ablation testing.  Default: proven combination."""
 
-    pairs: bool = True
     kick: bool = True
     tabu: bool = True
     tabu_steps: int = 200
     tabu_tenure: float = 5.0
     tabu_decay: float = 0.7
     tabu_noise: float = 0.0
-
-
-@dataclass(frozen=True)
-class TraceSnapshot:
-    """Exact solver state captured for trajectory analysis."""
-
-    phase: str
-    reason: str
-    budget_used: int
-    evaluations: int
-    q: int
-    best_q: int
-    sequences: npt.NDArray[np.int8]
-    residual: npt.NDArray[np.int32]
 
 
 @lru_cache(maxsize=16)
@@ -155,44 +139,48 @@ class SearchStats:
     __slots__ = (
         "_streak",
         "energy_saved_kicks",
-        "energy_saved_pairs",
         "energy_saved_singles",
         "energy_saved_tabu",
         "kick_evals",
         "kick_time_s",
         "kicks",
-        "pairs",
         "rebuild_time_s",
-        "rescue_evals",
-        "rescue_time_s",
         "single_evals",
         "single_time_s",
         "singles",
         "singles_streaks",
         "tabu_evals",
         "tabu_hits",
+        "tabu_hits_q1",
+        "tabu_hits_q2",
+        "tabu_hits_q3plus",
         "tabu_time_s",
         "tabu_walks",
+        "tabu_walks_q1",
+        "tabu_walks_q2",
+        "tabu_walks_q3plus",
     )
 
     def __init__(self) -> None:
         self.singles: int = 0
-        self.pairs: int = 0
         self.kicks: int = 0
         self.single_evals: int = 0
-        self.rescue_evals: int = 0
         self.kick_evals: int = 0
         self.tabu_evals: int = 0
         self.tabu_hits: int = 0
+        self.tabu_hits_q1: int = 0
+        self.tabu_hits_q2: int = 0
+        self.tabu_hits_q3plus: int = 0
         self.tabu_walks: int = 0
+        self.tabu_walks_q1: int = 0
+        self.tabu_walks_q2: int = 0
+        self.tabu_walks_q3plus: int = 0
         self.singles_streaks: list[int] = []
         self._streak: int = 0
         self.energy_saved_singles: int = 0
-        self.energy_saved_pairs: int = 0
         self.energy_saved_kicks: int = 0
         self.energy_saved_tabu: int = 0
         self.single_time_s: float = 0.0
-        self.rescue_time_s: float = 0.0
         self.kick_time_s: float = 0.0
         self.rebuild_time_s: float = 0.0
         self.tabu_time_s: float = 0.0
@@ -216,20 +204,22 @@ class SearchStats:
         self._flush()
         return {
             "singles": self.singles,
-            "pairs": self.pairs,
             "kicks": self.kicks,
             "e_singles": self.energy_saved_singles,
-            "e_pairs": self.energy_saved_pairs,
             "e_kicks": self.energy_saved_kicks,
             "e_tabu": self.energy_saved_tabu,
             "single_evals": self.single_evals,
-            "rescue_evals": self.rescue_evals,
             "kick_evals": self.kick_evals,
             "tabu_evals": self.tabu_evals,
             "tabu_hits": self.tabu_hits,
+            "tabu_hits_q1": self.tabu_hits_q1,
+            "tabu_hits_q2": self.tabu_hits_q2,
+            "tabu_hits_q3plus": self.tabu_hits_q3plus,
             "tabu_walks": self.tabu_walks,
+            "tabu_walks_q1": self.tabu_walks_q1,
+            "tabu_walks_q2": self.tabu_walks_q2,
+            "tabu_walks_q3plus": self.tabu_walks_q3plus,
             "single_time_s": self.single_time_s,
-            "rescue_time_s": self.rescue_time_s,
             "kick_time_s": self.kick_time_s,
             "rebuild_time_s": self.rebuild_time_s,
             "tabu_time_s": self.tabu_time_s,
@@ -240,11 +230,10 @@ class SearchStats:
         self._flush()
         parts = [
             f"S={self.singles}({fmt_e(self.energy_saved_singles)})",
-            f"P={self.pairs}({fmt_e(self.energy_saved_pairs)})",
             f"TB={self.tabu_hits}/{self.tabu_walks}({fmt_e(self.energy_saved_tabu)})",
             f"K={self.kicks}({fmt_e(self.energy_saved_kicks)})",
-            f"evals={self.single_evals}/{self.rescue_evals}/{self.tabu_evals}/{self.kick_evals}",
-            f"t={self.single_time_s:.1f}s/{self.rescue_time_s:.1f}s/{self.tabu_time_s:.1f}s/{self.kick_time_s:.1f}s",
+            f"evals={self.single_evals}/{self.tabu_evals}/{self.kick_evals}",
+            f"t={self.single_time_s:.1f}s/{self.tabu_time_s:.1f}s/{self.kick_time_s:.1f}s",
         ]
         if self.singles_streaks:
             s = self.singles_streaks
@@ -261,7 +250,6 @@ def search(
     *,
     steps: int,
     config: SolverConfig | None = None,
-    trace: list[TraceSnapshot] | None = None,
 ) -> tuple[npt.NDArray[np.int8], int, int, SearchStats]:
     """Iterated local search. Returns (best_seq, best_energy, evals, stats)."""
     cfg = config if config is not None else SolverConfig()
@@ -279,37 +267,15 @@ def search(
     total_budget = steps
     best_seq = cur_seq.copy()
     best_e = cur_e
-    next_trace_eval = TRACE_EVAL_INTERVAL
 
-    if trace is not None:
-        assert tracker._u is not None
-        trace.append(
-            TraceSnapshot(
-                phase="initial",
-                reason="initial",
-                budget_used=0,
-                evaluations=0,
-                q=tracker._q,
-                best_q=tracker._q,
-                sequences=cur_seq.copy(),
-                residual=tracker._u.copy(),
-            )
-        )
-
-    K = min(B - 1, max(16, int(B**0.5 * 3)))
-
-    singles_e = np.empty(B)
     while steps > 0 and best_e > 0:
-        phase = "plateau"
         # Phase 1: greedy singles scan
         t_phase = time.perf_counter()
-        singles_e.fill(np.inf)
         scan_count = min(B, steps)
         improved = False
         for start in range(0, scan_count, SINGLE_BATCH_SIZE):
             stop = min(start + SINGLE_BATCH_SIZE, scan_count)
             energies = tracker.flip_batch(start, stop)
-            singles_e[start:stop] = energies
             improving = np.flatnonzero(energies < cur_e)
             if improving.size:
                 idx = start + int(improving[0])
@@ -319,7 +285,6 @@ def search(
                 stats.energy_saved_singles += prev_e - cur_e
                 stats._hit_single()
                 improved = True
-                phase = "single"
                 scan_count = idx + 1
                 break
         steps -= scan_count
@@ -327,58 +292,34 @@ def search(
         stats.single_time_s += time.perf_counter() - t_phase
 
         if steps <= 0:
-            if trace is not None and cur_e < best_e:
-                assert tracker._u is not None
-                evaluations = (
-                    stats.single_evals + stats.rescue_evals + stats.tabu_evals + stats.kick_evals
-                )
-                trace.append(
-                    TraceSnapshot(
-                        phase=phase,
-                        reason="best",
-                        budget_used=total_budget,
-                        evaluations=evaluations,
-                        q=tracker._q,
-                        best_q=tracker._q,
-                        sequences=cur_seq.copy(),
-                        residual=tracker._u.copy(),
-                    )
-                )
             best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
             break
-
-        if not improved:
-            t_rescue = time.perf_counter()
-            top = np.asarray(np.argpartition(singles_e, K - 1)[:K], dtype=np.intp)
-            top_candidates: list[tuple[int, int]] = [positions[int(t)] for t in top]
-
-            if cfg.pairs:
-                prev_e = cur_e
-                result, evaluations = _rescue(cur_seq, tracker, top_candidates, cur_e)
-                stats.rescue_evals += evaluations
-                if result is not None:
-                    stats.energy_saved_pairs += prev_e - result
-                    cur_e = result
-                    improved = True
-                    phase = "pair"
-                    stats.pairs += 1
-                    stats._hit_other()
-
-            stats.rescue_time_s += time.perf_counter() - t_rescue
 
         if not improved and cfg.tabu:
             t_tabu = time.perf_counter()
             prev_e = cur_e
+            tabu_start_q = cur_e // (64 * n_cols)
             result, evaluations = _tabu_walk(cur_seq, tracker, cur_e, rng, cfg)
             stats.tabu_time_s += time.perf_counter() - t_tabu
             stats.tabu_walks += 1
+            if tabu_start_q == 1:
+                stats.tabu_walks_q1 += 1
+            elif tabu_start_q == 2:
+                stats.tabu_walks_q2 += 1
+            else:
+                stats.tabu_walks_q3plus += 1
             stats.tabu_evals += evaluations
             if result is not None:
                 stats.energy_saved_tabu += prev_e - result
                 cur_e = result
                 improved = True
-                phase = "tabu"
                 stats.tabu_hits += 1
+                if tabu_start_q == 1:
+                    stats.tabu_hits_q1 += 1
+                elif tabu_start_q == 2:
+                    stats.tabu_hits_q2 += 1
+                else:
+                    stats.tabu_hits_q3plus += 1
                 stats._hit_other()
 
         # Phase 3: Kick — always accept
@@ -394,53 +335,10 @@ def search(
             stats.energy_saved_kicks += prev_e - cur_e
             stats.kick_time_s += time.perf_counter() - t_kick
             stats._hit_other()
-            phase = "kick"
-
-        if trace is not None:
-            evaluations = (
-                stats.single_evals + stats.rescue_evals + stats.tabu_evals + stats.kick_evals
-            )
-            is_best = cur_e < best_e
-            is_sample = evaluations >= next_trace_eval
-            if is_best or is_sample:
-                assert tracker._u is not None
-                trace.append(
-                    TraceSnapshot(
-                        phase=phase,
-                        reason="best" if is_best else "sample",
-                        budget_used=total_budget - max(steps, 0),
-                        evaluations=evaluations,
-                        q=tracker._q,
-                        best_q=min(cur_e, best_e) // (64 * n_cols),
-                        sequences=cur_seq.copy(),
-                        residual=tracker._u.copy(),
-                    )
-                )
-            while evaluations >= next_trace_eval:
-                next_trace_eval += TRACE_EVAL_INTERVAL
 
         best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
 
     return best_seq, best_e, total_budget - max(steps, 0), stats
-
-
-def _rescue(
-    cur_seq: npt.NDArray[np.int8],
-    tracker: Tracker,
-    candidates: list[tuple[int, int]],
-    cur_e: int,
-) -> tuple[int | None, int]:
-    """Try pair combinations. Returns improved energy or None."""
-    energies = tracker.pair_energies(candidates)
-    rows, cols = np.triu_indices(len(candidates), 1)
-    improving = np.flatnonzero(energies[rows, cols] < cur_e)
-    if improving.size == 0:
-        return None, len(rows)
-    index = int(improving[0])
-    combo = (candidates[int(rows[index])], candidates[int(cols[index])])
-    for s, c in combo:
-        tracker.accept(cur_seq, s, c)
-    return tracker.energy(), index + 1
 
 
 def _tabu_walk(

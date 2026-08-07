@@ -124,42 +124,6 @@ class Tracker:
         self._e = 64 * self._n * self._q
         return self._e
 
-    def pair_energies(self, candidates: list[tuple[int, int]]) -> npt.NDArray[np.int64]:
-        """Return all pair energies in the candidates' combination order."""
-        assert (
-            self._seqs is not None
-            and self._u is not None
-            and self._delta is not None
-            and self._norm2 is not None
-        )
-        positions = np.asarray(candidates, dtype=np.intp)
-        seq_ids, cols = positions[:, 0], positions[:, 1]
-        indices = seq_ids * self._n + cols
-        d = self._delta[indices]
-
-        single = 2 * (d @ self._u) + self._norm2[indices]
-        change = (
-            single[:, None] + single[None, :] + 2 * np.einsum("ik,jk->ij", d, d, dtype=np.int32)
-        )
-
-        distance = np.abs(cols[:, None] - cols[None, :])
-        lag = np.minimum(distance, self._n - distance)
-        valid = (seq_ids[:, None] == seq_ids[None, :]) & (lag > 0)
-        valid &= distance != self._n - distance
-        values = self._seqs[seq_ids, cols]
-        correction = np.where(distance < self._n - distance, 1, -1)
-        correction *= values[:, None] * values[None, :]
-
-        padded_u = np.concatenate((np.zeros(1, dtype=np.int32), self._u))
-        padded_d = np.pad(d, ((0, 0), (1, 0)))
-        base = (
-            padded_u[lag]
-            + padded_d[np.arange(len(candidates))[:, None], lag]
-            + padded_d[np.arange(len(candidates))[None, :], lag]
-        )
-        change += valid * (2 * base * correction + correction * correction)
-        return (64 * self._n * (self._q + change.astype(np.int64))).astype(np.int64)
-
     def combo_energy(self, flips: list[tuple[int, int]]) -> int:
         """Return the exact energy after any set of bit flips.
 

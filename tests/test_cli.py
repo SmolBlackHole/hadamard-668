@@ -34,4 +34,3 @@ def test_execute_single_smoke() -> None:
     r = _execute_single("gs4", 5, 2000, 42)
     assert r.metrics.energy == 0
     assert r.sequences is not None
-    assert r.trace is None

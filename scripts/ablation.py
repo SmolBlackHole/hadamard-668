@@ -2,7 +2,7 @@
 
 Run with ``python -m scripts.ablation`` from the repository root.
 
-Runs 7 configurations x 3 n-values x 20 seeds = 420 runs.
+Runs the configured solver variants on identical seed ranges.
 Outputs a comparison table showing solved rate, energy, and per-component
 hit counts + energy saved.
 """
@@ -27,10 +27,9 @@ class AblationConfig:
 
 
 CONFIGS = [
-    AblationConfig("singles-only", SolverConfig(pairs=False, kick=False)),
-    AblationConfig("+pairs", SolverConfig(pairs=True, kick=False)),
-    AblationConfig("default (S+P+K)", SolverConfig()),
-    AblationConfig("+tabu", SolverConfig(tabu=True)),
+    AblationConfig("singles-only", SolverConfig(kick=False, tabu=False)),
+    AblationConfig("+tabu", SolverConfig(kick=False, tabu=True)),
+    AblationConfig("default (S+TB+K)", SolverConfig()),
 ]
 
 NS = [32]
@@ -70,7 +69,7 @@ def _aggregate(runs: list[dict[str, Any]]) -> dict[str, Any]:
         "mean_t": f"{mean_t:.1f}s",
     }
 
-    for comp in ("singles", "pairs", "kicks"):
+    for comp in ("singles", "kicks"):
         hits = sum(r["stats"].get(comp, 0) for r in runs)
         e_saved = sum(r["stats"].get(f"e_{comp}", 0) for r in runs)
         mean_e_per_hit = e_saved / hits if hits > 0 else 0
@@ -79,7 +78,6 @@ def _aggregate(runs: list[dict[str, Any]]) -> dict[str, Any]:
         agg[f"{comp}_e_hit"] = f"{mean_e_per_hit:.0f}" if hits > 0 else "-"
 
     agg["single_evals"] = sum(r["stats"].get("single_evals", 0) for r in runs)
-    agg["rescue_evals"] = sum(r["stats"].get("rescue_evals", 0) for r in runs)
     agg["kick_evals"] = sum(r["stats"].get("kick_evals", 0) for r in runs)
     agg["tabu_hits"] = sum(r["stats"].get("tabu_hits", 0) for r in runs)
     agg["tabu_evals"] = sum(r["stats"].get("tabu_evals", 0) for r in runs)
@@ -125,7 +123,7 @@ def main() -> None:
         print()
         print(f"-- {ac.name} --")
         header = f"{'n':>4}  {'solved':>7}  {'95% CI':>15}  {'mean_e':>7}  {'time':>6}  "
-        header += f"{'S-hits':>7} {'P-hits':>7} {'TB-hit':>7} {'K-hits':>7}"
+        header += f"{'S-hits':>7} {'TB-hit':>7} {'K-hits':>7}"
         print(header)
         print("-" * len(header))
         for n in NS:
@@ -137,8 +135,7 @@ def main() -> None:
             line = (
                 f"{n:>4}  {a['solved']:>7}  [{lo:.3f},{hi:.3f}]  "
                 f"{a['mean_e']:>7}  {a['mean_t']:>6}  "
-                f"{a['singles_hits']:>7} {a['pairs_hits']:>7} "
-                f"{a['tabu_hits']:>7} {a['kicks_hits']:>7}"
+                f"{a['singles_hits']:>7} {a['tabu_hits']:>7} {a['kicks_hits']:>7}"
             )
             print(line)
         print()

@@ -10,7 +10,7 @@ import pytest
 from src import output
 from src.generator import Result
 from src.metrics import Metrics
-from src.output import load_runs, save_run, save_trace
+from src.output import load_runs, save_run
 from src.solver import SearchStats
 
 
@@ -38,7 +38,6 @@ def test_save_and_load_solution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(output, "SOLUTIONS", tmp_path / "solutions.json")
     stats = SearchStats()
     stats.singles = 3
-    stats.pairs = 1
     stats.singles_streaks = [3]
 
     path = tmp_path / "runs.json"
@@ -54,7 +53,6 @@ def test_save_and_load_solution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert r["elapsed_s"] == 1.0
     assert r["iterations"] == 100
     assert r["stats"]["singles"] == 3
-    assert r["stats"]["pairs"] == 1
     assert len(r["sha256"]) == 64
     assert len(r["seqs_b64"]) > 0
 
@@ -86,21 +84,3 @@ def test_multiple_runs_same_n(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert len(runs) == 2
     assert [r["seed"] for r in runs] == [0, 1]
     assert [r["solved"] for r in runs] == [True, False]
-
-
-def test_save_trace_writes_compressed_exact_arrays(tmp_path: Path) -> None:
-    from src.generator import Generator
-
-    result = Generator(kind="gs4", n=5).search(steps=5000, seed=42, capture_trace=True)
-
-    path = save_trace(tmp_path, "gs4", 5, result)
-
-    assert path == tmp_path / "gs4-n0005-seed000042.npz"
-    assert path is not None
-    with np.load(path, allow_pickle=False) as trace:
-        assert trace["sequences"].shape[1:] == (4, 5)
-        assert trace["residuals"].shape[1:] == (2,)
-        assert trace["q"].shape == trace["best_q"].shape
-        assert trace["reasons"][0] == "initial"
-        assert int(trace["seed"]) == 42
-        assert int(trace["n"]) == 5

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 from src.generator import Generator
@@ -25,13 +24,3 @@ def test_tensor_search_smoke() -> None:
 def test_unknown_strategy_raises() -> None:
     with pytest.raises(ValueError, match="unknown"):
         Generator.from_cli("nonsense", 100)
-
-
-def test_trace_capture_does_not_change_the_search() -> None:
-    plain = Generator(kind="gs4", n=7).search(steps=1000, seed=1)
-    traced = Generator(kind="gs4", n=7).search(steps=1000, seed=1, capture_trace=True)
-
-    assert plain.solver_e == traced.solver_e
-    assert plain.iterations == traced.iterations
-    assert plain.sequences is not None and traced.sequences is not None
-    assert np.array_equal(plain.sequences, traced.sequences)

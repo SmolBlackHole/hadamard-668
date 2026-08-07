@@ -17,7 +17,7 @@ from pathlib import Path
 
 from src.benchmark_stats import wilson_ci
 from src.generator import Generator, Result
-from src.output import save_run, save_trace, verify
+from src.output import save_run, verify
 
 
 def _fmt_time(t: float) -> str:
@@ -29,13 +29,11 @@ def _fmt_time(t: float) -> str:
     return f"{t:.1f}s"
 
 
-def _execute_single(
-    kind: str, n: int, steps: int, seed: int, capture_trace: bool = False
-) -> Result:
+def _execute_single(kind: str, n: int, steps: int, seed: int) -> Result:
     """Run one search (pickle-friendly for ProcessPoolExecutor)."""
     gen = Generator(kind=kind, n=n)
     started = time.perf_counter()
-    result = gen.search(steps=steps, seed=seed, capture_trace=capture_trace)
+    result = gen.search(steps=steps, seed=seed)
     result.elapsed = time.perf_counter() - started
     return result
 
@@ -47,13 +45,12 @@ def _run_sweep(
     steps: int,
     workers: int,
     output_path: Path | None,
-    trace_dir: Path | None,
 ) -> None:
     """Run a sweep: for each n, run ``seeds`` independent searches."""
-    tasks: list[tuple[str, int, int, int, bool]] = []
+    tasks: list[tuple[str, int, int, int]] = []
     for n in ns:
         for s in range(seeds):
-            tasks.append((strategy, n, steps, s, trace_dir is not None))
+            tasks.append((strategy, n, steps, s))
 
     total = len(tasks)
     results: list[Result] = []
@@ -61,10 +58,10 @@ def _run_sweep(
         with ProcessPoolExecutor(max_workers=workers) as pool:
             results = list(pool.map(_execute_single, *zip(*tasks, strict=True)))
     else:
-        for i, (kind, n, st, seed, capture_trace) in enumerate(tasks, 1):
+        for i, (kind, n, st, seed) in enumerate(tasks, 1):
             print(f"[{i}/{total}] n={n}:", end=" ", flush=True)
             try:
-                results.append(_execute_single(kind, n, st, seed, capture_trace))
+                results.append(_execute_single(kind, n, st, seed))
             except Exception as exc:
                 print(f"FAILED: {exc}")
 
@@ -72,7 +69,7 @@ def _run_sweep(
         print(f"  {r}")
 
     by_n: dict[int, list[Result]] = {}
-    for r, (_, n, _, _, _) in zip(results, tasks, strict=True):
+    for r, (_, n, _, _) in zip(results, tasks, strict=True):
         by_n.setdefault(n, []).append(r)
 
     total_t = sum(r.elapsed for r in results)
@@ -90,11 +87,8 @@ def _run_sweep(
         print(line)
 
     if output_path:
-        for r, (_, n, _, _, _) in zip(results, tasks, strict=True):
+        for r, (_, n, _, _) in zip(results, tasks, strict=True):
             save_run(output_path, strategy, n, r)
-    if trace_dir:
-        for r, (_, n, _, _, _) in zip(results, tasks, strict=True):
-            save_trace(trace_dir, strategy, n, r)
 
 
 def main() -> None:
@@ -144,12 +138,6 @@ def main() -> None:
         help="Append ALL runs (solved + unsolved) to this JSON dataset file",
     )
     parser.add_argument(
-        "--trace-dir",
-        type=str,
-        default=None,
-        help="Write one compressed solver trajectory per run to this directory",
-    )
-    parser.add_argument(
         "--check",
         type=str,
         default=None,
@@ -183,7 +171,6 @@ def main() -> None:
         strategy = args.sweep[0]
         ns = [int(x) for x in args.sweep[1:]]
         output_path = Path(args.output) if args.output else None
-        trace_dir = Path(args.trace_dir) if args.trace_dir else None
         _run_sweep(
             strategy,
             ns,
@@ -191,7 +178,6 @@ def main() -> None:
             args.steps,
             args.workers,
             output_path,
-            trace_dir,
         )
         return
 
@@ -207,22 +193,13 @@ def main() -> None:
     if workers == 1:
         for s in seeds:
             try:
-                r = _execute_single(
-                    gen._builder.kind,
-                    gen._builder.n,
-                    args.steps,
-                    s,
-                    args.trace_dir is not None,
-                )
+                r = _execute_single(gen._builder.kind, gen._builder.n, args.steps, s)
                 results.append(r)
                 print(f"  {r}")
             except Exception as exc:
                 print(f"  run seed={s} FAILED: {exc}")
     else:
-        tasks = [
-            (gen._builder.kind, gen._builder.n, args.steps, s, args.trace_dir is not None)
-            for s in seeds
-        ]
+        tasks = [(gen._builder.kind, gen._builder.n, args.steps, s) for s in seeds]
         with ProcessPoolExecutor(max_workers=workers) as pool:
             results = list(pool.map(_execute_single, *zip(*tasks, strict=True)))
         for r in results:
@@ -231,9 +208,6 @@ def main() -> None:
     if args.output:
         for r in results:
             save_run(Path(args.output), gen.name, gen._builder.n, r)
-    if args.trace_dir:
-        for r in results:
-            save_trace(Path(args.trace_dir), gen.name, gen._builder.n, r)
 
     best = min(results, key=lambda r: r.metrics.energy)
     print("\nRun summary")

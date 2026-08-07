@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from src.builder import Builder
-from src.solver import SearchStats, SolverConfig, TraceSnapshot, _rescue, _tabu_walk
+from src.solver import SearchStats, SolverConfig, _tabu_walk
 from src.solver import search as ils_search
 from src.tracker import Tracker
 
@@ -16,11 +16,9 @@ from src.tracker import Tracker
 class _ScriptedTracker:
     """Minimal tracker that makes solver phase transitions deterministic."""
 
-    def __init__(self, pair_energy: int | None = None) -> None:
-        self._energy = 10
-        self._pair_energy = pair_energy
+    def __init__(self, initial_energy: int = 10) -> None:
+        self._energy = initial_energy
         self.accepted: list[tuple[int, int]] = []
-        self.pair_calls = 0
 
     def build(self, seqs: np.ndarray) -> None:
         del seqs
@@ -29,22 +27,12 @@ class _ScriptedTracker:
         return self._energy
 
     def flip_batch(self, start: int, stop: int) -> np.ndarray:
-        return np.full(stop - start, 10, dtype=np.int64)
-
-    def pair_energies(self, candidates: list[tuple[int, int]]) -> np.ndarray:
-        self.pair_calls += 1
-        energies = np.full((len(candidates), len(candidates)), 10, dtype=np.int64)
-        if self._pair_energy is not None and self.pair_calls == 1:
-            energies[0, 1] = self._pair_energy
-        return energies
+        return np.full(stop - start, self._energy, dtype=np.int64)
 
     def accept(self, seqs: np.ndarray, s: int, c: int) -> int:
         del seqs
         self.accepted.append((s, c))
-        if self._pair_energy is not None and self.pair_calls:
-            self._energy = self._pair_energy
-        else:
-            self._energy += 1
+        self._energy += 1
         return self._energy
 
 
@@ -93,56 +81,7 @@ def test_solver_best_e_never_increases() -> None:
     assert e3 == 5
 
 
-def test_solver_trace_contains_exact_monotone_best_states() -> None:
-    seqs = np.random.default_rng(42).choice((-1, 1), size=(4, 5)).astype(np.int8)
-    tracker = Tracker()
-    tracker.build(seqs)
-    trace: list[TraceSnapshot] = []
-
-    ils_search(seqs, tracker, np.random.default_rng(42), steps=5000, trace=trace)
-
-    assert trace[0].reason == "initial"
-    assert all(trace[i - 1].best_q >= trace[i].best_q for i in range(1, len(trace)))
-    for snapshot in trace:
-        rebuilt = Tracker()
-        rebuilt.build(snapshot.sequences)
-        assert rebuilt._u is not None
-        assert np.array_equal(snapshot.residual, rebuilt._u)
-        assert snapshot.q == rebuilt._q
-
-
-def test_rescue_accepts_first_improving_pair() -> None:
-    tracker = _ScriptedTracker(pair_energy=9)
-    seqs = np.ones((4, 2), dtype=np.int8)
-    candidates = [(0, 0), (0, 1), (1, 0)]
-
-    result, evaluations = _rescue(seqs, tracker, candidates, 10)  # type: ignore[arg-type]
-
-    assert result == 9
-    assert evaluations == 1
-    assert tracker.accepted == candidates[:2]
-
-
-def test_solver_uses_pair_rescue_after_a_failed_single_scan() -> None:
-    tracker = _ScriptedTracker(pair_energy=9)
-    seqs = np.ones((4, 2), dtype=np.int8)
-
-    _best, energy, _used, stats = ils_search(
-        seqs,
-        cast(Tracker, tracker),
-        np.random.default_rng(1),
-        steps=10,
-        config=SolverConfig(kick=False),
-    )
-
-    assert energy == 9
-    assert stats.pairs == 1
-    assert stats.kicks == 0
-    assert tracker.pair_calls == 1
-    assert len(tracker.accepted) == 2
-
-
-def test_solver_kicks_when_no_pair_improves() -> None:
+def test_solver_kicks_after_failed_single_scan() -> None:
     tracker = _ScriptedTracker()
     seqs = np.ones((4, 2), dtype=np.int8)
 
@@ -154,29 +93,11 @@ def test_solver_kicks_when_no_pair_improves() -> None:
         config=SolverConfig(tabu=False),
     )
 
-    assert tracker.pair_calls == 1
-    assert stats.pairs == 0
     assert stats.kicks == 1
     assert len(tracker.accepted) == 4
 
 
-def test_solver_skips_rescue_when_pairs_are_disabled() -> None:
-    tracker = _ScriptedTracker()
-    seqs = np.ones((4, 2), dtype=np.int8)
-
-    _best, _energy, _used, stats = ils_search(
-        seqs,
-        cast(Tracker, tracker),
-        np.random.default_rng(1),
-        steps=10,
-        config=SolverConfig(pairs=False, tabu=False),
-    )
-
-    assert tracker.pair_calls == 0
-    assert stats.kicks == 1
-
-
-def test_solver_stops_before_rescue_when_single_scan_exhausts_budget() -> None:
+def test_solver_stops_when_single_scan_exhausts_budget() -> None:
     tracker = _ScriptedTracker()
     seqs = np.ones((4, 2), dtype=np.int8)
 
@@ -185,7 +106,6 @@ def test_solver_stops_before_rescue_when_single_scan_exhausts_budget() -> None:
     )
 
     assert used == 7
-    assert tracker.pair_calls == 0
     assert stats.kicks == 0
     assert tracker.accepted == []
 
@@ -324,3 +244,26 @@ def test_solver_kicks_after_an_unsuccessful_tabu_walk(monkeypatch: pytest.Monkey
     assert stats.tabu_hits == 0
     assert stats.tabu_evals == 3
     assert stats.kicks == 1
+
+
+def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch) -> None:
+    def successful_tabu(*_args: object) -> tuple[int, int]:
+        return 0, 3
+
+    monkeypatch.setattr("src.solver._tabu_walk", successful_tabu)
+    tracker = _ScriptedTracker(initial_energy=256)
+    seqs = np.ones((4, 2), dtype=np.int8)
+
+    _best, energy, _used, stats = ils_search(
+        seqs,
+        cast(Tracker, tracker),
+        np.random.default_rng(1),
+        steps=10,
+        config=SolverConfig(kick=False, tabu=True),
+    )
+
+    assert energy == 0
+    assert stats.tabu_walks_q2 == 1
+    assert stats.tabu_hits_q2 == 1
+    assert stats.tabu_walks_q1 == 0
+    assert stats.tabu_hits_q1 == 0

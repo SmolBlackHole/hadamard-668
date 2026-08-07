@@ -2,99 +2,69 @@
 
 Stand: 2026-08-07
 
-Diese Datei enthält ausschließlich unbewiesene oder empirisch noch nicht
-ausreichend abgesicherte Aussagen. Bestätigte Solvermechanik steht in
-[`SOLVER_MODEL.md`](SOLVER_MODEL.md), das bewiesene Hauptresultat in
-[`TIGHT_FRAME_CHARACTERIZATION.md`](TIGHT_FRAME_CHARACTERIZATION.md) und
-konkrete Arbeitsschritte in [`TODO.md`](TODO.md).
+Hier stehen nur unbestätigte, testbare Aussagen. Bewiesene Mathematik steht in
+[`TIGHT_FRAME_CHARACTERIZATION.md`](TIGHT_FRAME_CHARACTERIZATION.md),
+Messresultate in [`research/2026-08-07-search-ablations.md`](research/2026-08-07-search-ablations.md)
+und konkrete Arbeitsschritte in [`TODO.md`](TODO.md).
 
-## H1: Pair-Rescue kann Tabu verschlechtern
+## H1: Reachability ist nicht durch Q allein bestimmt
 
-**Vermutung:** Monotone Pair-Schritte verbessern zwar sofort die Energie,
-können den Solver aber in eine schwer lösbare Ein-Fehler-Falle führen. Tabu
-hätte aus dem vorherigen Zwei- oder Drei-Fehler-Zustand möglicherweise eine
-bessere Chance auf einen direkten Lösungsweg.
+`Q` misst den aktuellen GS4-Fehler exakt, aber ein niedrigeres `Q` führt nicht
+zuverlässig in ein besser lösbares Einzugsgebiet. Evidenz dafür ist die
+signifikant schlechtere Online-Gray-Solve-Rate trotz tausender exakt
+verbessernder Moves.
 
-**Bisherige Evidenz:** Kleine gepaarte Stichproben bei `n=38` und `n=40` waren
-ohne Pair-Rescue schneller und lösten häufiger. In den detaillierten
-`n=38`-Traces beendete Pair-Rescue keine Lösung, während Tabu alle Lösungen
-abschloss.
+**Vermutung:** Ein strukturierter Move darf zunächst `Q` erhöhen, wenn der
+anschließende greedy Single-Abstieg ein besseres lokales Minimum erreicht.
 
-**Offen:** Die Stichproben reichen nicht für einen Defaultwechsel. Benötigt
-wird eine große Ablation mit identischen Seeds und gepaartem McNemar-Test.
+**Test:** Auf identischen lokalen Minima zufälligen Kick, finalen
+Tabu-Zustand und kontrolliert schlechtere Gray-Proposals jeweils vollständig
+mit Singles quenchen. Erst `Q` und Solve-Erfolg des neuen Minimums bewerten.
 
-## H2: Der letzte Engpass braucht einen gezielten Mehrbit-Move
+## H2: Der gezielte Wörterbuchwechsel ist wichtiger als aktuelle Tightness
 
-**Vermutung:** Die verbleibenden `Q=1/2`-Barrieren lassen sich effizienter mit
-einem kleinen, zustandsabhängigen Mehrbit-Lookahead überwinden als mit mehr
-globalem Greedy-Budget.
+Die Grammatrix `D^T D` enthält keine unabhängige Information neben dem
+aktuellen Residuum. Nach jedem Flip ändert sich jedoch der zustandsabhängige
+Operator `D`.
 
-**Bisherige Evidenz:** Bei `n=52` erreichten alle 150 untersuchten Runs
-`Q<=2`, aber nur zwei wurden gelöst. Reale Endzustände waren für sämtliche
-Singles und Pairs isoliert. Erfolgreiche Runs sprangen innerhalb von Tabu
-direkt von `Q=2` auf `Q=0`.
+**Vermutung:** Ein erster, möglicherweise schlechterer Flip lässt sich danach
+auswählen, welche guten Richtungen im neuen Wörterbuch entstehen. Ein
+einfacher Prüfausdruck ist
 
-**Zu testen:** Gray-Code, kleiner Beam und 3- bis 8-Bit-Subsets ausschließlich
-auf gespeicherten `Q<=2`-Zuständen. Eine globale Triple- oder Subset-Suche ist
-nicht Teil dieser Hypothese.
+```text
+R_1(i) = min_j Q(x xor i xor j).
+```
 
-## H3: Das Flip-Frame besitzt einfache Integrabilitätsbedingungen
+Ein positiver Befund wäre ein billigerer und gezielterer Ersatz für den
+zufälligen Kick.
 
-**Vermutung:** Die Bedingung, dass ein ternäres Tight Frame tatsächlich aus
-vier binären GS4-Folgen entsteht, lässt sich durch lokale Vorzeichen-,
-Paritäts-, Verschiebungs- oder Zyklusbedingungen charakterisieren.
+## H3: Kantenkoordinaten erlauben stärkere Constraint-Propagation
 
-**Warum das wichtig wäre:** Eine einfache Parametrisierung könnte `D` statt
-des Residualvektors als primäres Konstruktionsobjekt nutzbar machen. Dann wäre
-die Tight-Frame-Charakterisierung nicht nur eine alternative Beschreibung,
-sondern möglicherweise der Anfang einer neuen Konstruktion.
+Jeder Flip-Block wird exakt durch ein odd-parity Kantenwort parametrisiert. Die
+Koordinate spart allein nur vier globale Vorzeichenbits.
 
-**Zu untersuchen:** Rekonstruktion der Produkte `x[c]x[c+t]`, Kompatibilität
-verschiedener Lags, Zerlegung der Zeilen in vier Folgen, Negashift-Symmetrien
-und die antipodale Darstellung im `2n`-Lift.
+**Vermutung:** Die Balance aller zyklischen Kantenintervalle lässt sich mit
+SAT/CP-SAT, Faktorgraphen, Transfermatrizen, mehreren Intervallen oder kleinen
+zyklischen Quotienten stärker propagieren als im direkten Folgenraum.
 
-## H4: Strukturtreue zyklische Vorschläge können neue Escapes liefern
+Ein einzelner Intervallflip und ein bloß auf `r_1=0` konditionierter Start sind
+bereits negativ getestet. Ein neuer Ansatz muss mehrere Skalen gleichzeitig
+nutzen.
 
-**Vermutung:** Der exakte antiperiodische `2n`-Lift kann Vorschläge erzeugen,
-die im ursprünglichen Suchraum schwer sichtbar sind, sofern jeder Move die
-Antipodalbedingung und das korrekte Zweiniveauspektrum erhält.
+## H4: Ein strukturtreuer Lift eröffnet andere Werkzeuge
 
-**Abgrenzung:** Eine freie gewöhnliche zyklische Flat-Spectrum-Optimierung ist
-bereits als falsches Ziel erkannt. Interessant sind nur strukturtreue Moves,
-kleine zyklische Quotienten oder Proposal-Generatoren, deren Ergebnis weiterhin
-mit dem exakten Tracker bewertet wird.
+Der exakte Lift `x -> (x,-x)` überführt NAF in periodische Autokorrelation auf
+den ungeraden `2n`-Frequenzbins.
 
-## Zwei parallele Forschungsstränge
+**Vermutung:** Ein Optimierer, der die Antipodalbedingung erhält oder nur
+strukturtreue Proposals erzeugt, kann zyklische, spektrale oder kontinuierliche
+Werkzeuge nutzen, ohne das GS4-Ziel zu verlassen.
 
-### Strang A: Neuheit
+Eine freie zyklische Flat-Spectrum-Optimierung ist ausdrücklich nicht das
+richtige Problem.
 
-Systematische Literaturrecherche nach Kombinationen aus Hadamard/GS4,
-negaperiodischer Autokorrelation, Tight Frames, Flip- und Ableitungsmatrizen,
-diskreten Jacobians, Inzidenzmatrizen und verwandten Gram-Identitäten.
+## Wissenschaftlicher Status
 
-Zu prüfen sind insbesondere die elementweise Grammatrixformel, die
-gerade/ungerade Frobenius-Normidentität und bekannte Charakterisierungen über
-relative Difference Families.
-
-### Strang B: Konstruktion
-
-`D` als primäres Objekt behandeln und die Integrabilitätsbedingungen aus H3
-herleiten. Beide Stränge kontrollieren einander: Eine konstruktive Struktur
-kann passende Literaturbegriffe liefern, während bekannte Strukturen die
-möglichen Integrabilitätsbedingungen einschränken.
-
-Bis diese Arbeiten abgeschlossen sind, lautet der Status bewusst:
-
-> Ernstzunehmendes neues mathematisches Resultat für das Projekt;
-> wissenschaftliche Neuheit und konstruktiver Vorteil noch ungeklärt.
-
-## Derzeit nicht gestützt
-
-- Eine einfache Startmetrik trennt spätere Lösungen zuverlässig von
-  Fehlläufen.
-- Bestimmte Lags oder Frequenzen werden immer in derselben Reihenfolge
-  repariert.
-- Rang oder Konditionierung des Flip-Operators liefern nahe am Ziel ein
-  zusätzliches Escape-Signal.
-- Niedrige individuelle NAF-Rauheit erklärt den entscheidenden letzten Erfolg.
-- Eine einzelne kleine spektrale Partition charakterisiert die Lösungen.
+Die Tight-Frame- und Integrabilitätsformulierung ist ein ernstzunehmendes
+Projektresultat. Wissenschaftliche Neuheit, eine neue Existenzklasse und ein
+konstruktiver Vorteil sind weiterhin ungeklärt.

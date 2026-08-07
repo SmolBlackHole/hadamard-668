@@ -26,7 +26,7 @@ def _run_one(args: tuple[int, int, int]) -> dict[str, Any]:
         "solver_e": r.solver_e,
         "elapsed": r.elapsed,
         "single_evals": s.get("single_evals", 0),
-        "rescue_evals": s.get("rescue_evals", 0),
+        "tabu_evals": s.get("tabu_evals", 0),
         "kick_evals": s.get("kick_evals", 0),
     }
 
@@ -74,14 +74,14 @@ def main() -> None:
             lo, hi = wilson_ci(solved, len(rs))
 
             s_avg = sum(int(r["single_evals"]) for r in rs) / len(rs)
-            p_avg = sum(int(r["rescue_evals"]) for r in rs) / len(rs)
+            t_avg = sum(int(r["tabu_evals"]) for r in rs) / len(rs)
             k_avg = sum(int(r["kick_evals"]) for r in rs) / len(rs)
 
             print(
                 f"  steps={b:>8}  {solved:>3}/{seeds_count} solved  "
                 f"ci=[{lo:.3f}, {hi:.3f}]  "
                 f"avg {avg_t * 1000:.0f}ms/run  "
-                f"evals={s_avg + p_avg + k_avg:.0f} (S={s_avg:.0f} P={p_avg:.0f} K={k_avg:.0f})"
+                f"evals={s_avg + t_avg + k_avg:.0f} (S={s_avg:.0f} TB={t_avg:.0f} K={k_avg:.0f})"
             )
         print()
 

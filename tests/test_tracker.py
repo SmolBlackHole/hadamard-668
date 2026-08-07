@@ -72,26 +72,22 @@ def test_combo_energy_matches_full_gram_for_larger_moves(n: int) -> None:
     assert tracker.combo_energy([(0, 0), (0, 0)]) == tracker.energy()
 
 
-@pytest.mark.parametrize("n", (4, 5, 8))
-def test_pair_batch_matches_combo_energy_in_combination_order(n: int) -> None:
-    builder = Builder(kind="gs4", n=n)
-    rng = np.random.default_rng(60 + n)
-    seqs = rng.choice((-1, 1), size=(builder.k, n)).astype(np.int8)
+@pytest.mark.parametrize("n", (38, 49, 50, 51, 52))
+def test_combo_energy_matches_fresh_tracker_for_wide_moves(n: int) -> None:
+    rng = np.random.default_rng(668 + n)
+    sequences = rng.choice((-1, 1), size=(4, n)).astype(np.int8)
     tracker = Tracker()
-    tracker.build(seqs)
-    positions: list[tuple[int, int]] = [(s, c) for s in range(4) for c in range(n)]
-    candidates: list[tuple[int, int]] = [
-        positions[int(i)]
-        for i in rng.choice(len(positions), size=min(10, len(positions)), replace=False)
-    ]
-    energies = tracker.pair_energies(candidates)
+    tracker.build(sequences)
+    positions = np.asarray([(s, c) for s in range(4) for c in range(n)], dtype=np.intp)
 
-    for i, j in combinations(range(len(candidates)), 2):
-        combo = [candidates[i], candidates[j]]
-        flipped = seqs.copy()
-        for s, c in combo:
-            flipped[s, c] *= -1
-        assert energies[i, j] == tracker.combo_energy(combo) == _full_energy(builder, flipped)
+    for width in (2, 3, 7, 11, 16, 20):
+        chosen = positions[rng.choice(len(positions), size=width, replace=False)]
+        combo = [(int(s), int(c)) for s, c in chosen]
+        flipped = sequences.copy()
+        flipped[chosen[:, 0], chosen[:, 1]] *= -1
+        fresh = Tracker()
+        fresh.build(flipped)
+        assert tracker.combo_energy(combo) == fresh.energy()
 
 
 def test_accept_keeps_cache_equal_to_fresh_build() -> None:

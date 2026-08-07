@@ -1,106 +1,90 @@
 # Technisches Modell des GS4-Solvers
 
-Diese Datei beschreibt ausschließlich bestätigte Mathematik und den
-produktiven Suchpfad. Messwerte, offene Hypothesen und Arbeitsaufgaben leben in
-den dafür vorgesehenen Dokumenten.
-
 Stand: 2026-08-07
 
-## Was der Solver löst
+Diese Datei beschreibt ausschließlich bestätigte Mathematik und den aktuellen
+Produktionspfad.
 
-Gesucht sind vier Folgen `a,b,c,d ∈ {±1}^n`, deren negazyklische Matrizen
-in der Goethals-Seidel-Konstruktion eine Hadamard-Matrix der Ordnung 4n bilden.
-Das ist äquivalent zu einem **negaperiodischen komplementären Sequenzsatz**:
+## Ziel
 
-```
-NAF_a(t) + NAF_b(t) + NAF_c(t) + NAF_d(t) = 0,   t = 1,…,n-1
-```
-
-## Zielfunktion und Normierung
-
-Die Repository-Metrik zählt ungeordnete Off-Diagonalpaare:
-
-```
-E_repo = ½‖HHᵀ - 4nI‖_F² = 2n Σ r_t² = 4n Σ_{t=1}^{⌊n/2⌋} r_t²
-```
-
-Alle `r_t` sind durch 4 teilbar. Der Tracker speichert:
-
-```
-u_t = r_t / 4,   Q = Σ u_t²,   E_repo = 64n·Q
-```
-
-Es gibt nur `floor((n-1)/2)` echte Lag-Koordinaten. Bei geradem `n` ist der
-Mittelpunkt-Lag identisch null. Die Reduktion erlaubt einen `int8`-Delta-Cache.
-
-## Single-Flip
-
-Sei `d` das reduzierte Delta eines Flips:
-
-```
-Q' = Q + 2uᵀd + ‖d‖²
-```
-
-`‖d‖²` ist im Cache als `norm2` gespeichert — kein `count_nonzero` mehr im
-Hot-Path.
-
-## Batch-Flip
-
-Für einen Block von k Flips (k ≤ 64 im Solver):
-
-```
-ΔQ_block = 2D_block·u + norm2_block
-```
-
-Ein Matmul ersetzt k einzelne Dot-Produkte. Der Solver bricht beim ersten
-Treffer ab (Early-Exit), daher zahlen Batches vor allem bei erfolglosen Scans.
-
-## Mehrfach-Flips (Rescue)
-
-Für eine Menge von Flips genügt die Summe ihrer Single-Deltas plus für jedes
-Paar derselben Folge genau eine Korrektur. Triple-Terme existieren nicht.
-Der Abstand `⌊n/2⌋` bei ungeradem n ist kein Sonderfall.
-
-## Inkrementelles Delta-Update
-
-Nach einem akzeptierten Flip: nur O(n) statt O(n²). Vorkomputierte Geometrie
-(lag, sign, betroffene Cache-Zeilen) wird beim `build()` einmal berechnet und
-bei `accept()` als reine Indexed-Addition angewandt.
-
-## Suchphasen
-
-Der aktuelle Suchpfad ist:
+Gesucht sind vier Folgen `a,b,c,d in {+1,-1}^n`, deren negazyklische Blöcke in
+der Goethals-Seidel-Konstruktion eine Hadamard-Matrix der Ordnung `4n` bilden.
+Äquivalent gilt für alle nichttrivialen Lags:
 
 ```text
-greedy Singles -> optionaler Pair-Rescue -> Tabu-Walk -> Kick
+NAF_a(t)+NAF_b(t)+NAF_c(t)+NAF_d(t)=0.
 ```
 
-Singles übernehmen sofort gefundene Verbesserungen. Pairs testen ausgewählte
-Zweierkombinationen. Tabu darf für bis zu 200 Schritte schlechter werden und
-merkt sich den besten Zwischenzustand. Ein Kick bleibt der letzte Fallback.
+## Reduziertes Residuum
 
-Der Tabu-Innerloop läuft als Numba-Kernel. Er ist der entscheidende Grund,
-warum der Solver die frühere Suchdynamikgrenze bei `n=36-38` überwunden hat.
+Der kombinierte Residualvektor `r` besitzt nur
 
-## Spektrale Formulierung
-
-Für `ζ_k = exp(iπ(2k+1)/n)` (Nullstellen von z^n+1):
-
-```
-Σ |X(ζ_k)|² = 4n   für alle k
+```text
+m_eff = floor((n-1)/2)
 ```
 
+unabhängige Koordinaten. Beim geraden `n` ist der Mittelpunkt-Lag `n/2`
+identisch null. Weil alle Residuen durch vier teilbar sind, speichert der
+Tracker
+
+```text
+u = r/4,
+Q = ||u||_2^2,
+E_repo = 64 n Q.
 ```
-E_repo = 2 Σ p_k²,   p_k = Σ|X(ζ_k)|² - 4n
+
+Damit sucht der Solver exakt nach `u=0`, ohne die volle Gram-Matrix zu bauen.
+
+## Single-Flip-Scoring
+
+Für das gecachte Residualdelta `d` eines Flips gilt:
+
+```text
+Q' = Q + 2 u^T d + ||d||_2^2.
 ```
 
-Die Spektraldarstellung reduziert die Freiheitsgrade nicht, ist aber die Basis
-für spätere Spektralreparatur (ganze Folge aus Spektren der anderen drei
-rekonstruieren).
+Der Tracker speichert `d` als `int8` und seine Norm separat. Bis zu 64
+Single-Scores werden mit einem Matrix-Vektor-Produkt ausgewertet. Der Solver
+übernimmt den ersten gefundenen verbesserten Flip und behält dadurch den
+Early-Exit-Vorteil.
 
-## Einordnung
+Nach einem Accept werden nur die betroffenen Delta-Einträge mit
+vorkomputierten Spalten-, Lag- und Vorzeichenindizes aktualisiert.
 
-- Kombinatorische Konstruktion von Hadamard-Matrizen
-- Signalverarbeitung/Radar: flache Leistung auf negaperiodischen Frequenzen
-- Quartische {±1}-Optimierung / 4-Spin-Ising-Modell
-- Lokale Suche auf diskretem Vektor-Balancing-Problem
+## Exakte Multi-Flips
+
+`Tracker.combo_energy()` wertet eine beliebige Flipmenge exakt aus. NAF ist
+quadratisch: Die Summe der Single-Deltas plus eine Korrektur für jedes
+Same-Sequence-Paar ist vollständig. Es existieren keine zusätzlichen Triple-
+oder Vierer-Energieterme.
+
+Der allgemeine Prüfer bleibt für mathematische Experimente erhalten, ist aber
+keine Phase des Produktionssolvers.
+
+## Suchpfad
+
+```text
+greedy Singles -> Tabu-Walk -> zufälliger Vier-Bit-Kick
+```
+
+1. **Singles:** Batch-Scan mit Early Exit; jede unmittelbare Verbesserung wird
+   akzeptiert.
+2. **Tabu:** Bis zu 200 zustandsabhängige Single-Schritte dürfen bergauf gehen.
+   Der Numba-Kernel merkt sich den besten besuchten exakten Trackerzustand.
+   Übernommen wird er nur, wenn er besser als der Walk-Start ist.
+3. **Kick:** Findet Tabu keine Verbesserung, wird je Folge ein zufälliges Bit
+   geflippt. Dieser schlechtere Zustand wird bewusst übernommen; anschließend
+   beginnt der greedy Single-Abstieg erneut.
+
+Pair-Rescue und Trace-Erfassung gehören nicht mehr zum Solver.
+
+## Zentrale Grenze
+
+`Q` ist ein exaktes Fehlermaß, aber kein beobachtetes Maß für die spätere
+Erreichbarkeit der Lösung. Das zustandsabhängige Flip-Wörterbuch ändert sich
+nach jedem Move. Deshalb kann eine unmittelbare Verbesserung ein schlechteres
+Einzugsgebiet öffnen und eine kontrollierte Verschlechterung langfristig
+besser sein.
+
+Die Tight-Frame-Sicht und die Kantenkoordinaten stehen in
+[`TIGHT_FRAME_CHARACTERIZATION.md`](TIGHT_FRAME_CHARACTERIZATION.md).
