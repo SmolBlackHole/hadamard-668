@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +85,36 @@ def save_run(path: Path, strategy: str, n: int, result: Result) -> None:
 
     if result.metrics.energy == 0 and path.resolve() != SOLUTIONS.resolve():
         _write_entry(SOLUTIONS, strategy, n, entry, dedup_class=True)
+
+
+def save_trace(directory: Path, strategy: str, n: int, result: Result) -> Path | None:
+    """Write one compressed trajectory file; return ``None`` when tracing was disabled."""
+    snapshots = result.trace
+    if not snapshots:
+        return None
+
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{strategy}-n{n:04d}-seed{result.seed:06d}.npz"
+    config = asdict(result.config) if result.config is not None else {}
+    np.savez_compressed(
+        path,
+        sequences=np.stack([snapshot.sequences for snapshot in snapshots]),
+        residuals=np.stack([snapshot.residual for snapshot in snapshots]),
+        q=np.asarray([snapshot.q for snapshot in snapshots], dtype=np.int64),
+        best_q=np.asarray([snapshot.best_q for snapshot in snapshots], dtype=np.int64),
+        budget_used=np.asarray([snapshot.budget_used for snapshot in snapshots], dtype=np.int64),
+        evaluations=np.asarray([snapshot.evaluations for snapshot in snapshots], dtype=np.int64),
+        phases=np.asarray([snapshot.phase for snapshot in snapshots]),
+        reasons=np.asarray([snapshot.reason for snapshot in snapshots]),
+        strategy=np.asarray(strategy),
+        n=np.asarray(n, dtype=np.int64),
+        seed=np.asarray(result.seed, dtype=np.int64),
+        iterations=np.asarray(result.iterations, dtype=np.int64),
+        solver_e=np.asarray(result.solver_e, dtype=np.int64),
+        solved=np.asarray(result.metrics.energy == 0),
+        config=np.asarray(json.dumps(config, sort_keys=True)),
+    )
+    return path
 
 
 def load_runs(path: Path) -> dict[str, dict[str, list[dict[str, Any]]]]:

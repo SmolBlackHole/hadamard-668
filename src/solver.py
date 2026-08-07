@@ -15,6 +15,7 @@ from .benchmark_stats import fmt_e
 from .tracker import Tracker
 
 SINGLE_BATCH_SIZE = 64
+TRACE_EVAL_INTERVAL = 100_000
 _jit: Any = njit
 
 
@@ -116,6 +117,20 @@ class SolverConfig:
     tabu_tenure: float = 5.0
     tabu_decay: float = 0.7
     tabu_noise: float = 0.0
+
+
+@dataclass(frozen=True)
+class TraceSnapshot:
+    """Exact solver state captured for trajectory analysis."""
+
+    phase: str
+    reason: str
+    budget_used: int
+    evaluations: int
+    q: int
+    best_q: int
+    sequences: npt.NDArray[np.int8]
+    residual: npt.NDArray[np.int32]
 
 
 @lru_cache(maxsize=16)
@@ -246,6 +261,7 @@ def search(
     *,
     steps: int,
     config: SolverConfig | None = None,
+    trace: list[TraceSnapshot] | None = None,
 ) -> tuple[npt.NDArray[np.int8], int, int, SearchStats]:
     """Iterated local search. Returns (best_seq, best_energy, evals, stats)."""
     cfg = config if config is not None else SolverConfig()
@@ -263,11 +279,28 @@ def search(
     total_budget = steps
     best_seq = cur_seq.copy()
     best_e = cur_e
+    next_trace_eval = TRACE_EVAL_INTERVAL
+
+    if trace is not None:
+        assert tracker._u is not None
+        trace.append(
+            TraceSnapshot(
+                phase="initial",
+                reason="initial",
+                budget_used=0,
+                evaluations=0,
+                q=tracker._q,
+                best_q=tracker._q,
+                sequences=cur_seq.copy(),
+                residual=tracker._u.copy(),
+            )
+        )
 
     K = min(B - 1, max(16, int(B**0.5 * 3)))
 
     singles_e = np.empty(B)
     while steps > 0 and best_e > 0:
+        phase = "plateau"
         # Phase 1: greedy singles scan
         t_phase = time.perf_counter()
         singles_e.fill(np.inf)
@@ -286,6 +319,7 @@ def search(
                 stats.energy_saved_singles += prev_e - cur_e
                 stats._hit_single()
                 improved = True
+                phase = "single"
                 scan_count = idx + 1
                 break
         steps -= scan_count
@@ -293,6 +327,23 @@ def search(
         stats.single_time_s += time.perf_counter() - t_phase
 
         if steps <= 0:
+            if trace is not None and cur_e < best_e:
+                assert tracker._u is not None
+                evaluations = (
+                    stats.single_evals + stats.rescue_evals + stats.tabu_evals + stats.kick_evals
+                )
+                trace.append(
+                    TraceSnapshot(
+                        phase=phase,
+                        reason="best",
+                        budget_used=total_budget,
+                        evaluations=evaluations,
+                        q=tracker._q,
+                        best_q=tracker._q,
+                        sequences=cur_seq.copy(),
+                        residual=tracker._u.copy(),
+                    )
+                )
             best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
             break
 
@@ -309,6 +360,7 @@ def search(
                     stats.energy_saved_pairs += prev_e - result
                     cur_e = result
                     improved = True
+                    phase = "pair"
                     stats.pairs += 1
                     stats._hit_other()
 
@@ -325,6 +377,7 @@ def search(
                 stats.energy_saved_tabu += prev_e - result
                 cur_e = result
                 improved = True
+                phase = "tabu"
                 stats.tabu_hits += 1
                 stats._hit_other()
 
@@ -341,6 +394,30 @@ def search(
             stats.energy_saved_kicks += prev_e - cur_e
             stats.kick_time_s += time.perf_counter() - t_kick
             stats._hit_other()
+            phase = "kick"
+
+        if trace is not None:
+            evaluations = (
+                stats.single_evals + stats.rescue_evals + stats.tabu_evals + stats.kick_evals
+            )
+            is_best = cur_e < best_e
+            is_sample = evaluations >= next_trace_eval
+            if is_best or is_sample:
+                assert tracker._u is not None
+                trace.append(
+                    TraceSnapshot(
+                        phase=phase,
+                        reason="best" if is_best else "sample",
+                        budget_used=total_budget - max(steps, 0),
+                        evaluations=evaluations,
+                        q=tracker._q,
+                        best_q=min(cur_e, best_e) // (64 * n_cols),
+                        sequences=cur_seq.copy(),
+                        residual=tracker._u.copy(),
+                    )
+                )
+            while evaluations >= next_trace_eval:
+                next_trace_eval += TRACE_EVAL_INTERVAL
 
         best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
 

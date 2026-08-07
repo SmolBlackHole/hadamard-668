@@ -23,7 +23,6 @@ def main() -> None:
     seeds = 200
 
     cfg = SolverConfig()
-    configs = [("S+P+K+Tabu", cfg)]
     tasks = [(N_VAL, s, b, cfg) for b in BUDGETS for s in range(seeds)]
     print(f"Optimization test: n={N_VAL}, {seeds} seeds, {len(tasks)} runs\n")
 

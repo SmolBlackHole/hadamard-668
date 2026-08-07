@@ -4,18 +4,14 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
 
 from .builder import Builder
 from .metrics import Metrics, check_orthogonality
-from .solver import SearchStats
+from .solver import SearchStats, SolverConfig, TraceSnapshot
 from .solver import search as ils_search
-
-if TYPE_CHECKING:
-    from .solver import SolverConfig
 
 
 @dataclass
@@ -28,6 +24,8 @@ class Result:
     sequences: npt.NDArray[np.int8] | None = None
     stats: SearchStats | None = None
     solver_e: int = 0  # tracker.energy() at best_seq (internal search metric)
+    trace: list[TraceSnapshot] | None = None
+    config: SolverConfig | None = None
 
     def __str__(self) -> str:
         order = self.matrix.shape[0]
@@ -66,7 +64,14 @@ class Generator:
     def name(self) -> str:
         return self._builder.kind
 
-    def search(self, steps: int, seed: int, *, config: SolverConfig | None = None) -> Result:
+    def search(
+        self,
+        steps: int,
+        seed: int,
+        *,
+        config: SolverConfig | None = None,
+        capture_trace: bool = False,
+    ) -> Result:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
 
@@ -81,8 +86,15 @@ class Generator:
 
         tracker = Tracker()
         tracker.build(sequences)
+        solver_config = config if config is not None else SolverConfig()
+        trace: list[TraceSnapshot] | None = [] if capture_trace else None
         best_seq, best_e, iters, stats = ils_search(
-            sequences, tracker, rng, steps=steps, config=config
+            sequences,
+            tracker,
+            rng,
+            steps=steps,
+            config=solver_config,
+            trace=trace,
         )
         elapsed = time.perf_counter() - started
 
@@ -97,6 +109,8 @@ class Generator:
             sequences=best_seq,
             stats=stats,
             solver_e=best_e,
+            trace=trace,
+            config=solver_config,
         )
 
     def _tensor_search(self, steps: int, seed: int, started: float) -> Result:

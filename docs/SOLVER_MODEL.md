@@ -1,6 +1,10 @@
-# GS4-Energie via negaperiodischer Autokorrelation
+# Technisches Modell des GS4-Solvers
 
-Stand: 2026-08-07, Commit `96b4fa3`
+Diese Datei beschreibt ausschließlich bestätigte Mathematik und den
+produktiven Suchpfad. Messwerte, offene Hypothesen und Arbeitsaufgaben leben in
+den dafür vorgesehenen Dokumenten.
+
+Stand: 2026-08-07
 
 ## Was der Solver löst
 
@@ -26,7 +30,8 @@ Alle `r_t` sind durch 4 teilbar. Der Tracker speichert:
 u_t = r_t / 4,   Q = Σ u_t²,   E_repo = 64n·Q
 ```
 
-Das halbiert die unabhängige Lag-Dimension und erlaubt einen `int8`-Delta-Cache.
+Es gibt nur `floor((n-1)/2)` echte Lag-Koordinaten. Bei geradem `n` ist der
+Mittelpunkt-Lag identisch null. Die Reduktion erlaubt einen `int8`-Delta-Cache.
 
 ## Single-Flip
 
@@ -62,6 +67,21 @@ Nach einem akzeptierten Flip: nur O(n) statt O(n²). Vorkomputierte Geometrie
 (lag, sign, betroffene Cache-Zeilen) wird beim `build()` einmal berechnet und
 bei `accept()` als reine Indexed-Addition angewandt.
 
+## Suchphasen
+
+Der aktuelle Suchpfad ist:
+
+```text
+greedy Singles -> optionaler Pair-Rescue -> Tabu-Walk -> Kick
+```
+
+Singles übernehmen sofort gefundene Verbesserungen. Pairs testen ausgewählte
+Zweierkombinationen. Tabu darf für bis zu 200 Schritte schlechter werden und
+merkt sich den besten Zwischenzustand. Ein Kick bleibt der letzte Fallback.
+
+Der Tabu-Innerloop läuft als Numba-Kernel. Er ist der entscheidende Grund,
+warum der Solver die frühere Suchdynamikgrenze bei `n=36-38` überwunden hat.
+
 ## Spektrale Formulierung
 
 Für `ζ_k = exp(iπ(2k+1)/n)` (Nullstellen von z^n+1):
@@ -77,17 +97,6 @@ E_repo = 2 Σ p_k²,   p_k = Σ|X(ζ_k)|² - 4n
 Die Spektraldarstellung reduziert die Freiheitsgrade nicht, ist aber die Basis
 für spätere Spektralreparatur (ganze Folge aus Spektren der anderen drei
 rekonstruieren).
-
-## Performance (Consumer-Hardware, 12 Cores)
-
-| Operation | n=32 | n=167 |
-| --- | --- | --- |
-| Build + Scan | 0.3ms | 1.2ms |
-| 200k Steps Run | 313ms | 554ms |
-| 100 Seed Sweep | ~3s wall | ~5s wall |
-
-Der NAF-Tracker ist **17× schneller** als der initiale AutocorrTracker und
-**~5000× schneller** als der ursprüngliche GramTracker.
 
 ## Einordnung
 

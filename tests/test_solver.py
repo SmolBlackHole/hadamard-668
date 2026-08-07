@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from src.builder import Builder
-from src.solver import SearchStats, SolverConfig, _rescue, _tabu_walk
+from src.solver import SearchStats, SolverConfig, TraceSnapshot, _rescue, _tabu_walk
 from src.solver import search as ils_search
 from src.tracker import Tracker
 
@@ -91,6 +91,24 @@ def test_solver_best_e_never_increases() -> None:
 
     _, e3 = _update_best(cur_seq, 5, best_seq, 5)
     assert e3 == 5
+
+
+def test_solver_trace_contains_exact_monotone_best_states() -> None:
+    seqs = np.random.default_rng(42).choice((-1, 1), size=(4, 5)).astype(np.int8)
+    tracker = Tracker()
+    tracker.build(seqs)
+    trace: list[TraceSnapshot] = []
+
+    ils_search(seqs, tracker, np.random.default_rng(42), steps=5000, trace=trace)
+
+    assert trace[0].reason == "initial"
+    assert all(trace[i - 1].best_q >= trace[i].best_q for i in range(1, len(trace)))
+    for snapshot in trace:
+        rebuilt = Tracker()
+        rebuilt.build(snapshot.sequences)
+        assert rebuilt._u is not None
+        assert np.array_equal(snapshot.residual, rebuilt._u)
+        assert snapshot.q == rebuilt._q
 
 
 def test_rescue_accepts_first_improving_pair() -> None:

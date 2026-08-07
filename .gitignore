@@ -9,3 +9,7 @@ __pycache__/
 .coverage
 coverage.json
 reference_pzinn/
+
+data/n52-traces/
+data/traces/
+data/trace-runs.json

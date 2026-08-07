@@ -1,25 +1,19 @@
 # Hadamard-668
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
-![Tests](https://img.shields.io/badge/tests-51%2F51-green)
+![Tests](https://img.shields.io/badge/tests-60%2F60-green)
 
 Suche nach einer reellen Hadamard-Matrix der Ordnung 668 über die
 Goethals-Seidel-Konstruktion mit vier negazyklischen (±1)-Folgen.
 
 ## Stand
 
-| n | Ordnung | Gelöst | 95% CI | Avg / Run |
-| ---: | :---: | :---: | :---: | ---: |
-| 24 | 96 | 100/100 | 0.963–1.000 | 17 ms |
-| 28 | 112 | 96/100 | 0.902–0.984 | 107 ms |
-| 30 | 120 | 84/100 | 0.756–0.899 | 182 ms |
-| 32 | 128 | 31/100 | 0.228–0.406 | 313 ms |
-| 34 | 136 | 14/100 | 0.085–0.221 | 322 ms |
-| 36 | 144 | 5/100 | 0.022–0.112 | 314 ms |
-| 38 | 152 | 1/100 | 0.002–0.054 | 307 ms |
-| 40–167 | 160–668 | — | 0.000–0.037 | 250–554 ms |
+Der NAF-/Tabu-Solver löst kleine und mittlere GS4-Instanzen zuverlässig und
+hat mit erhöhtem Budget bereits Lösungen für `n=52` beziehungsweise Ordnung
+208 erzeugt. Das eigentliche Projektziel bleibt `n=167` beziehungsweise eine
+Hadamard-Matrix der Ordnung 668.
 
-200k Steps, 12 Worker. Details: [BENCHMARK.md](BENCHMARK.md)
+Reproduzierbare Messwerte: [docs/BENCHMARK.md](docs/BENCHMARK.md)
 
 ## Installation
 
@@ -76,19 +70,20 @@ berechnet die Orthogonalitätsenergie als `E = 64n · Σ u_t²`. Ein Single-Flip
 ändert jedes `u_t` um `{-1,0,+1}` — die Energieänderung ist ein Skalarprodukt
 über kleine Ganzzahlen.
 
-Die vollständige Herleitung: [HYPOTHESIS.md](HYPOTHESIS.md)
+Kompaktes Modell: [docs/SOLVER_MODEL.md](docs/SOLVER_MODEL.md). Ausführliche neue
+Charakterisierung: [docs/TIGHT_FRAME_CHARACTERIZATION.md](docs/TIGHT_FRAME_CHARACTERIZATION.md).
 
 ## Architektur
 
 ```text
 src/
   tracker.py      # NAF-Energie-Tracker: Delta-Cache, Batch-Flip, O(1) Accept
-  solver.py       # Iterated Local Search: Singles → Pairs → Kick
+  solver.py       # Iterated Local Search: Singles → Pairs → Tabu → Kick
   generator.py    # Orchestrierung: Builder → Tracker → Solver → Metrics
   builder.py      # GS4-Blockmatrix-Konstruktion
   metrics.py      # Gram-Metriken, Orthogonalitätsprüfung
   benchmark_stats.py  # Wilson-CI, Z-Test, McNemar
-  output.py       # JSON-Persistenz mit SHA-256-Dedup
+  output.py       # JSON-Persistenz und optionale NPZ-Traces
   fast_hash.py    # Äquivalenzklassen-Hash (negashift + reverse)
   verify.py       # Dataset-Integritätscheck
 scripts/
@@ -98,6 +93,7 @@ tests/
 data/
   benchmark.json  # Referenz-Benchmark (100 Seeds × 16 n)
   solutions.json  # Gefundene Hadamard-Matrizen
+docs/             # Modell, Benchmarks, Roadmap und Forschungsberichte
 ```
 
 Kernpfad: `generator.search()` → `solver.search()` → `tracker.flip_batch()` /
@@ -111,6 +107,7 @@ Kernpfad: `generator.search()` → `solver.search()` → `tracker.flip_batch()` 
 - **Batch-Flip**: `D @ u` Matmul statt 64 einzelner Dot-Produkte, Early-Exit
   beim ersten Treffer.
 - **Vorkomputierte Geometrie**: `accept()` ist reine Indexed-Addition.
+- **Tabu-Walk**: kompiliertes, nichtmonotones Escape aus lokalen Minima.
 - **Kick statt Restart**: Kicks sind explorativ und werden immer akzeptiert.
   Restarts warfen gute Zustände weg (–20% Lösungen bei n=32).
 
@@ -126,14 +123,14 @@ Kernpfad: `generator.search()` → `solver.search()` → `tracker.flip_batch()` 
 
 ## Nächste Schritte
 
-Budget-Scaling zeigt: n=32 erreicht 99% bei 1.6M Steps (reines Rechenlimit),
-aber n=38 bleibt bei 14% selbst mit 1.6M Steps (Suchdynamik-Limit). Ab n=36
-dominiert das Plateau-Problem.
+Der Solver erreicht inzwischen auch bei `n=52` zuverlässig die letzten ein
+oder zwei Residualfehler. Der Engpass ist der gezielte Mehrbit-Escape aus
+diesen lokal abgeschlossenen Zuständen. Parallel wird geprüft, ob der aktuelle
+Pair-Rescue Tabu ungünstig vorstrukturiert.
 
-Nächster Kandidat: **Tabu-Walk** statt zufälligem Kick, um gezielt aus lokalen
-Minima herauszulaufen. Referenz: `pzinn/hadamard` `improve.py`.
-
-Siehe [RESEARCH.md](RESEARCH.md) für die priorisierte Testkaskade.
+Aktuelle Roadmap: [docs/TODO.md](docs/TODO.md). Offene Forschungsannahmen:
+[docs/HYPOTHESES.md](docs/HYPOTHESES.md). Übersicht aller Dokumente:
+[docs/README.md](docs/README.md).
 
 ## Referenzen
 
