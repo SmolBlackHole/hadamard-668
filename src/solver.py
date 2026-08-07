@@ -10,6 +10,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .benchmark_stats import fmt_e
+from .tabu_kernel import tabu_walk_kernel
 from .tracker import Tracker
 
 SINGLE_BATCH_SIZE = 64
@@ -21,11 +22,11 @@ class SolverConfig:
 
     pairs: bool = True
     kick: bool = True
-    tabu: bool = False
-    tabu_steps: int = 100
-    tabu_tenure: float = 10.0
-    tabu_decay: float = 0.9
-    tabu_noise: float = 0.3
+    tabu: bool = True
+    tabu_steps: int = 200
+    tabu_tenure: float = 5.0
+    tabu_decay: float = 0.7
+    tabu_noise: float = 0.0
 
 
 @lru_cache(maxsize=16)
@@ -291,27 +292,30 @@ def _tabu_walk(
     work_seq = cur_seq.copy()
     work_tracker = Tracker()
     work_tracker.build(work_seq)
-    tabu = np.zeros((n_seqs, n_cols), dtype=np.float64)
-    best_e = cur_e
-    best_seq: npt.NDArray[np.int8] | None = None
-    evaluations = 0
-
-    for _ in range(config.tabu_steps):
-        evaluations += 1
-        energies = work_tracker.flip_energies().reshape(n_seqs, n_cols)
-        penalty = 1.0 + tabu + config.tabu_noise * rng.random((n_seqs, n_cols))
-        s, c = divmod(int(np.argmin(energies * penalty)), n_cols)
-        work_e = work_tracker.accept(work_seq, s, c)
-        tabu *= config.tabu_decay
-        tabu[s, c] = config.tabu_tenure
-
-        if work_e < best_e:
-            best_e = work_e
-            best_seq = work_seq.copy()
-            if best_e == 0:
-                break
-
-    if best_seq is None:
+    assert (
+        work_tracker._delta is not None
+        and work_tracker._norm2 is not None
+        and work_tracker._u is not None
+        and work_tracker._update_cols is not None
+        and work_tracker._update_lags is not None
+        and work_tracker._update_signs is not None
+    )
+    noise = config.tabu_noise * rng.random((config.tabu_steps, n_seqs, n_cols))
+    best_seq, best_q, evaluations = tabu_walk_kernel(
+        work_seq,
+        work_tracker._delta.copy(),
+        work_tracker._norm2.copy(),
+        work_tracker._u.copy(),
+        work_tracker._q,
+        work_tracker._update_cols,
+        work_tracker._update_lags,
+        work_tracker._update_signs,
+        noise,
+        config.tabu_tenure,
+        config.tabu_decay,
+    )
+    best_e = 64 * n_cols * best_q
+    if best_e >= cur_e:
         return None, evaluations
 
     cur_seq[...] = best_seq

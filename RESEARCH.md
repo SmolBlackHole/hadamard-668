@@ -49,10 +49,11 @@ Aktuell `K = sqrt(B)*3`. Testen: 3√B, 4√B, 5√B bei n=32,36.
 Statt nur Pairs: top-k Bits, alle 2^k-1 Teilmengen testen. k=8→255,
 k=9→511 Kombinationen. Erst naiv, dann Gray-Code mit inkrementellem Update.
 
-### 5. λ-Filter für n=167
+### 5. Cyclotomischer Startfilter — verworfen
 
-`Σ λ_s² = 668`, nur 10 gültige `λ`-Kombinationen. ~1/189 zufällige Starts
-sind valide. Als Start-Filter, nicht als harte lokale Nebenbedingung.
+Bei n=36 brachte der Filter in 1000 Seeds keinen signifikanten Gewinn:
+Default 63/1000, Cyclo 69/1000 (`p=0.589`), Tabu 623/1000 und Cyclo+Tabu
+645/1000 (`p=0.307` gegen Tabu). Die Implementierung wurde wieder entfernt.
 
 ### 6. Spektralreparatur
 

@@ -57,10 +57,17 @@ class Tracker:
 
     def flip_batch(self, start: int, stop: int) -> npt.NDArray[np.int64]:
         """Return energies for a contiguous range of single flips."""
+        return 64 * self._n * self._flip_q_batch(start, stop)
+
+    def flip_qs(self) -> npt.NDArray[np.int64]:
+        """Return reduced Q values after every single flip."""
+        return self._flip_q_batch(0, 4 * self._n)
+
+    def _flip_q_batch(self, start: int, stop: int) -> npt.NDArray[np.int64]:
         assert self._u is not None and self._delta is not None and self._norm2 is not None
         d = self._delta[start:stop]
         delta_q = 2 * (d @ self._u) + self._norm2[start:stop]
-        return (64 * self._n * (self._q + delta_q.astype(np.int64))).astype(np.int64)
+        return self._q + delta_q.astype(np.int64)
 
     def flip_energies(self) -> npt.NDArray[np.int64]:
         """Return energies for all 4n single flips in solver scan order."""
@@ -244,7 +251,7 @@ def _update_delta_slice(
     rows = offset + columns
     old = cache[rows, lags]
     correction = signs * value * a[columns]
-    new = old.astype(np.int16) + correction.astype(np.int16)
+    new = old + correction
     norm2[rows] = norm2[rows] + new * new - old * old
-    cache[rows, lags] = new.astype(np.int8)
+    cache[rows, lags] = new
     cache[offset + c] *= -1

@@ -129,7 +129,7 @@ def test_solver_kicks_when_no_pair_improves() -> None:
     seqs = np.ones((4, 2), dtype=np.int8)
 
     _best, _energy, _used, stats = ils_search(
-        seqs, cast(Tracker, tracker), np.random.default_rng(1), steps=10
+        seqs, cast(Tracker, tracker), np.random.default_rng(1), steps=10, config=SolverConfig(tabu=False)
     )
 
     assert tracker.pair_calls == 1
@@ -147,7 +147,7 @@ def test_solver_skips_rescue_when_pairs_are_disabled() -> None:
         cast(Tracker, tracker),
         np.random.default_rng(1),
         steps=10,
-        config=SolverConfig(pairs=False),
+        config=SolverConfig(pairs=False, tabu=False),
     )
 
     assert tracker.pair_calls == 0
@@ -210,6 +210,23 @@ def test_tabu_walk_keeps_main_state_when_it_finds_no_improvement() -> None:
     seqs[index // 3, index % 3] *= -1
     tracker.build(seqs)
     assert tracker.energy() == 0
+
+
+def test_tabu_walk_returns_the_rebuilt_tracker_energy() -> None:
+    seqs = np.random.default_rng(8).choice((-1, 1), size=(4, 5)).astype(np.int8)
+    tracker = Tracker()
+    tracker.build(seqs)
+
+    result, _ = _tabu_walk(
+        seqs,
+        tracker,
+        tracker.energy(),
+        np.random.default_rng(2),
+        SolverConfig(tabu=True, tabu_steps=10),
+    )
+
+    if result is not None:
+        assert result == tracker.energy()
     original = seqs.copy()
 
     result, evaluations = _tabu_walk(

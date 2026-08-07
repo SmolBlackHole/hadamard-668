@@ -123,3 +123,4 @@ def test_flip_batch_matches_single_flip_energies(n: int) -> None:
         (tracker.flip_batch(0, n), tracker.flip_batch(n, 3 * n), tracker.flip_batch(3 * n, 4 * n))
     )
     assert np.array_equal(actual, expected)
+    assert np.array_equal(tracker.flip_qs() * (64 * n), expected)
