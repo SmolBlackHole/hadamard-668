@@ -20,6 +20,4 @@ def test_regression_solves_all_random_seeds(n: int, steps: int, n_seeds: int) ->
     seeds = rng.integers(0, 1_000_000, size=n_seeds)
     for s in seeds:
         r = gen.search(steps=steps, seed=int(s))
-        assert r.metrics.energy == 0, (
-            f"n={n} seed={s} failed with e={r.metrics.energy}"
-        )
+        assert r.metrics.energy == 0, f"n={n} seed={s} failed with e={r.metrics.energy}"

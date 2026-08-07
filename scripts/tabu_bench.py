@@ -18,13 +18,14 @@ def _run_one(args: tuple[int, int, int, SolverConfig]) -> dict[str, Any]:
 
 
 def main() -> None:
-    BUDGETS = [2000, 5000, 10000, 20000, 50000]
-    N_VAL = 32
-    seeds = 100
+    BUDGETS = [200_000]
+    N_VAL = 38
+    seeds = 200
 
     cfg = SolverConfig()
+    configs = [("S+P+K+Tabu", cfg)]
     tasks = [(N_VAL, s, b, cfg) for b in BUDGETS for s in range(seeds)]
-    print(f"Minimal budget n={N_VAL}, {seeds} seeds, {len(tasks)} runs\n")
+    print(f"Optimization test: n={N_VAL}, {seeds} seeds, {len(tasks)} runs\n")
 
     started = time.perf_counter()
     results: list[dict[str, Any]] = []

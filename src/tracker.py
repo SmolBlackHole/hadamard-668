@@ -48,6 +48,22 @@ class Tracker:
         )
         self._update_cols, self._update_lags, self._update_signs = _update_geometry(self._n)
 
+    def _adopt(
+        self,
+        seqs: npt.NDArray[np.int8],
+        u: npt.NDArray[np.int32],
+        q: int,
+        delta: npt.NDArray[np.int8],
+        norm2: npt.NDArray[np.int32],
+    ) -> None:
+        """Replace the mutable state with an exact cache snapshot."""
+        self._seqs = seqs
+        self._u = u
+        self._q = q
+        self._e = 64 * self._n * q
+        self._delta = delta
+        self._norm2 = norm2
+
     def energy(self) -> int:
         return self._e
 

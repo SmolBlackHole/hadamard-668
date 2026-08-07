@@ -129,7 +129,11 @@ def test_solver_kicks_when_no_pair_improves() -> None:
     seqs = np.ones((4, 2), dtype=np.int8)
 
     _best, _energy, _used, stats = ils_search(
-        seqs, cast(Tracker, tracker), np.random.default_rng(1), steps=10, config=SolverConfig(tabu=False)
+        seqs,
+        cast(Tracker, tracker),
+        np.random.default_rng(1),
+        steps=10,
+        config=SolverConfig(tabu=False),
     )
 
     assert tracker.pair_calls == 1
@@ -212,7 +216,7 @@ def test_tabu_walk_keeps_main_state_when_it_finds_no_improvement() -> None:
     assert tracker.energy() == 0
 
 
-def test_tabu_walk_returns_the_rebuilt_tracker_energy() -> None:
+def test_tabu_walk_adopts_an_exact_tracker_snapshot() -> None:
     seqs = np.random.default_rng(8).choice((-1, 1), size=(4, 5)).astype(np.int8)
     tracker = Tracker()
     tracker.build(seqs)
@@ -225,8 +229,22 @@ def test_tabu_walk_returns_the_rebuilt_tracker_energy() -> None:
         SolverConfig(tabu=True, tabu_steps=10),
     )
 
-    if result is not None:
-        assert result == tracker.energy()
+    assert result is not None
+    assert result == tracker.energy()
+    rebuilt = Tracker()
+    rebuilt.build(seqs)
+    assert (
+        tracker._u is not None
+        and rebuilt._u is not None
+        and tracker._delta is not None
+        and rebuilt._delta is not None
+        and tracker._norm2 is not None
+        and rebuilt._norm2 is not None
+    )
+    assert np.array_equal(tracker._u, rebuilt._u)
+    assert np.array_equal(tracker._delta, rebuilt._delta)
+    assert np.array_equal(tracker._norm2, rebuilt._norm2)
+    assert np.array_equal(tracker.flip_qs(), rebuilt.flip_qs())
     original = seqs.copy()
 
     result, evaluations = _tabu_walk(
@@ -241,6 +259,27 @@ def test_tabu_walk_returns_the_rebuilt_tracker_energy() -> None:
     assert evaluations == 3
     assert np.array_equal(seqs, original)
     assert tracker.energy() == 0
+
+
+def test_tabu_walk_does_not_rebuild_a_temporary_tracker(monkeypatch: pytest.MonkeyPatch) -> None:
+    seqs = np.random.default_rng(8).choice((-1, 1), size=(4, 5)).astype(np.int8)
+    tracker = Tracker()
+    tracker.build(seqs)
+
+    def unexpected_build(*_args: object) -> None:
+        raise AssertionError("Tabu walk must reuse the main tracker cache")
+
+    monkeypatch.setattr(Tracker, "build", unexpected_build)
+    result, evaluations = _tabu_walk(
+        seqs,
+        tracker,
+        tracker.energy(),
+        np.random.default_rng(2),
+        SolverConfig(tabu=True, tabu_steps=10),
+    )
+
+    assert result == tracker.energy()
+    assert evaluations == 1
 
 
 def test_solver_kicks_after_an_unsuccessful_tabu_walk(monkeypatch: pytest.MonkeyPatch) -> None:

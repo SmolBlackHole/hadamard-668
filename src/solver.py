@@ -5,15 +5,104 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+from numba import njit  # pyright: ignore[reportMissingImports]
 
 from .benchmark_stats import fmt_e
-from .tabu_kernel import tabu_walk_kernel
 from .tracker import Tracker
 
 SINGLE_BATCH_SIZE = 64
+_jit: Any = njit
+
+
+@_jit(cache=True)
+def tabu_walk_kernel(
+    seqs: npt.NDArray[np.int8],
+    delta: npt.NDArray[np.int8],
+    norm2: npt.NDArray[np.int32],
+    u: npt.NDArray[np.int32],
+    q: int,
+    update_cols: npt.NDArray[np.intp],
+    update_lags: npt.NDArray[np.intp],
+    update_signs: npt.NDArray[np.int8],
+    noise: npt.NDArray[np.float64],
+    tenure: float,
+    decay: float,
+) -> tuple[
+    npt.NDArray[np.int8],
+    npt.NDArray[np.int8],
+    npt.NDArray[np.int32],
+    npt.NDArray[np.int32],
+    int,
+    int,
+]:
+    """Run exact Tabu steps and return the best visited tracker state."""
+    n_seqs, n_cols = seqs.shape
+    n_lags = u.size
+    tabu = np.zeros((n_seqs, n_cols), dtype=np.float64)
+    best_seq = np.empty_like(seqs)
+    best_delta = np.empty_like(delta)
+    best_norm2 = np.empty_like(norm2)
+    best_u = np.empty_like(u)
+    best_q = q
+    used = 0
+
+    for step in range(noise.shape[0]):
+        best_score = np.inf
+        index = 0
+        for candidate in range(n_seqs * n_cols):
+            delta_q = int(norm2[candidate])
+            for lag in range(n_lags):
+                delta_q += 2 * int(delta[candidate, lag]) * int(u[lag])
+            s = candidate // n_cols
+            c = candidate - s * n_cols
+            score = (q + delta_q) * (1.0 + tabu[s, c] + noise[step, s, c])
+            if score < best_score:
+                best_score = score
+                index = candidate
+
+        s = index // n_cols
+        c = index - s * n_cols
+        delta_q = int(norm2[index])
+        for lag in range(n_lags):
+            delta_q += 2 * int(delta[index, lag]) * int(u[lag])
+        q += delta_q
+        for lag in range(n_lags):
+            u[lag] += delta[index, lag]
+
+        value = seqs[s, c]
+        for row_index in range(update_cols.shape[1]):
+            col = update_cols[c, row_index]
+            lag = update_lags[c, row_index]
+            row = s * n_cols + col
+            old = delta[row, lag]
+            correction = update_signs[c, row_index] * value * seqs[s, col]
+            new = old + correction
+            norm2[row] += new * new - old * old
+            delta[row, lag] = new
+        for lag in range(n_lags):
+            delta[index, lag] = -delta[index, lag]
+        seqs[s, c] = -seqs[s, c]
+
+        for tabu_s in range(n_seqs):
+            for tabu_c in range(n_cols):
+                tabu[tabu_s, tabu_c] *= decay
+        tabu[s, c] = tenure
+        used = step + 1
+
+        if q < best_q:
+            best_q = q
+            best_seq[:, :] = seqs
+            best_delta[:, :] = delta
+            best_norm2[:] = norm2
+            best_u[:] = u
+            if best_q == 0:
+                break
+
+    return best_seq, best_delta, best_norm2, best_u, best_q, used
 
 
 @dataclass
@@ -289,27 +378,24 @@ def _tabu_walk(
         return None, 0
 
     n_seqs, n_cols = cur_seq.shape
-    work_seq = cur_seq.copy()
-    work_tracker = Tracker()
-    work_tracker.build(work_seq)
     assert (
-        work_tracker._delta is not None
-        and work_tracker._norm2 is not None
-        and work_tracker._u is not None
-        and work_tracker._update_cols is not None
-        and work_tracker._update_lags is not None
-        and work_tracker._update_signs is not None
+        tracker._delta is not None
+        and tracker._norm2 is not None
+        and tracker._u is not None
+        and tracker._update_cols is not None
+        and tracker._update_lags is not None
+        and tracker._update_signs is not None
     )
     noise = config.tabu_noise * rng.random((config.tabu_steps, n_seqs, n_cols))
-    best_seq, best_q, evaluations = tabu_walk_kernel(
-        work_seq,
-        work_tracker._delta.copy(),
-        work_tracker._norm2.copy(),
-        work_tracker._u.copy(),
-        work_tracker._q,
-        work_tracker._update_cols,
-        work_tracker._update_lags,
-        work_tracker._update_signs,
+    best_seq, best_delta, best_norm2, best_u, best_q, evaluations = tabu_walk_kernel(
+        cur_seq.copy(),
+        tracker._delta.copy(),
+        tracker._norm2.copy(),
+        tracker._u.copy(),
+        tracker._q,
+        tracker._update_cols,
+        tracker._update_lags,
+        tracker._update_signs,
         noise,
         config.tabu_tenure,
         config.tabu_decay,
@@ -319,5 +405,5 @@ def _tabu_walk(
         return None, evaluations
 
     cur_seq[...] = best_seq
-    tracker.build(cur_seq)
+    tracker._adopt(best_seq, best_u, best_q, best_delta, best_norm2)
     return best_e, evaluations

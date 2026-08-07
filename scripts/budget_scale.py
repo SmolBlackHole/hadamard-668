@@ -32,10 +32,10 @@ def _run_one(args: tuple[int, int, int]) -> dict[str, Any]:
 
 
 def main() -> None:
-    n_vals = [36, 38, 40, 42, 44]
-    seeds_count = 100
-    budgets = [20_000, 50_000, 100_000, 200_000]
-    workers = max(1, int((__import__("os").cpu_count() or 2) * 0.8))
+    n_vals = [52]
+    seeds_count = 150
+    budgets = [12_800_000]
+    workers = 15
 
     tasks: list[tuple[int, int, int]] = []
     for n_val in n_vals:
