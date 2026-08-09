@@ -1,6 +1,6 @@
 # Benchmark
 
-Stand: 2026-08-07
+Stand: 2026-08-09
 
 **Solver:** Singles + Tabu-200 + Kick, `tenure=5`, `decay=0.7`, `noise=0.0`
 
@@ -82,8 +82,7 @@ Die gepaarte 1000-Seed-Ablation ergab ohne Pair-Rescue:
 - `n=40`: 254 statt 221 Lösungen, `p=0,093042`.
 
 Pair aus war außerdem schneller. Der Pfad wurde deshalb vollständig entfernt.
-Die vollständigen historischen Zahlen stehen in
-[`research/2026-08-07-search-ablations.md`](research/2026-08-07-search-ablations.md).
+Die Einordnung steht in [`SEARCH_FINDINGS.md`](SEARCH_FINDINGS.md).
 
 ## Interpretationsregel
 

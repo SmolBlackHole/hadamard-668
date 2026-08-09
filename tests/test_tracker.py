@@ -136,3 +136,58 @@ def test_flip_batch_matches_single_flip_energies(n: int) -> None:
     )
     assert np.array_equal(actual, expected)
     assert np.array_equal(tracker.flip_qs() * (64 * n), expected)
+
+
+@pytest.mark.parametrize("n", (6, 10, 38, 52))
+def test_even_half_length_fold_matches_naf_residual(n: int) -> None:
+    rng = np.random.default_rng(200 + n)
+    seqs = rng.choice((-1, 1), size=(4, n)).astype(np.int8)
+    residual = Tracker._compute_residual(seqs)
+    h = n // 2
+    omega = np.exp(1j * np.pi / n)
+
+    q = seqs[:, :h] + 1j * seqs[:, h:]
+    y = q * omega ** np.arange(h)
+    offsets = (np.arange(h)[:, None] + np.arange(h)[None, :]) % h
+    correlation = np.sum(y[:, :, None] * np.conj(y[:, offsets]), axis=(0, 1))
+    expected = np.asarray(
+        [omega ** (-t) * (residual[t] + 1j * residual[h - t]) for t in range(1, h)]
+    )
+
+    assert np.allclose(correlation[1:], expected, atol=1e-11)
+    tracker = Tracker()
+    tracker.build(seqs)
+    assert np.isclose(tracker._q, np.sum(np.abs(correlation[1:]) ** 2) / 32)
+
+
+def test_delta_gram_does_not_determine_solving_single_rows() -> None:
+    no_solving_single = np.asarray(
+        (
+            (-1, -1, -1, -1, -1),
+            (-1, -1, -1, -1, 1),
+            (1, 1, -1, 1, 1),
+            (1, -1, 1, -1, 1),
+        ),
+        dtype=np.int8,
+    )
+    six_solving_singles = np.asarray(
+        (
+            (-1, -1, -1, -1, -1),
+            (-1, -1, -1, 1, -1),
+            (-1, -1, -1, 1, -1),
+            (-1, -1, -1, 1, -1),
+        ),
+        dtype=np.int8,
+    )
+    trackers = [Tracker(), Tracker()]
+    trackers[0].build(no_solving_single)
+    trackers[1].build(six_solving_singles)
+
+    u0, u1 = trackers[0]._u, trackers[1]._u
+    delta0, delta1 = trackers[0]._delta, trackers[1]._delta
+    assert u0 is not None and u1 is not None
+    assert delta0 is not None and delta1 is not None
+    assert np.array_equal(u0, u1)
+    assert np.array_equal(delta0.T @ delta0, delta1.T @ delta1)
+    assert np.count_nonzero(trackers[0].flip_qs() == 0) == 0
+    assert np.count_nonzero(trackers[1].flip_qs() == 0) == 6

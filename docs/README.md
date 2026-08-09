@@ -1,24 +1,19 @@
 # Dokumentation
 
-Jede Datei besitzt genau eine Aufgabe:
+Die Forschung lebt in sieben kanonischen Dateien:
 
-- [`SOLVER_MODEL.md`](SOLVER_MODEL.md) beschreibt den aktuellen produktiven
-  Solver und seine exakte Zielfunktion.
-- [`TIGHT_FRAME_CHARACTERIZATION.md`](TIGHT_FRAME_CHARACTERIZATION.md)
-  enthält das kanonische mathematische Hauptresultat.
-- [`BENCHMARK.md`](BENCHMARK.md) enthält den reproduzierbaren Leistungsstand.
-- [`HYPOTHESES.md`](HYPOTHESES.md) enthält ausschließlich offene, testbare
-  Vermutungen.
-- [`TODO.md`](TODO.md) ist die priorisierte Arbeitsliste.
-- [`RESEARCH_BRIEF.md`](RESEARCH_BRIEF.md) ist die eigenständige Übergabe für
-  unabhängige Agenten und neue Forschungsdurchläufe.
+- [`SOLVER_MODEL.md`](SOLVER_MODEL.md) – produktiver Solver und Zielfunktion.
+- [`TIGHT_FRAME_CHARACTERIZATION.md`](TIGHT_FRAME_CHARACTERIZATION.md) –
+  bewiesene mathematische Charakterisierung.
+- [`CONSTRUCTION_SPACE.md`](CONSTRUCTION_SPACE.md) – gemeinsame
+  Zwei-Basen-Spaltenkoordinate, Paley, Golay, Turyn, TT, Base Sequences und
+  direkte Konstruktionen.
+- [`SEARCH_FINDINGS.md`](SEARCH_FINDINGS.md) – reproduzierte positive und
+  negative Suchergebnisse, einschließlich Targeted Escape.
+- [`BENCHMARK.md`](BENCHMARK.md) – kanonische Leistungszahlen.
+- [`HYPOTHESES.md`](HYPOTHESES.md) – ausschließlich offene Vermutungen.
+- [`TODO.md`](TODO.md) – ausschließlich offene Arbeit.
 
-Unter [`research/`](research/) liegen nur noch zwei konsolidierte
-Evidenzberichte:
-
-- [`research/2026-08-07-mathematical-evidence.md`](research/2026-08-07-mathematical-evidence.md)
-- [`research/2026-08-07-search-ablations.md`](research/2026-08-07-search-ablations.md)
-
-Ausführbare Dauerprüfungen stehen unter [`../experiments/`](../experiments/).
-Abgeschlossene Wegwerfprototypen werden gelöscht, sobald ihr Resultat in einem
-Evidenzbericht festgehalten ist.
+Session-Briefings, datierte Zwischenberichte, Wegwerfprototypen und
+abgeleitete `temporary-*`-Messdateien werden nicht als parallele Wahrheit im Repo
+behalten. Belastbare Resultate müssen vorher in eine dieser Dateien einfließen.

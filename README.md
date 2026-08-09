@@ -135,8 +135,8 @@ Single-Abstieg. Damit wird Reachability statt nur unmittelbares Q untersucht.
 
 Aktuelle Roadmap: [docs/TODO.md](docs/TODO.md). Offene Forschungsannahmen:
 [docs/HYPOTHESES.md](docs/HYPOTHESES.md). Übersicht aller Dokumente:
-[docs/README.md](docs/README.md). Eigenständige Forschungsübergabe:
-[docs/RESEARCH_BRIEF.md](docs/RESEARCH_BRIEF.md).
+[docs/README.md](docs/README.md). Reproduzierte Suchbefunde:
+[docs/SEARCH_FINDINGS.md](docs/SEARCH_FINDINGS.md).
 
 ## Referenzen
 

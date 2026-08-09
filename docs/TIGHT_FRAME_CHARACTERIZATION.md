@@ -1,10 +1,10 @@
 # Tight-Frame-Charakterisierung des GS4-Solvers
 
-Stand: 2026-08-07
+Stand: 2026-08-09
 
 Dieses Dokument ist die kanonische Darstellung des mathematischen
-Hauptbefunds. Ausführliche Computerprüfungen und die Neuheitsabgrenzung stehen
-in [`research/2026-08-07-mathematical-evidence.md`](research/2026-08-07-mathematical-evidence.md).
+Hauptbefunds. Suchfolgen und negative Ablationen stehen in
+[`SEARCH_FINDINGS.md`](SEARCH_FINDINGS.md).
 
 ## 1. Ausgangsproblem
 
@@ -111,6 +111,21 @@ Der Faktor `1/4` liefert die behauptete Formel.
 Damit ist die komplette Spalten-Grammatrix des lokalen Move-Wörterbuchs bereits
 durch das aktuelle Residuum bestimmt. Rang, Konditionierung und
 Spaltenkohärenz liefern daher keine unabhängige lokale Information neben `u`.
+
+Diese Aussage ist zugleich eine harte Grenze der Frame-Sicht. Bereits bei
+`n=5` existieren zwei vollständig enumerierte Zustände mit identischem
+`u=(0,1)` und identischer Matrix
+
+```text
+D^T D = [[12,-2],
+         [-2,10]].
+```
+
+Der erste besitzt keinen unmittelbar lösenden Single-Flip, der zweite sechs.
+Die lokale Erreichbarkeit steckt daher in der konkreten Zeilenanordnung und
+Faktorisierung von `D`, nicht in `D^T D` oder einer daraus abgeleiteten
+quadratischen Kennzahl. Das Gegenbeispiel ist als Regressionstest im Tracker
+festgehalten.
 
 ## 4. Tight-Frame-Äquivalenz
 
@@ -257,7 +272,36 @@ Dies erlaubt zyklische und spektrale Werkzeuge nur dann verlustfrei, wenn die
 Antipodalbedingung erhalten bleibt. Eine freie zyklische Optimierung verlässt
 im Allgemeinen den gültigen GS4-Unterraum.
 
-## 9. Verifikation
+## 9. Exakte komplexe Halb-Längen-Faltung für gerades n
+
+Für `n=2h` zerlege `x=(a,b)` in zwei Hälften und setze
+
+```text
+q_j = a_j + i b_j,
+omega = exp(i pi/(2h)),
+y_j = omega^j q_j.
+```
+
+Ist `C_t` die über alle vier Folgen summierte periodische Autokorrelation der
+`y`-Folgen, dann gilt exakt
+
+```text
+C_t = omega^(-t) (r_t + i r_{h-t}),   1 <= t < h.
+```
+
+Somit ist GS4 bei Länge `2h` äquivalent zu einer periodisch komplementären
+Familie aus vier chirp-modulierten QPSK-Folgen der Länge `h`. Ferner gilt
+
+```text
+Q = (1/32) sum_{t=1}^{h-1} |C_t|².
+```
+
+Die Darstellung halbiert die Folgenlänge und öffnet exakt den zyklischen
+FFT-/Filterbankraum. Sie entfernt keine binären Freiheitsgrade. Konstruktionen
+stehen in [`CONSTRUCTION_SPACE.md`](CONSTRUCTION_SPACE.md), die Suchfolgen in
+[`SEARCH_FINDINGS.md`](SEARCH_FINDINGS.md).
+
+## 10. Verifikation
 
 Geprüft wurden unter anderem:
 
@@ -268,13 +312,10 @@ Geprüft wurden unter anderem:
 - vollständige Blockenumeration bis `n=12`;
 - vollständige ternäre Erste-Spalten-Prüfung bis `n=10`.
 
-Der reproduzierbare Prüfer ist
+Die Identitäten sind als Regressionstests in `tests/` verankert. Historische
+Wegwerfprüfer wurden nach Übernahme der Ergebnisse entfernt.
 
-```powershell
-python -m experiments.frame_integrability
-```
-
-## 10. Konsequenz für den Solver
+## 11. Konsequenz für den Solver
 
 Der Solver navigiert nicht annähernd den Raum von `2^(4n)` Zuständen. Er senkt
 einen ungefähr `n/2`-dimensionalen ganzzahligen Residualvektor und verändert
@@ -289,7 +330,7 @@ Die nächste relevante Frage ist deshalb nicht, wie man das gegenwärtige
 Framepotential nochmals optimiert, sondern welcher kontrollierte Move ein
 besser lösbares nächstes Wörterbuch erzeugt.
 
-## 11. Präziser Status
+## 12. Präziser Status
 
 Bewiesen und computerverifiziert ist eine exakte strukturelle Umformulierung:
 

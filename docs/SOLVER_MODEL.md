@@ -1,6 +1,6 @@
 # Technisches Modell des GS4-Solvers
 
-Stand: 2026-08-07
+Stand: 2026-08-09
 
 Diese Datei beschreibt ausschließlich bestätigte Mathematik und den aktuellen
 Produktionspfad.
@@ -61,10 +61,11 @@ oder Vierer-Energieterme.
 Der allgemeine Prüfer bleibt für mathematische Experimente erhalten, ist aber
 keine Phase des Produktionssolvers.
 
-## Suchpfad
+## Heuristischer Suchpfad
 
 ```text
-greedy Singles -> Tabu-Walk -> zufälliger Vier-Bit-Kick
+greedy Singles -> Q-Window -> Tabu-Walk
+               -> einmaliger Target-Escape mit Quench oder zufälliger Zwei-Bit-Kick
 ```
 
 1. **Singles:** Batch-Scan mit Early Exit; jede unmittelbare Verbesserung wird
@@ -72,11 +73,27 @@ greedy Singles -> Tabu-Walk -> zufälliger Vier-Bit-Kick
 2. **Tabu:** Bis zu 200 zustandsabhängige Single-Schritte dürfen bergauf gehen.
    Der Numba-Kernel merkt sich den besten besuchten exakten Trackerzustand.
    Übernommen wird er nur, wenn er besser als der Walk-Start ist.
-3. **Kick:** Findet Tabu keine Verbesserung, wird je Folge ein zufälliges Bit
-   geflippt. Dieser schlechtere Zustand wird bewusst übernommen; anschließend
-   beginnt der greedy Single-Abstieg erneut.
+3. **Target-Escape:** Wird das bisher niedrigste Q wiederholt erreicht, werden
+   einmalig bis zu 625 strukturierte Vier-Sequenz-Kandidaten erzeugt. Jeder
+   Kandidat startet einen eigenen ILS-Quench. Die Policy ist konfigurierbar;
+   `legacy625` bleibt der Default.
+4. **Random Kick:** Andernfalls werden Bits in zwei zufällig ausgewählten
+   Folgen geflippt. Dieser schlechtere Zustand wird bewusst übernommen;
+   anschließend beginnt der greedy Single-Abstieg erneut.
 
 Pair-Rescue und Trace-Erfassung gehören nicht mehr zum Solver.
+
+## Deterministischer Konstruktionspfad
+
+`paley-ng` ist vom heuristischen Solver getrennt. Wenn `p=2n-1` prim ist,
+erzeugt die zweite Paley/Ito-Reihe direkt ein negaperiodisches Golay-Paar und
+damit über den vorhandenen GS4-Builder eine exakte Hadamard-Matrix. Seed,
+Schrittbudget, Tabu und Kicks werden dabei nicht verwendet.
+
+Für `n=52` ist `p=103` prim. Die Matrix der Ordnung 208 wird daher ohne Suche
+konstruiert. Die komplexe Halb-Längen-Faltung steht in
+[`TIGHT_FRAME_CHARACTERIZATION.md`](TIGHT_FRAME_CHARACTERIZATION.md), direkte
+Konstruktionen in [`CONSTRUCTION_SPACE.md`](CONSTRUCTION_SPACE.md).
 
 ## Zentrale Grenze
 
@@ -88,3 +105,4 @@ besser sein.
 
 Die Tight-Frame-Sicht und die Kantenkoordinaten stehen in
 [`TIGHT_FRAME_CHARACTERIZATION.md`](TIGHT_FRAME_CHARACTERIZATION.md).
+Reproduzierte Suchresultate stehen in [`SEARCH_FINDINGS.md`](SEARCH_FINDINGS.md).
