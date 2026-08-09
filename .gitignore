@@ -10,4 +10,4 @@ __pycache__/
 coverage.json
 reference_pzinn/
 
-data/temporary-*
+experiments/learning/_archive/

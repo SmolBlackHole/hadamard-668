@@ -16,7 +16,6 @@ import numpy.typing as npt
 from numba import njit  # pyright: ignore[reportMissingImports]
 
 from .benchmark_stats import fmt_e
-from .gpu_quench import screen_all_lags_gpu  # type: ignore[import-not-found]
 from .tracker import Tracker
 
 SINGLE_BATCH_SIZE = 64
@@ -120,13 +119,12 @@ def tabu_walk_kernel(
 class SolverConfig:
     kick: bool = True
     tabu: bool = True
-    tabu_steps: int = 400
+    tabu_steps: int = 200
     tabu_tenure: float = 5.0
     tabu_decay: float = 0.7
-    tabu_noise: float = 0.2
+    tabu_noise: float = 0.0
     geo_weight: float = 0.0
     targeted_escape: bool = True
-    qwindow_high: int = 9  # stop greedy at this Q (C-rich band, not floor)
 
 
 @lru_cache(maxsize=16)
@@ -356,78 +354,73 @@ def _targeted_kick(
     best_e: int,
     stats: SearchStats,
 ) -> tuple[bool, npt.NDArray[np.int8], int, npt.NDArray[np.int8], int, int]:
-    """GPU-screened targeted escape: score ALL combos, stratify CPU quench."""
-    n = cur_seq.shape[1]
+    """Targeted escape: 1 neg-flip/Seq + Quench. Nur wenige Kombos testen."""
+    n_cols = cur_seq.shape[1]
+    m = (n_cols - 1) // 2
     assert tracker._delta is not None and tracker._u is not None
-    _d = tracker._delta
-    _u = tracker._u
-    m = (n - 1) // 2
+    _d = tracker._delta[:, :m]
+    k = int(np.argmax(np.abs(tracker._u)))
+    target = -tracker._u[k]
 
-    # Multi-lag: collect candidate columns for top-3 dominant lags
-    u_order = np.argsort(np.abs(_u))[::-1]
-    all_lag_arrs: list[tuple[int, list[np.ndarray]]] = []
-    for k in u_order[:3]:
-        target = -_u[k]
-        neg: list[list[int]] = [[] for _ in range(4)]
-        for s in range(4):
-            for c in range(n):
-                if _d[s * n + c, k] == target:
-                    neg[s].append(c)
-        if not all(neg):
-            continue
-        n_arr = [np.array(ng, dtype=np.int64) for ng in neg]
-        all_lag_arrs.append((int(k), n_arr))
-
-    if not all_lag_arrs:
+    neg: list[list[int]] = [[] for _ in range(4)]
+    for s in range(4):
+        for c in range(n_cols):
+            if _d[s * n_cols + c, k] == target:
+                neg[s].append(c)
+    if not all(neg):
         return False, cur_seq, tracker.energy(), best_seq, best_e, 0
 
-    # GPU: score ALL combos from ALL lags (one transfer, ~2ms)
-    try:
-        scored = screen_all_lags_gpu(cur_seq, all_lag_arrs)
-    except Exception:
-        scored = []  # fallback if GPU fails
-    if not scored:
-        return False, cur_seq, tracker.energy(), best_seq, best_e, 0
-
-    # Stratified CPU quench: 50 combos evenly across Q distribution
-    n_total = len(scored)
-    n_quench = min(400, n_total)  # top-400 by Q (winners at ranks ~100-600)
+    max_p = 5
+    n_arr = [np.array(ng[:max_p], dtype=np.int64) for ng in neg]
     quench_budget = min(10000, budget // 4)
     total_used = 0
-    quench_cfg = SolverConfig(targeted_escape=False)
 
+    # Base-Tracker: einmal builden, dann per _adopt kopieren (3.3x schneller)
     base_tr = Tracker()
     base_tr.build(cur_seq)
 
-    for i in range(n_quench):
-        _, _, c0, c1, c2, c3 = scored[i]
-        c0 %= n; c1 %= n; c2 %= n; c3 %= n
-        cand = cur_seq.copy()
-        cand[0, c0] *= -1; cand[1, c1] *= -1
-        cand[2, c2] *= -1; cand[3, c3] *= -1
-        t2 = Tracker()
-        t2._n = base_tr._n; t2._seqs = cand
-        t2._u = base_tr._u.copy(); t2._q = base_tr._q
-        t2._delta = base_tr._delta.copy()
-        t2._norm2 = base_tr._norm2.copy(); t2._e = base_tr._e
-        t2._update_cols = base_tr._update_cols
-        t2._update_lags = base_tr._update_lags
-        t2._update_signs = base_tr._update_signs
-        t2.accept(cand, 0, c0); t2.accept(cand, 1, c1)
-        t2.accept(cand, 2, c2); t2.accept(cand, 3, c3)
-        # C-precheck: skip if Q not in ||d||² range (can't reach C anyway)
-        q_after = t2._q
-        if t2._norm2 is not None:
-            n2 = t2._norm2
-            if q_after < int(n2.min()):  # below cancelable shelf, skip
-                continue
-        sol, be, used, _ = search(cand, t2, rng, steps=quench_budget, config=quench_cfg)
-        total_used += used
-        stats.kicks += 1; stats.kick_evals += 1
-        if be < best_e:
-            best_seq, best_e = sol.copy(), be
-        if be == 0:
-            return True, sol, 0, best_seq, best_e, total_used
+    for i0 in range(len(n_arr[0])):
+        for i1 in range(len(n_arr[1])):
+            for i2 in range(len(n_arr[2])):
+                for i3 in range(len(n_arr[3])):
+                    c0 = int(n_arr[0][i0]) % n_cols
+                    c1 = int(n_arr[1][i1]) % n_cols
+                    c2 = int(n_arr[2][i2]) % n_cols
+                    c3 = int(n_arr[3][i3]) % n_cols
+                    cand = cur_seq.copy()
+                    cand[0, c0] *= -1
+                    cand[1, c1] *= -1
+                    cand[2, c2] *= -1
+                    cand[3, c3] *= -1
+                    t2 = Tracker()
+                    t2._n = base_tr._n
+                    t2._seqs = cand
+                    t2._u = base_tr._u.copy()
+                    t2._q = base_tr._q
+                    t2._delta = base_tr._delta.copy()
+                    t2._norm2 = base_tr._norm2.copy()
+                    t2._e = base_tr._e
+                    t2._update_cols = base_tr._update_cols
+                    t2._update_lags = base_tr._update_lags
+                    t2._update_signs = base_tr._update_signs
+                    t2.accept(cand, 0, c0)
+                    t2.accept(cand, 1, c1)
+                    t2.accept(cand, 2, c2)
+                    t2.accept(cand, 3, c3)
+                    sol, be, used, _ = search(
+                        cand,
+                        t2,
+                        rng,
+                        steps=quench_budget,
+                        config=SolverConfig(targeted_escape=False),
+                    )
+                    total_used += used
+                    stats.kicks += 1
+                    stats.kick_evals += 1
+                    if be < best_e:
+                        best_seq, best_e = sol.copy(), be
+                    if be == 0:
+                        return True, sol, 0, best_seq, best_e, total_used
 
     return False, cur_seq, tracker.energy(), best_seq, best_e, total_used
 
@@ -437,12 +430,11 @@ def _random_kick(
     tracker: Tracker,
     rng: np.random.Generator,
 ) -> int:
-    """Random kick. 1-2 flips in QWindow band, 4 flips outside."""
+    """4-bit random kick. Returns new energy."""
     n_seqs, n_cols = cur_seq.shape
-    n_flips = 2  # small kicks keep state near C-rich band
     cols = np.asarray(rng.integers(0, n_cols, size=n_seqs), dtype=np.intp)
     cur_e = 0
-    for s in rng.choice(n_seqs, size=min(n_flips, n_seqs), replace=False):
+    for s in range(n_seqs):
         cur_e = tracker.accept(cur_seq, s, int(cols[s]))
     return cur_e
 
@@ -479,7 +471,7 @@ def search(
     early_escape_done = False
 
     while steps > 0 and best_e > 0:
-        # Phase 1: Greedy descent — stop at QWindow (don't grind to floor)
+        # Phase 1: Greedy descent
         t_phase = time.perf_counter()
         improved, cur_e, used = _greedy_descent(
             cur_seq, tracker, positions, cur_e, steps, q_scale, cfg, stats
@@ -491,15 +483,9 @@ def search(
             best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
             break
 
-        # QWindow: if greedy hit the C-rich band, stop further descent
-        q_now = cur_e // q_scale
-        if cfg.qwindow_high > 0 and q_now <= cfg.qwindow_high:
-            improved = False  # force tabu/escape instead of more greedy
-
         # Phase 2: Tabu (if stuck)
         if not improved and cfg.tabu:
             improved, cur_e, _ = _tabu_phase(cur_seq, tracker, cur_e, rng, cfg, stats)
-            best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
 
         # Phase 3: Kick (if still stuck)
         if not improved and steps > 0 and cur_e > 0 and cfg.kick:
