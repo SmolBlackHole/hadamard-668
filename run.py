@@ -213,11 +213,29 @@ def main() -> None:
         help=f"||d||^2 penalty in greedy (default: {SolverConfig.geo_weight})",
     )
     solver_group.add_argument(
+        "--escape-policy",
+        choices=("legacy625", "support_lag625"),
+        default=SolverConfig.escape_policy,
+        help="Targeted escape candidate policy (default: legacy625)",
+    )
+    solver_group.add_argument(
+        "--escape-quench-steps",
+        type=int,
+        default=SolverConfig.escape_quench_steps,
+        help=(
+            "Maximum search steps for each targeted escape candidate "
+            f"(default: {SolverConfig.escape_quench_steps})"
+        ),
+    )
+    solver_group.add_argument(
         "--no-targeted-escape", action="store_true", help="Disable targeted escape"
     )
     solver_group.add_argument("--no-tabu", action="store_true", help="Disable tabu walk")
     solver_group.add_argument("--no-kick", action="store_true", help="Disable kick")
     args = parser.parse_args()
+
+    if args.escape_quench_steps <= 0:
+        parser.error("--escape-quench-steps must be positive")
 
     solver_config = SolverConfig(
         tabu_steps=args.tabu_steps,
@@ -226,6 +244,8 @@ def main() -> None:
         tabu_noise=args.tabu_noise,
         geo_weight=args.geo_weight,
         targeted_escape=not args.no_targeted_escape,
+        escape_policy=args.escape_policy,
+        escape_quench_steps=args.escape_quench_steps,
         tabu=not args.no_tabu,
         kick=not args.no_kick,
     )
@@ -245,7 +265,6 @@ def main() -> None:
             strategy,
             ns,
             args.seeds,
-
             args.steps,
             args.workers,
             solver_config,
@@ -253,8 +272,7 @@ def main() -> None:
         )
         if output_path and not args.no_verify:
             ok = verify(output_path)
-            print(f"Verify {output_path}: {'OK' if ok > 0 else 'FAILED'} "
-                  f"({ok} valid entries)")
+            print(f"Verify {output_path}: {'OK' if ok > 0 else 'FAILED'} ({ok} valid entries)")
         return
 
     # --- single-run mode ------------------------------------------------------
@@ -269,13 +287,13 @@ def main() -> None:
     if workers == 1:
         for s in seeds:
             try:
-                r = _execute_single(gen._builder.kind, gen._builder.n, args.steps, s, solver_config)
+                r = _execute_single(gen.name, gen._builder.n, args.steps, s, solver_config)
                 results.append(r)
                 print(f"  {r}")
             except Exception as exc:
                 print(f"  run seed={s} FAILED: {exc}")
     else:
-        tasks = [(gen._builder.kind, gen._builder.n, args.steps, s, solver_config) for s in seeds]
+        tasks = [(gen.name, gen._builder.n, args.steps, s, solver_config) for s in seeds]
         with ProcessPoolExecutor(max_workers=workers) as pool:
             results = list(pool.map(_execute_single, *zip(*tasks, strict=True)))
         for r in results:

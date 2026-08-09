@@ -9,6 +9,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .builder import Builder
+from .constructions import double_gs4, paley_ng_sequences, supports_paley_ng
 from .metrics import Metrics, check_orthogonality
 from .solver import SearchStats, SolverConfig
 from .solver import search as ils_search
@@ -38,7 +39,19 @@ class Generator:
     """Hadamard search via KFlip + NAF Tracker (Goethals-Seidel GS4)."""
 
     def __init__(self, *, kind: str, n: int) -> None:
-        self._builder = Builder(kind=kind, n=n)
+        if kind == "paley-ng":
+            if n <= 0:
+                raise ValueError("paley-ng requires positive n")
+            if n % 2:
+                raise ValueError("paley-ng requires even n")
+            if not supports_paley_ng(n):
+                raise ValueError(f"paley-ng requires p=2n-1 to be prime, got {2 * n - 1}")
+            self._builder = Builder(kind="gs4", n=n)
+        elif kind == "construct":
+            self._builder = Builder(kind="gs4", n=n)
+        else:
+            self._builder = Builder(kind=kind, n=n)
+        self._kind = kind
         self.tensor_n: tuple[int, int] | None = None
         self.order = self._builder.order
 
@@ -55,12 +68,14 @@ class Generator:
             n = order // 16
             dims = Builder.factorize(n)
             return cls.tensor(n1=dims[0], n2=dims[1])
-        divisor = Builder.k_for(name)
+        divisor = 4 if name in {"construct", "paley-ng"} else Builder.k_for(name)
+        if order <= 0 or order % divisor:
+            raise ValueError(f"{name} requires a positive order divisible by {divisor}")
         return cls(kind=name, n=order // divisor)
 
     @property
     def name(self) -> str:
-        return self._builder.kind
+        return self._kind
 
     def search(
         self,
@@ -74,6 +89,22 @@ class Generator:
 
         if self.tensor_n is not None:
             return self._tensor_search(steps, seed, started)
+
+        if self._kind == "paley-ng":
+            sequences = paley_ng_sequences(self._builder.n)
+            matrix = self._builder.build(sequences)
+            return Result(
+                matrix=matrix,
+                metrics=check_orthogonality(matrix),
+                elapsed=time.perf_counter() - started,
+                seed=seed,
+                sequences=sequences,
+            )
+
+        if self._kind == "construct":
+            constructed = self._construct(steps, seed, started, config)
+            if constructed is not None:
+                return constructed
 
         b = self._builder
 
@@ -132,3 +163,43 @@ class Generator:
         m = check_orthogonality(H)
         elapsed = time.perf_counter() - started
         return Result(matrix=H, metrics=m, elapsed=elapsed, seed=seed)
+
+    def _construct(
+        self,
+        steps: int,
+        seed: int,
+        started: float,
+        config: SolverConfig | None,
+    ) -> Result | None:
+        n = self._builder.n
+        if supports_paley_ng(n):
+            sequences = paley_ng_sequences(n)
+            matrix = self._builder.build(sequences)
+            return Result(
+                matrix=matrix,
+                metrics=check_orthogonality(matrix),
+                elapsed=time.perf_counter() - started,
+                seed=seed,
+                sequences=sequences,
+            )
+        if n % 2:
+            return None
+
+        base = Generator(kind="construct", n=n // 2).search(steps=steps, seed=seed, config=config)
+        if base.metrics.energy != 0 or base.sequences is None:
+            return None
+        sequences = double_gs4(base.sequences)
+        matrix = self._builder.build(sequences)
+        return Result(
+            matrix=matrix,
+            metrics=check_orthogonality(matrix),
+            elapsed=time.perf_counter() - started,
+            seed=seed,
+            iterations=base.iterations,
+            sequences=sequences,
+            stats=base.stats,
+        )
+
+    def _paley_ng_sequences(self) -> npt.NDArray[np.int8]:
+        """Compatibility hook for experiments; production logic lives in constructions."""
+        return paley_ng_sequences(self._builder.n)

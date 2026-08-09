@@ -34,3 +34,15 @@ def test_execute_single_smoke() -> None:
     r = _execute_single("gs4", 5, 2000, 42)
     assert r.metrics.energy == 0
     assert r.sequences is not None
+
+
+def test_execute_single_paley_ng_smoke() -> None:
+    r = _execute_single("paley-ng", 52, 1, 42)
+    assert r.metrics.energy == 0
+    assert r.matrix.shape == (208, 208)
+
+
+def test_execute_single_construct_smoke() -> None:
+    r = _execute_single("construct", 104, 1, 42)
+    assert r.metrics.energy == 0
+    assert r.matrix.shape == (416, 416)

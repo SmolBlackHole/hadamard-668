@@ -9,13 +9,16 @@ hit counts + energy saved.
 
 from __future__ import annotations
 
+import argparse
+import os
 import time
 from collections import defaultdict
+from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
-from src.benchmark_stats import fmt_e, wilson_ci, z_test
+from src.benchmark_stats import fmt_e, mcnemar, wilson_ci, z_test
 from src.generator import Generator
 from src.solver import SolverConfig
 
@@ -35,7 +38,7 @@ CONFIGS = [
 NS = [32]
 N_SEEDS = 30
 STEPS = 200_000
-WORKERS = max(1, int((__import__("os").cpu_count() or 2) * 0.8))
+WORKERS = max(1, int((os.cpu_count() or 2) * 0.8))
 
 
 def _run_one(args: tuple[int, int, int, SolverConfig]) -> dict[str, Any]:
@@ -86,25 +89,58 @@ def _aggregate(runs: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Measure solver component and escape-policy ablations."
+    )
+    parser.add_argument("--targeted", action="store_true", help="Compare targeted escape policies.")
+    parser.add_argument("--n", type=int, default=NS[0], help=f"Sequence length (default: {NS[0]}).")
+    parser.add_argument(
+        "--seeds", type=int, default=N_SEEDS, help=f"Paired seed count (default: {N_SEEDS})."
+    )
+    parser.add_argument(
+        "--steps", type=int, default=STEPS, help=f"Search steps (default: {STEPS})."
+    )
+    parser.add_argument(
+        "--workers", type=int, default=WORKERS, help=f"Worker count (default: {WORKERS})."
+    )
+    args = parser.parse_args()
+    configs: list[AblationConfig] = (
+        [
+            AblationConfig("legacy625", SolverConfig(escape_policy="legacy625")),
+            AblationConfig("support_lag625", SolverConfig(escape_policy="support_lag625")),
+        ]
+        if args.targeted
+        else CONFIGS
+    )
+    ns = [args.n] if args.targeted else NS
+    workers = args.workers
+
     # Build task list: one (n, seed, steps, config) per run
     tasks: list[tuple[int, int, int, SolverConfig]] = []
-    for ac in CONFIGS:
-        for n in NS:
-            for seed in range(N_SEEDS):
-                tasks.append((n, seed, STEPS, ac.config))
+    for ac in configs:
+        for n in ns:
+            for seed in range(args.seeds):
+                tasks.append((n, seed, args.steps, ac.config))
 
     total = len(tasks)
     print(
-        f"Ablation: {len(CONFIGS)} configs x {len(NS)} n x {N_SEEDS} seeds = {total} runs ({WORKERS} workers)\n"
+        f"Ablation: {len(configs)} configs x {len(ns)} n x {args.seeds} seeds = {total} runs ({workers} workers)\n"
     )
     started = time.perf_counter()
 
     results: list[dict[str, Any]] = []
-    with ProcessPoolExecutor(max_workers=min(WORKERS, total)) as pool:
-        for i, r in enumerate(pool.map(_run_one, tasks), 1):
+
+    def collect(runs: Iterable[dict[str, Any]]) -> None:
+        for i, r in enumerate(runs, 1):
             results.append(r)
             if i % 20 == 0 or i == total:
                 print(f"  [{i}/{total}]", flush=True)
+
+    if workers == 1:
+        collect(map(_run_one, tasks))
+    else:
+        with ProcessPoolExecutor(max_workers=min(workers, total)) as pool:
+            collect(pool.map(_run_one, tasks))
 
     elapsed = time.perf_counter() - started
     print(f"\n  done in {elapsed:.0f}s\n")
@@ -112,21 +148,21 @@ def main() -> None:
     # Group by config and n
     by_config: dict[str, dict[int, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
     for i, r in enumerate(results):
-        ac = CONFIGS[i // (len(NS) * N_SEEDS)]
+        ac = cast(AblationConfig, configs[i // (len(ns) * args.seeds)])
         by_config[ac.name][r["n"]].append(r)
 
     # Print table
     by_cfg_n_solved: dict[str, dict[int, tuple[int, int]]] = defaultdict(
         lambda: defaultdict(lambda: (0, 0))
     )  # type: ignore[assignment]
-    for ac in CONFIGS:
+    for ac in configs:
         print()
         print(f"-- {ac.name} --")
         header = f"{'n':>4}  {'solved':>7}  {'95% CI':>15}  {'mean_e':>7}  {'time':>6}  "
         header += f"{'S-hits':>7} {'TB-hit':>7} {'K-hits':>7}"
         print(header)
         print("-" * len(header))
-        for n in NS:
+        for n in ns:
             a = _aggregate(by_config[ac.name][n])
             solved, total = a["solved"].split("/")
             k, tot = int(solved), int(total)
@@ -141,17 +177,30 @@ def main() -> None:
         print()
 
     # Z-tests against baseline (first config)
-    if len(CONFIGS) > 1:
-        base_name = CONFIGS[0].name
+    if len(configs) > 1:
+        base_name = configs[0].name
         print("-- Z-Tests vs", base_name, "--")
-        for ac in CONFIGS[1:]:
-            for n in NS:
+        for ac in configs[1:]:
+            for n in ns:
                 k1, n1 = by_cfg_n_solved[base_name][n]
                 k2, n2 = by_cfg_n_solved[ac.name][n]
                 z, p = z_test(k1, n1, k2, n2)
                 sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
                 print(f"  {ac.name} n={n}: z={z:+.3f}  p={p:.4f}  {sig}")
         print()
+
+    if args.targeted:
+        legacy, candidate = configs[0].name, configs[1].name
+        print(f"-- Paired McNemar: {candidate} vs {legacy} --")
+        for n in ns:
+            legacy_runs = {r["seed"]: r["energy"] == 0 for r in by_config[legacy][n]}
+            candidate_runs = {r["seed"]: r["energy"] == 0 for r in by_config[candidate][n]}
+            a = sum(legacy_runs[s] and candidate_runs[s] for s in legacy_runs)
+            b = sum(legacy_runs[s] and not candidate_runs[s] for s in legacy_runs)
+            c = sum(not legacy_runs[s] and candidate_runs[s] for s in legacy_runs)
+            d = sum(not legacy_runs[s] and not candidate_runs[s] for s in legacy_runs)
+            chi2, p = mcnemar(a, b, c, d)
+            print(f"  n={n}: a/b/c/d={a}/{b}/{c}/{d}  chi2={chi2:.3f}  p={p:.4f}")
 
 
 if __name__ == "__main__":

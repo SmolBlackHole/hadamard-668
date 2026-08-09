@@ -9,6 +9,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from functools import lru_cache
+from itertools import product
 from typing import Any
 
 import numpy as np
@@ -16,7 +17,6 @@ import numpy.typing as npt
 from numba import njit  # pyright: ignore[reportMissingImports]
 
 from .benchmark_stats import fmt_e
-from .gpu_quench import screen_all_lags_gpu  # type: ignore[import-not-found]
 from .tracker import Tracker
 
 SINGLE_BATCH_SIZE = 64
@@ -126,6 +126,8 @@ class SolverConfig:
     tabu_noise: float = 0.2
     geo_weight: float = 0.0
     targeted_escape: bool = True
+    escape_policy: str = "legacy625"
+    escape_quench_steps: int = 10_000
     qwindow_high: int = 9  # stop greedy at this Q (C-rich band, not floor)
 
 
@@ -143,6 +145,69 @@ def _update_best(
     if cur_e < best_e:
         return cur_seq.copy(), cur_e
     return best_seq, best_e
+
+
+def _legacy_escape_candidates(
+    delta: npt.NDArray[np.int8], u: npt.NDArray[np.int32], n: int
+) -> tuple[int, list[tuple[int, int, int, int]]]:
+    """Return historical dominant-lag candidates in natural Cartesian order."""
+    k = int(np.argmax(np.abs(u)))
+    target = -u[k]
+    columns = [[c for c in range(n) if delta[s * n + c, k] == target][:5] for s in range(4)]
+    if not all(columns):
+        return k, []
+    return k, [(c0, c1, c2, c3) for c0, c1, c2, c3 in product(*columns)]
+
+
+def _support_lag625_candidates(
+    delta: npt.NDArray[np.int8], u: npt.NDArray[np.int32], n: int
+) -> list[tuple[int, int, int, int]]:
+    """Spread at most 625 targeted candidates over all feasible residual lags."""
+    per_lag: list[list[tuple[int, int, int, int]]] = []
+    for k in np.flatnonzero(u):
+        target = -u[k]
+        columns = [[c for c in range(n) if delta[s * n + c, k] == target][:5] for s in range(4)]
+        if all(columns):
+            per_lag.append([(c0, c1, c2, c3) for c0, c1, c2, c3 in product(*columns)])
+    if not per_lag:
+        return []
+
+    limit = 625
+    base, extra = divmod(limit, len(per_lag))
+    selected: list[tuple[int, int, int, int]] = []
+    seen: set[tuple[int, int, int, int]] = set()
+    for lag_index, candidates in enumerate(per_lag):
+        take = min(len(candidates), base + (lag_index < extra))
+        if take == 1:
+            ranks = [len(candidates) // 2]
+        elif take:
+            ranks = [i * (len(candidates) - 1) // (take - 1) for i in range(take)]
+        else:
+            ranks = []
+        for rank in ranks:
+            candidate = candidates[rank]
+            if candidate not in seen:
+                seen.add(candidate)
+                selected.append(candidate)
+
+    offsets = [0] * len(per_lag)
+    while len(selected) < limit:
+        advanced = False
+        for lag_index, candidates in enumerate(per_lag):
+            if offsets[lag_index] == len(candidates):
+                continue
+            candidate = candidates[offsets[lag_index]]
+            offsets[lag_index] += 1
+            advanced = True
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            selected.append(candidate)
+            if len(selected) == limit:
+                break
+        if not advanced:
+            break
+    return selected
 
 
 class SearchStats:
@@ -354,76 +419,45 @@ def _targeted_kick(
     budget: int,
     best_seq: npt.NDArray[np.int8],
     best_e: int,
+    cfg: SolverConfig,
     stats: SearchStats,
 ) -> tuple[bool, npt.NDArray[np.int8], int, npt.NDArray[np.int8], int, int]:
-    """GPU-screened targeted escape: score ALL combos, stratify CPU quench."""
+    """Quench targeted candidates selected by the configured escape policy."""
+    if cfg.escape_quench_steps <= 0:
+        raise ValueError("escape_quench_steps must be positive")
     n = cur_seq.shape[1]
     assert tracker._delta is not None and tracker._u is not None
     _d = tracker._delta
     _u = tracker._u
-    m = (n - 1) // 2
+    candidates: list[tuple[int, int, int, int]]
+    if cfg.escape_policy == "legacy625":
+        _, candidates = _legacy_escape_candidates(_d, _u, n)
+    elif cfg.escape_policy == "support_lag625":
+        candidates = _support_lag625_candidates(_d, _u, n)
+    else:
+        raise ValueError(f"Unknown escape policy: {cfg.escape_policy}")
 
-    # Multi-lag: collect candidate columns for top-3 dominant lags
-    u_order = np.argsort(np.abs(_u))[::-1]
-    all_lag_arrs: list[tuple[int, list[np.ndarray]]] = []
-    for k in u_order[:3]:
-        target = -_u[k]
-        neg: list[list[int]] = [[] for _ in range(4)]
-        for s in range(4):
-            for c in range(n):
-                if _d[s * n + c, k] == target:
-                    neg[s].append(c)
-        if not all(neg):
-            continue
-        n_arr = [np.array(ng, dtype=np.int64) for ng in neg]
-        all_lag_arrs.append((int(k), n_arr))
-
-    if not all_lag_arrs:
+    if not candidates:
         return False, cur_seq, tracker.energy(), best_seq, best_e, 0
-
-    # GPU: score ALL combos from ALL lags (one transfer, ~2ms)
-    try:
-        scored = screen_all_lags_gpu(cur_seq, all_lag_arrs)
-    except Exception:
-        scored = []  # fallback if GPU fails
-    if not scored:
-        return False, cur_seq, tracker.energy(), best_seq, best_e, 0
-
-    # Stratified CPU quench: 50 combos evenly across Q distribution
-    n_total = len(scored)
-    n_quench = min(400, n_total)  # top-400 by Q (winners at ranks ~100-600)
-    quench_budget = min(10000, budget // 4)
+    quench_budget = min(cfg.escape_quench_steps, max(1, budget // 4))
     total_used = 0
     quench_cfg = SolverConfig(targeted_escape=False)
 
-    base_tr = Tracker()
-    base_tr.build(cur_seq)
-
-    for i in range(n_quench):
-        _, _, c0, c1, c2, c3 = scored[i]
-        c0 %= n; c1 %= n; c2 %= n; c3 %= n
+    for c0, c1, c2, c3 in candidates:
+        c0 %= n
+        c1 %= n
+        c2 %= n
+        c3 %= n
         cand = cur_seq.copy()
-        cand[0, c0] *= -1; cand[1, c1] *= -1
-        cand[2, c2] *= -1; cand[3, c3] *= -1
+        cand[0, c0] *= -1
+        cand[1, c1] *= -1
+        cand[2, c2] *= -1
+        cand[3, c3] *= -1
         t2 = Tracker()
-        t2._n = base_tr._n; t2._seqs = cand
-        t2._u = base_tr._u.copy(); t2._q = base_tr._q
-        t2._delta = base_tr._delta.copy()
-        t2._norm2 = base_tr._norm2.copy(); t2._e = base_tr._e
-        t2._update_cols = base_tr._update_cols
-        t2._update_lags = base_tr._update_lags
-        t2._update_signs = base_tr._update_signs
-        t2.accept(cand, 0, c0); t2.accept(cand, 1, c1)
-        t2.accept(cand, 2, c2); t2.accept(cand, 3, c3)
-        # C-precheck: skip if Q not in ||d||² range (can't reach C anyway)
-        q_after = t2._q
-        if t2._norm2 is not None:
-            n2 = t2._norm2
-            if q_after < int(n2.min()):  # below cancelable shelf, skip
-                continue
         sol, be, used, _ = search(cand, t2, rng, steps=quench_budget, config=quench_cfg)
         total_used += used
-        stats.kicks += 1; stats.kick_evals += 1
+        stats.kicks += 1
+        stats.kick_evals += 1
         if be < best_e:
             best_seq, best_e = sol.copy(), be
         if be == 0:
@@ -437,7 +471,7 @@ def _random_kick(
     tracker: Tracker,
     rng: np.random.Generator,
 ) -> int:
-    """Random kick. 1-2 flips in QWindow band, 4 flips outside."""
+    """Random kick: flip two randomly selected sequences."""
     n_seqs, n_cols = cur_seq.shape
     n_flips = 2  # small kicks keep state near C-rich band
     cols = np.asarray(rng.integers(0, n_cols, size=n_seqs), dtype=np.intp)
@@ -523,7 +557,7 @@ def search(
             ):
                 early_escape_done = True
                 improved, cur_seq, cur_e, best_seq, best_e, kick_used = _targeted_kick(
-                    cur_seq, tracker, rng, q_now, total_budget, best_seq, best_e, stats
+                    cur_seq, tracker, rng, q_now, total_budget, best_seq, best_e, cfg, stats
                 )
                 steps -= kick_used
             else:
