@@ -26,6 +26,7 @@ dev = [
     "pytest-cov>=7.0",
     "pytest-gremlins>=1.9,<2",
     "ruff>=0.11",
+    "sympy>=1.14",
 ]
 
 [tool.pytest-gremlins]
