@@ -69,6 +69,10 @@ Die Hadamard-Spaltenkoordinate zerlegt jedes Folgenquartett exakt in eine
 Basiswahl, einen Achsenindex und ein Vorzeichen. Der aktuelle Single-Flip
 ändert Basiswahl und Orientierung gekoppelt.
 
+Das Basislabel allein ist kein hinreichender Indikator: Bis `n=6` tritt jedes
+normalisierte Labelwort in einer exakten Lösung auf, während simples Switching
+größerer Paley-Lösungen nur konstante Label liefert.
+
 **Vermutung:** Eine kategorielle Suche über alle 15 Ersatzsymbole einer Spalte
 oder ein alternierender Optimierer für Basislabel und Orientierung besitzt eine
 bessere lokale Geometrie als vier unabhängige Bitflips.
@@ -100,6 +104,50 @@ Q-Faserarchiv mit identischen Kandidatbudgets gepaart vergleichen. Als
 Symmetriekontrolle an Plateaus unabhängige Negashifts/Reversals randomisieren;
 ein reiner Gewinn daraus würde den festen First-Improvement-Scan als
 algorithmischen Bias identifizieren.
+
+## H7: GS4 als Kollision zweier Paar-Residualräume
+
+Schreibe für jede Folge ihren NAF-Vektor als `rho_s` und setze
+
+```text
+w = rho_1 + rho_2.
+```
+
+Dann ist die GS4-Bedingung exakt
+
+```text
+rho_3 + rho_4 = -w.
+```
+
+Paley-/Golay-Konstruktionen verwenden den Spezialfall `w=0`; freie Lösungen
+besitzen nach den bisherigen Paarungen typischerweise `w!=0`.
+
+Ein simples festes Template ist bereits ausgeschlossen: Unter allen drei
+Paarungen der 351 gespeicherten freien GS4-Lösungen wiederholte sich kein
+`w`-Vektor exakt, auch nicht bis auf globales Vorzeichen.
+
+**Vermutung:** Ein Paar-Codebook oder alternierender Zwei-Paar-Solver findet
+Residualkollisionen zuverlässiger als vier unabhängige Folgenbits. Die
+temporäre Variable `w` macht dabei die Kopplung explizit.
+
+**Test:** Zwei unabhängig erzeugte Paarbänke auf exakte beziehungsweise nahe
+Gegenvektoren hashen und dimensionsweise Symmetrien statt fester Templates
+prüfen. Erst die beobachtete Kollisionsrate entscheidet, ob CPU-, GPU- oder
+Meet-in-the-Middle-Suche sinnvoll ist.
+
+## H8: Stärkere Zwei-Kanal-Konstruktion
+
+In der Zwei-Basen-Koordinate zerlege `v=y_0+O y_1`. Jedes Residuum besitzt dann
+einen Within-Basis-Anteil `A_t` und einen Cross-Basis-Anteil `C_t` mit
+`u_t=A_t+C_t`.
+
+**Vermutung:** Die stärkere hinreichende Bedingung `A_t=0` und `C_t=0` erzeugt
+eine konstruktiv zugängliche gemischte Unterfamilie zwischen Base/T und freiem
+GS4.
+
+**Test:** Zunächst kleine `n` vollständig enumerieren: Existieren gemischte
+Lösungen dieser starken Zerlegung, und lassen sie sich durch Produkt-,
+Switching- oder Blocksupportregeln parametrisieren?
 
 ## Wissenschaftlicher Status
 

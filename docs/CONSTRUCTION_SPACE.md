@@ -76,6 +76,8 @@ Das Alphabet der 16 binären Spalten zerfällt dabei in zwei Mengen. Mit
 
 ```text
 beta_c = a_c b_c c_c d_c
+b_c    = (1-beta_c)/2
+O      = (J-2I)/2
 ```
 
 gilt:
@@ -91,7 +93,7 @@ sind also gegenseitig unbiased. Jede GS4-Spalte besitzt damit die exakte
 Koordinate
 
 ```text
-v_c = eta_c * O^(beta_label_c) * e_(j_c)
+v_c = eta_c * O^b_c * e_(j_c)
 ```
 
 aus Basiswahl, Achsenindex und Vorzeichen. Diese Darstellung spart allein
@@ -108,9 +110,11 @@ Paley-/Golay-Tupel `(a,b,a,b)` benutzen sogar nur zwei Achsen.
 Die gespeicherten freien GS4-Repräsentationen verhalten sich anders. Bei den
 vorhandenen Lösungen für `n=44,46,48,50,52` ist keine achsenrein; die 19
 `n=52`-Repräsentationen enthalten jeweils 17 bis 33 Positionen aus der zweiten
-Basis. Keine davon wird durch unabhängige negazyklische Verschiebungen der vier
-Folgen achsenrein. Das beweist nur, dass sie außerhalb dieser konkreten
-Parametrisierung und ihres Shift-Orbits liegen. Es beweist weder neue
+Basis. Keine davon wird durch unabhängige negazyklische Verschiebungen und
+Reversals der vier Folgen achsenrein; im vollständig geprüften
+Repo-Symmetrieorbit blieben mindestens 6 bis 10 Positionen in der
+Minderheitsbasis. Das beweist nur, dass sie außerhalb dieser konkreten
+Parametrisierung und dieses Orbits liegen. Es beweist weder neue
 Hadamard-Äquivalenzklassen noch wissenschaftlich unbekannte Familien.
 Auch die bloße Anzahl der Symbole je Basis ist kein Invariant: Ein
 unabhängiger Negashift kann sie verändern. Belastbarer ist die vollständige
@@ -135,6 +139,13 @@ allgemeineren Problem `0 in S_n + S_n + S_n + S_n`. Die Existenz einer
 dünnen Zweierfaktorisierung macht die lokale Navigation im viel größeren
 Vierersummenraum nicht automatisch leicht.
 
+Das Basislabel allein liefert bisher keine verborgene Existenzbedingung. Eine
+vollständige Enumeration für `n=2..6` fand unter exakten GS4-Lösungen jedes der
+`2^(n-1)` normalisierten Basiswörter. Umgekehrt erzeugte das vollständige
+spaltenweise Umschalten fester Paley-Achsenlösungen bei `n=10,12,16` nur die
+beiden konstanten Basiswahlen. Ein nichttrivialer Konstruktionsweg muss daher
+Basiswahl, Achsenindex und Vorzeichen gemeinsam kontrollieren.
+
 Die neue Koordinate liefert eine natürliche lokale Nachbarschaft. An einer
 Spalte existieren nur 15 andere Symbole:
 
@@ -146,6 +157,13 @@ die Summe der betroffenen Single-Deltas; Same-Sequence-Paarkorrekturen treten
 nicht auf. Alle `15n` Symbolersetzungen lassen sich daher gemeinsam und billig
 auswerten. Ob diese kategorielle Nachbarschaft die Skalierungswand verschiebt,
 ist noch nicht getestet.
+
+Der kleinste sinnvolle Hybrid muss nicht sofort alle 15 Ersetzungen verwenden.
+Die heutigen vier Singles plus die sechs basis-erhaltenden Zwei-Bit-Moves je
+Spalte ergeben eine global verbundene `10n`-Nachbarschaft. Sie ergänzt genau
+die bisher fehlende direkte Bewegung innerhalb einer Basis. Triple- und
+Vierfachflips sind zunächst nur Stagnations-Makromoves; der volle `15n`-Scan
+bleibt eine kontrollierte Ablation.
 
 ### Paley-Parität
 

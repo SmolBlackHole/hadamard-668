@@ -17,8 +17,9 @@ verworfene Experimente sind in `SEARCH_FINDINGS.md` zusammengefasst.
 
 ## Suchdynamik
 
-- [ ] **15n-Symbolnachbarschaft:** alle Ersatzsymbole einer H4-transformierten
-  Spalte vektorisieren und gegen Singles/Tabu gepaart testen.
+- [ ] **10n-Symbolnachbarschaft:** heutige Singles plus sechs
+  basis-erhaltende Zwei-Bit-Moves je Spalte vektorisieren; `15n` nur als
+  vollständige Ablation hinzunehmen.
 - [ ] **Zwei-Ebenen-Ablation:** basis-erhaltende und basiswechselnde Moves
   getrennt testen; `beta` nicht voreilig als neue Zielfunktion behandeln.
 - [ ] **Achsenreiner n=52-Test:** die reduzierte negaperiodische Symbolfamilie
@@ -27,6 +28,10 @@ verworfene Experimente sind in `SEARCH_FINDINGS.md` zusammengefasst.
   kleines Archiv gleicher/naher Q-Zustände testen.
 - [ ] **Scan-Symmetrie:** Greedy-Reihenfolge beziehungsweise unabhängige
   Negashifts an Plateaus randomisieren und auf reinen Indexbias prüfen.
+- [ ] **Paar-Residual-Codebook:** Nach dem negativen exakten Archivabgleich die
+  Nahkollisionsrate zweier unabhängiger Paarbänke bestimmen.
+- [ ] **Zwei-Kanal-Konstruktion:** kleine gemischte Lösungen der stärkeren
+  Bedingungen `A=0` und `C=0` enumerieren.
 - [ ] **Targeted-Portfolio:** `legacy625` und `support_lag625` mit getrennten,
   kandidatenstabilen RNG-Streams gepaart testen.
 - [ ] **Low-Q-Eintritt messen:** vergleichen, welche Starts die ternäre

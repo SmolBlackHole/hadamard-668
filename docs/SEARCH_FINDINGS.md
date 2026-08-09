@@ -81,6 +81,11 @@ Manifold entfernt. Lokale C-Nähe war kein brauchbarer Erfolgsprädiktor.
   können null gegen sechs unmittelbar lösende Single-Zeilen besitzen. Die
   konkrete Wörterbuchfaktorisierung darf nicht wegaggregiert werden.
 - **ML auf Zustandsfeatures:** nur schwaches AUC-Signal um 0,6.
+- **Basislabel allein:** vollständig bis `n=6` ohne nichttriviale notwendige
+  Bedingung; simples Paley-Spaltenswitching bei `n=10,12,16` liefert keine
+  gemischte Konstruktion.
+- **Festes Paar-Residualtemplate:** 1.053 Paarvektoren aus allen drei Paarungen
+  der freien Archivlösungen waren bis auf Vorzeichen sämtlich verschieden.
 
 ## Strukturierte Starts
 
