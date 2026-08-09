@@ -1,0 +1,17 @@
+{
+  "paley-ng": {
+    "52": [
+      {
+        "seed": 42,
+        "sha256": "f5f98fe7522a182e67f52ed7eb54d949bbd6a998b849da5dcdccbfdcbeebc9ab",
+        "seqs_b64": "/////wH/Af////8B/wEB/wEB////Af///wEBAf///wH///8BAf8BAf8B/////wH/Af//////AQH/////////Af8BAQH/Af8BAf8BAf//AQH//wH//wH/Af///wH/AQEBAQEBAf//AQH/////Af8B/////wH/AQH/AQH///8B////AQEB////Af///wEB/wEB/wH/////Af8B//////8BAf////////8B/wEBAf8B/wEB/wEB//8BAf//Af//Af8B////Af8BAQEBAQEB//8BAQ==",
+        "solved": true,
+        "energy": 0,
+        "solver_e": 0,
+        "elapsed_s": 0.198,
+        "iterations": 0,
+        "class": "29c3d7d09119fe80aac3c1988a4cacd77aa37ffd2dba6ceecb488010efdb6b30"
+      }
+    ]
+  }
+}
