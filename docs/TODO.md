@@ -17,9 +17,16 @@ verworfene Experimente sind in `SEARCH_FINDINGS.md` zusammengefasst.
 
 ## Suchdynamik
 
-- [ ] **10n-Symbolnachbarschaft:** heutige Singles plus sechs
-  basis-erhaltende Zwei-Bit-Moves je Spalte vektorisieren; `15n` nur als
-  vollständige Ablation hinzunehmen.
+- [x] **10n-Symbolnachbarschaft:** heutige Singles plus sechs
+  basis-erhaltende Zwei-Bit-Moves je Spalte exakt vektorisiert. Als rein
+  greedy Phase bei n=44/52 kein Solve-Gewinn; standardmäßig ausgeschaltet.
+- [x] **Basis-erhaltender Walk:** `gs4-symbol` bewertet alle 10n Symbolmoves
+  gemeinsam und erlaubt in einem kleinen separaten Tabu-Walk Verschlechterungen.
+- [x] **Zwei-Kanal-Scorer:** `gs4-symbol-channel` verfolgt alle drei Paarungen
+  exakt und normiert Q durch die stärkste Kanalenergie. Positives Signal bei
+  n=28/30, neutral bei n=32; kein Default.
+- [ ] **Zwei-Kanal-Holdout:** getrennte Gewichte oder größere n erst testen,
+  wenn ein vorab festgelegter Holdout und Wall-Time-Budget verwendet werden.
 - [ ] **Zwei-Ebenen-Ablation:** basis-erhaltende und basiswechselnde Moves
   getrennt testen; `beta` nicht voreilig als neue Zielfunktion behandeln.
 - [ ] **Achsenreiner n=52-Test:** die reduzierte negaperiodische Symbolfamilie
@@ -29,9 +36,14 @@ verworfene Experimente sind in `SEARCH_FINDINGS.md` zusammengefasst.
 - [ ] **Scan-Symmetrie:** Greedy-Reihenfolge beziehungsweise unabhängige
   Negashifts an Plateaus randomisieren und auf reinen Indexbias prüfen.
 - [ ] **Paar-Residual-Codebook:** Nach dem negativen exakten Archivabgleich die
-  Nahkollisionsrate zweier unabhängiger Paarbänke bestimmen.
-- [ ] **Zwei-Kanal-Konstruktion:** kleine gemischte Lösungen der stärkeren
-  Bedingungen `A=0` und `C=0` enumerieren.
+  Komplementdichte `p_n(-w)` beziehungsweise eine billige Schätzung davon
+  bestimmen. Minimales `||w||` ist als allgemeines Ziel widerlegt.
+- [x] **Zwei-Kanal-Konstruktion:** kleine gemischte Lösungen der stärkeren
+  Bedingungen `A=0` und `C=0` enumeriert und unabhängig auditiert. Exakt
+  äquivalent zu zwei durch das Tripleprodukt-Dual gekoppelten GS4-Aufgaben.
+- [ ] **Strong-Split-Warmstarts:** fast-starke und freie Zustände bei gleichem
+  GS4-Start-Q downstream vergleichen; `Q_split` nicht als unabhängigen
+  Basin-Indikator behandeln.
 - [ ] **Targeted-Portfolio:** `legacy625` und `support_lag625` mit getrennten,
   kandidatenstabilen RNG-Streams gepaart testen.
 - [ ] **Low-Q-Eintritt messen:** vergleichen, welche Starts die ternäre
@@ -40,6 +52,13 @@ verworfene Experimente sind in `SEARCH_FINDINGS.md` zusammengefasst.
   quenchen und nach Downstream-Reaktion statt minimalem BS-Q auswählen.
 - [ ] **Halb-Längen-Solver:** Symbol-/Phasenmoves im exakten chirp-modulierten
   QPSK-Raum prototypisieren.
+- [x] **Q1-Barriere kartieren:** vollständige n=52-Komponenten bis Q=9 sowie
+  beliebige Endpunkte bis Hamming-Radius drei geprüft; Passhöhe mindestens 10.
+- [x] **Prospektiver Zwei-Schritt-Grad:** als exakten lokalen Topologiesensor
+  verifiziert und unter gleichem Evaluationsbudget getestet; noch kein
+  Lösungsrichtungs-Signal.
+- [ ] **Minimax-Flooding:** für ausgewählte n=52-Q1-Zustände die tatsächliche
+  minimale Passhöhe schrittweise bestimmen, statt eine feste Shell zu raten.
 
 ## H668-Konstruktionsräume
 

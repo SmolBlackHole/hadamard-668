@@ -1,5 +1,8 @@
 # Konstruktionsraum: Paley, Golay, GS4, Turyn und Tensor
 
+Die Beziehungen zu Residuum, Flip-Wörterbuch, Paarseparator und
+Suchlandschaft stehen in [`MATH_MAP.md`](MATH_MAP.md).
+
 Stand: 2026-08-09
 
 ## Kurzfassung
@@ -161,9 +164,12 @@ ist noch nicht getestet.
 Der kleinste sinnvolle Hybrid muss nicht sofort alle 15 Ersetzungen verwenden.
 Die heutigen vier Singles plus die sechs basis-erhaltenden Zwei-Bit-Moves je
 Spalte ergeben eine global verbundene `10n`-Nachbarschaft. Sie ergänzt genau
-die bisher fehlende direkte Bewegung innerhalb einer Basis. Triple- und
-Vierfachflips sind zunächst nur Stagnations-Makromoves; der volle `15n`-Scan
-bleibt eine kontrollierte Ablation.
+die bisher fehlende direkte Bewegung innerhalb einer Basis. Der exakte
+vektorisierte Greedy-Test war bei n=44/52 negativ: Die Paare wurden selten
+akzeptiert und steigerten die Solve-Rate nicht. Die Nachbarschaft bleibt als
+Primitive für einen nichtmonotonen Walk interessant. Triple- und Vierfachflips
+sind zunächst nur Stagnations-Makromoves; der volle `15n`-Scan bleibt eine
+kontrollierte Ablation.
 
 ### Paley-Parität
 

@@ -135,19 +135,56 @@ Gegenvektoren hashen und dimensionsweise Symmetrien statt fester Templates
 prüfen. Erst die beobachtete Kollisionsrate entscheidet, ob CPU-, GPU- oder
 Meet-in-the-Middle-Suche sinnvoll ist.
 
-## H8: Stärkere Zwei-Kanal-Konstruktion
+## H8: Der starke Dual-Schnitt ist ein brauchbarer Seedraum
 
-In der Zwei-Basen-Koordinate zerlege `v=y_0+O y_1`. Jedes Residuum besitzt dann
-einen Within-Basis-Anteil `A_t` und einen Cross-Basis-Anteil `C_t` mit
-`u_t=A_t+C_t`.
+Die Existenz und exakte Algebra des starken Splits sind inzwischen bestätigt:
 
-**Vermutung:** Die stärkere hinreichende Bedingung `A_t=0` und `C_t=0` erzeugt
-eine konstruktiv zugängliche gemischte Unterfamilie zwischen Base/T und freiem
-GS4.
+```text
+F(a,b,c,d)=(bcd,acd,abd,abc),
+F²=id,
+A=C=0 <=> x und F(x) sind beide GS4,
+Q_split=2(Q(x)+Q(F(x))).
+```
 
-**Test:** Zunächst kleine `n` vollständig enumerieren: Existieren gemischte
-Lösungen dieser starken Zerlegung, und lassen sie sich durch Produkt-,
-Switching- oder Blocksupportregeln parametrisieren?
+Der Raum enthält viele kleine gemischte Lösungen und Paley, aber keine der
+archivierten freien großen Lösungen. Ein einfacher Split-Tabu-Pilot stößt ab
+`n=20..24` erneut an eine diskrete Restwand.
+
+**Vermutung:** Trotz der stärkeren Bedingungen erzeugt ein Portfolio
+strukturell verschiedener fast-starker Zustände bessere Starts für den freien
+GS4-Solver als zufällige Zustände mit vergleichbarem Q.
+
+**Test:** Bei gleichem GS4-Start-Q und gleichem Candidate-Budget starke,
+fast-starke und freie Zustände downstream quenchen. `Q_split` selbst ist dabei
+kein unabhängiger Basin-Indikator.
+
+## H9: Aktionsbezogene Features approximieren die Cancellation-Koordinate
+
+Für die Cancellation-Grenze `C1={x: es existiert d=-u}` gilt exakt
+
+```text
+Phi(x,Lösung)=Phi(x,C1).
+```
+
+Damit ist `Gamma(x)=(H_C,L_C)` aus minimaler Höhe und kürzester lateraler
+Strecke bis `C1` eine exakte lösungsgerichtete Koordinate. Vollständige
+Enumeration bei `n=5` zeigt, dass weder `Q`, `u` noch `D^T D` sie bestimmen.
+Die zunächst bei kleinen n beobachtete Konstanz innerhalb der vier getrennten
+Einzel-NAF-Fasern war ein Symmetrieartefakt. Bei `n=12` existieren Zustände mit
+identischen vier `rho_s`, gleichem `u` und gleichem `u(Fx)`, aber verschiedener
+Cancellation-Koordinate. Auch auf 896 Multi-n-Roots verbesserten statische
+Kanal- und Dualfeatures die gemessenen Basinlabels nicht robust.
+
+**Vermutung:** Die relevante Zusatzinformation steckt in der Wirkung einer
+konkreten Aktion auf das zustandsabhängige Wörterbuch. Ein kleiner
+Horizon-Lookahead oder eine Schätzung von `Delta Gamma(x,a)` ist informativer
+als statische Kanalnormen.
+
+**Test:** Kandidaten auf Reverse-Pfaden und unabhängigen Production-Minima mit
+dem reinen Zwei-Schritt-Lookahead sowie einer aktionsbezogenen
+Cancellation-Hazard vergleichen. Nach Ursprungslösung beziehungsweise Root
+falten und Candidate-Kosten vollständig zählen. Statische Kanalfeatures gelten
+für diese Rolle vorläufig als negatives Ergebnis.
 
 ## Wissenschaftlicher Status
 

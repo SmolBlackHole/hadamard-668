@@ -3,7 +3,8 @@
 Stand: 2026-08-09
 
 Dieses Dokument ist die kanonische Darstellung des mathematischen
-Hauptbefunds. Suchfolgen und negative Ablationen stehen in
+Hauptbefunds. Die Gesamtlandkarte steht in [`MATH_MAP.md`](MATH_MAP.md),
+Suchfolgen und negative Ablationen in
 [`SEARCH_FINDINGS.md`](SEARCH_FINDINGS.md).
 
 ## 1. Ausgangsproblem

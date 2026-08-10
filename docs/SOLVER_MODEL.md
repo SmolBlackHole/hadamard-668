@@ -3,7 +3,8 @@
 Stand: 2026-08-09
 
 Diese Datei beschreibt ausschließlich bestätigte Mathematik und den aktuellen
-Produktionspfad.
+Produktionspfad. Die Beziehungen zu den alternativen Koordinaten stehen in
+[`MATH_MAP.md`](MATH_MAP.md).
 
 ## Ziel
 
@@ -82,6 +83,35 @@ greedy Singles -> Q-Window -> Tabu-Walk
    anschließend beginnt der greedy Single-Abstieg erneut.
 
 Pair-Rescue und Trace-Erfassung gehören nicht mehr zum Solver.
+
+## Experimenteller Symbolsolver
+
+Die CLI-Strategie `gs4-symbol` ist bewusst vom Produktionssolver getrennt. Sie
+verwendet pro Spalte genau zehn Moves in einer festen gemeinsamen Reihenfolge:
+
+```text
+4n Single-Flips       = Wechsel zwischen den beiden H4-Basen
+6n Spaltenpaare       = Bewegung innerhalb der aktuellen Basis
+```
+
+In jedem Schritt werden alle 10n exakten End-Q-Werte vektorisiert berechnet.
+Der beste nicht-tabu Move wird auch dann ausgeführt, wenn er Q unverändert lässt
+oder erhöht. Ein globales Best wird separat gespeichert und am Ende exakt in
+den Tracker zurückgebaut. Es gibt keine Kicks, Q-Window-Logik, Targeted Escapes
+oder geschachtelten Quenches.
+
+Die Variante `gs4-symbol-channel` verfolgt zusätzlich für alle drei Paarungen
+der vier Folgen die beiden Rohresiduen `w` und `v`. Sie rangiert einen Move nach
+
+```text
+score = Q' / (1 + max_pairing(||w'||² + ||v'||²) / 16).
+```
+
+Ein exakter Lösungsmove behält damit Score null. Die Normierung bevorzugt bei
+vergleichbarem Q Zustände, deren zwei Kanäle bereits stark gegeneinander
+arbeiten, ohne `w=0` und damit die Paley-/Golay-Unterfamilie zu erzwingen. Der
+Kanalcache wird mit denselben Singleton-Deltas wie der Tracker aktualisiert.
+Die Variante ist experimentell und nicht der Default.
 
 ## Deterministischer Konstruktionspfad
 
