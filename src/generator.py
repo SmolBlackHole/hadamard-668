@@ -35,6 +35,17 @@ class Result:
         return line
 
 
+def _cyclic_start(n: int, rng: np.random.Generator) -> npt.NDArray[np.int8]:
+    """One random base sequence, cyclic shifts for the other three."""
+    base = rng.choice(np.array([-1, 1], dtype=np.int8), size=n)
+    shift = rng.integers(1, n, size=3)
+    seqs = np.empty((4, n), dtype=np.int8)
+    seqs[0] = base
+    for i, s in enumerate(shift, 1):
+        seqs[i] = np.roll(base, int(s))
+    return seqs
+
+
 class Generator:
     """Hadamard search via KFlip + NAF Tracker (Goethals-Seidel GS4)."""
 
@@ -83,6 +94,7 @@ class Generator:
         seed: int,
         *,
         config: SolverConfig | None = None,
+        start_kind: str = "random",
     ) -> Result:
         started = time.perf_counter()
         rng = np.random.default_rng(seed)
@@ -107,8 +119,12 @@ class Generator:
                 return constructed
 
         b = self._builder
+        n = b.n
 
-        sequences = rng.choice(np.array([-1, 1], dtype=np.int8), size=(b.k, b.n))
+        if start_kind == "cyclic":
+            sequences = _cyclic_start(n, rng)
+        else:
+            sequences = rng.choice(np.array([-1, 1], dtype=np.int8), size=(b.k, n))
 
         from .tracker import Tracker
 
