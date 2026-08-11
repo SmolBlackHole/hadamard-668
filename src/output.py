@@ -13,12 +13,15 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from .builder import Builder
 from .generator import Result
+
+if TYPE_CHECKING:
+    from .symmetric_bs_searcher import SearchConfig, SearchResult
 
 
 def _seqs_to_b64(seqs: np.ndarray) -> str:
@@ -67,6 +70,20 @@ CREATE TABLE IF NOT EXISTS solutions (
 CREATE INDEX IF NOT EXISTS idx_runs_strategy_n ON runs(strategy, n);
 CREATE INDEX IF NOT EXISTS idx_runs_sha256 ON runs(sha256);
 CREATE INDEX IF NOT EXISTS idx_solutions_class ON solutions(class_hash);
+CREATE TABLE IF NOT EXISTS symmetric_bs_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile TEXT NOT NULL,
+    seed INTEGER NOT NULL,
+    solved INTEGER NOT NULL,
+    best_energy INTEGER NOT NULL,
+    active_lags INTEGER NOT NULL,
+    elapsed_s REAL NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(profile, seed)
+);
+CREATE INDEX IF NOT EXISTS idx_symmetric_bs_energy
+    ON symmetric_bs_runs(profile, best_energy);
 """
 
 
@@ -96,19 +113,29 @@ def save_run(db_path: Path, strategy: str, n: int, result: Result) -> None:
     con = _connect(db_path)
     try:
         con.execute("BEGIN IMMEDIATE")
-        dup = con.execute(
-            "SELECT 1 FROM runs WHERE strategy = ? AND n = ? AND sha256 = ?",
-            (strategy, n, sha),
-        ).fetchone()
-        if not dup:
-            con.execute(
-                "INSERT INTO runs (strategy, n, seed, sha256, seqs_b64, solved, energy,"
-                " solver_e, elapsed_s, iterations, class_hash, stats_json)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (strategy, n, result.seed, sha, b64, int(solved), result.metrics.energy,
-                 result.solver_e, round(result.elapsed, 3), result.iterations,
-                 class_hash, stats_json),
-            )
+        con.execute(
+            "DELETE FROM runs WHERE strategy = ? AND n = ? AND seed = ?",
+            (strategy, n, result.seed),
+        )
+        con.execute(
+            "INSERT INTO runs (strategy, n, seed, sha256, seqs_b64, solved, energy,"
+            " solver_e, elapsed_s, iterations, class_hash, stats_json)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                strategy,
+                n,
+                result.seed,
+                sha,
+                b64,
+                int(solved),
+                result.metrics.energy,
+                result.solver_e,
+                round(result.elapsed, 3),
+                result.iterations,
+                class_hash,
+                stats_json,
+            ),
+        )
         if solved:
             existing = con.execute(
                 "SELECT 1 FROM solutions WHERE class_hash = ?", (class_hash,)
@@ -118,9 +145,19 @@ def save_run(db_path: Path, strategy: str, n: int, result: Result) -> None:
                     "INSERT OR IGNORE INTO solutions (strategy, n, seed, sha256, seqs_b64,"
                     " energy, solver_e, elapsed_s, iterations, class_hash, stats_json)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (strategy, n, result.seed, sha, b64, result.metrics.energy,
-                     result.solver_e, round(result.elapsed, 3), result.iterations,
-                     class_hash, stats_json),
+                    (
+                        strategy,
+                        n,
+                        result.seed,
+                        sha,
+                        b64,
+                        result.metrics.energy,
+                        result.solver_e,
+                        round(result.elapsed, 3),
+                        result.iterations,
+                        class_hash,
+                        stats_json,
+                    ),
                 )
         con.execute("COMMIT")
     except BaseException:
@@ -128,6 +165,62 @@ def save_run(db_path: Path, strategy: str, n: int, result: Result) -> None:
         raise
     finally:
         con.close()
+
+
+def save_symmetric_bs_result(
+    db_path: Path,
+    result: SearchResult,
+    *,
+    base_seed: int,
+    config: SearchConfig,
+) -> None:
+    """Store one independently verified symmetric BS profile result."""
+    if result.best_energy == 0 and not result.solved:
+        raise ValueError("refusing to store an unverified zero-energy symmetric BS result")
+    payload = result.to_dict()
+    payload["base_seed"] = base_seed
+    payload["config"] = {
+        "restarts": config.restarts,
+        "steps": config.steps,
+        "tabu_tenure": config.tabu_tenure,
+        "pair_top_k": config.pair_top_k,
+        "kick_after": config.kick_after,
+    }
+    profile = json.dumps(result.profile.as_tuple(), separators=(",", ":"))
+    con = _connect(db_path)
+    try:
+        con.execute(
+            "INSERT INTO symmetric_bs_runs "
+            "(profile, seed, solved, best_energy, active_lags, elapsed_s, payload_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(profile, seed) DO UPDATE SET "
+            "solved=excluded.solved, best_energy=excluded.best_energy, "
+            "active_lags=excluded.active_lags, elapsed_s=excluded.elapsed_s, "
+            "payload_json=excluded.payload_json, created_at=datetime('now')",
+            (
+                profile,
+                result.seed,
+                int(result.solved),
+                result.best_energy,
+                int(np.count_nonzero(result.residual)),
+                round(result.elapsed_seconds, 3),
+                json.dumps(payload),
+            ),
+        )
+    finally:
+        con.close()
+
+
+def load_symmetric_bs_runs(db_path: Path) -> list[dict[str, Any]]:
+    """Load persisted symmetric BS profile results in insertion order."""
+    if not db_path.exists():
+        return []
+    con = _connect(db_path)
+    try:
+        rows = con.execute("SELECT payload_json FROM symmetric_bs_runs ORDER BY id").fetchall()
+    finally:
+        con.close()
+    return [json.loads(row["payload_json"]) for row in rows]
 
 
 def load_runs(db_path: Path) -> dict[str, dict[str, list[dict[str, Any]]]]:

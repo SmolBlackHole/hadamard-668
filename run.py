@@ -2,9 +2,10 @@
 
 Usage::
 
-    python run.py --strategy gs4 --order 128 --steps 200000 --seed 42 --output data/runs.json
-    python run.py --sweep gs4 32 34 36 --seeds 10 --steps 200000 --workers 4 --output data/baseline.json
-    python run.py --check data/runs.json
+    python run.py --strategy gs4 --order 128 --steps 200000 --seed 42 --output data/runs.db
+    python run.py --sweep gs4 32 34 36 --seeds 10 --steps 200000 --workers 4 --output data/baseline.db
+    python run.py --symmetric-bs --profile 3 --steps 5000 --output data/hadamard.db
+    python run.py --check data/runs.db
 """
 
 from __future__ import annotations
@@ -14,10 +15,11 @@ import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+from typing import cast
 
 from src.benchmark_stats import wilson_ci
 from src.generator import Generator, Result
-from src.output import save_run, verify
+from src.output import save_run, save_symmetric_bs_result, verify
 from src.solver import SolverConfig
 
 
@@ -31,7 +33,12 @@ def _fmt_time(t: float) -> str:
 
 
 def _execute_single(
-    kind: str, n: int, steps: int, seed: int, solver_config: SolverConfig | None = None, start_kind: str = "random"
+    kind: str,
+    n: int,
+    steps: int,
+    seed: int,
+    solver_config: SolverConfig | None = None,
+    start_kind: str = "random",
 ) -> Result:
     """Run one search (pickle-friendly for ProcessPoolExecutor)."""
     gen = Generator(kind=kind, n=n)
@@ -106,7 +113,7 @@ def _run_sweep(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Hadamard matrix search via GS4 construction.",
-        epilog="sweep example: python run.py --sweep gs4 32 34 36 --seeds 10 --workers 4 --output data.json",
+        epilog="sweep example: python run.py --sweep gs4 32 34 36 --seeds 10 --workers 4 --output data.db",
     )
     parser.add_argument(
         "--strategy",
@@ -146,8 +153,8 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=str,
-        default="data/benchmark.json",
-        help="Append runs to JSON file (default: data/benchmark.json)",
+        default="data/hadamard.db",
+        help="Store runs in SQLite (default: data/hadamard.db)",
     )
     parser.add_argument(
         "--no-output",
@@ -179,6 +186,38 @@ def main() -> None:
         type=int,
         default=10,
         help="Number of independent seeds per n in sweep mode (default: 10)",
+    )
+
+    symmetric_group = parser.add_argument_group("Symmetric BS(42,41)")
+    symmetric_group.add_argument(
+        "--symmetric-bs",
+        action="store_true",
+        help="Search the five normalized symmetric BS(42,41) spectral profiles",
+    )
+    symmetric_group.add_argument(
+        "--profile",
+        type=int,
+        action="append",
+        choices=range(5),
+        help="Symmetric BS profile index; repeat to select multiple (default: all)",
+    )
+    symmetric_group.add_argument(
+        "--restarts",
+        type=int,
+        default=4,
+        help="Restarts per symmetric BS profile (default: 4)",
+    )
+    symmetric_group.add_argument(
+        "--pair-top-k",
+        type=int,
+        default=4,
+        help="Pair-Rescue candidates per stage (default: 4)",
+    )
+    symmetric_group.add_argument(
+        "--kick-after",
+        type=int,
+        default=75,
+        help="Symmetric BS stagnation steps before a constrained kick (default: 75)",
     )
 
     # Solver config
@@ -261,6 +300,36 @@ def main() -> None:
         ok = verify(Path(args.check))
         sys.exit(0 if ok > 0 else 1)
 
+    if args.symmetric_bs:
+        if args.sweep is not None:
+            parser.error("--symmetric-bs cannot be combined with --sweep")
+        if args.runs != 1:
+            parser.error("--runs is not used by --symmetric-bs; use --restarts")
+        if not float(args.tabu_tenure).is_integer():
+            parser.error("--symmetric-bs requires an integer --tabu-tenure")
+        from src.symmetric_bs_searcher import PROFILES, SearchConfig, search_profiles
+
+        profile_indices = cast(list[int] | None, args.profile)
+        profiles = (
+            PROFILES
+            if profile_indices is None
+            else tuple(PROFILES[index] for index in profile_indices)
+        )
+        config = SearchConfig(
+            restarts=args.restarts,
+            steps=args.steps,
+            tabu_tenure=int(args.tabu_tenure),
+            pair_top_k=args.pair_top_k,
+            kick_after=args.kick_after,
+        )
+        symmetric_results = search_profiles(profiles, config, args.seed, workers=args.workers)
+        if not args.no_output:
+            output_path = Path(args.output)
+            for result in symmetric_results:
+                save_symmetric_bs_result(output_path, result, base_seed=args.seed, config=config)
+            print(f"Saved {len(symmetric_results)} symmetric BS profile result(s) to {output_path}")
+        return
+
     # --- sweep mode -----------------------------------------------------------
     if args.sweep is not None:
         if len(args.sweep) < 2:
@@ -295,13 +364,17 @@ def main() -> None:
     if workers == 1:
         for s in seeds:
             try:
-                r = _execute_single(gen.name, gen._builder.n, args.steps, s, solver_config, args.start_kind)
+                r = _execute_single(
+                    gen.name, gen._builder.n, args.steps, s, solver_config, args.start_kind
+                )
                 results.append(r)
                 print(f"  {r}")
             except Exception as exc:
                 print(f"  run seed={s} FAILED: {exc}")
     else:
-        tasks = [(gen.name, gen._builder.n, args.steps, s, solver_config, args.start_kind) for s in seeds]
+        tasks = [
+            (gen.name, gen._builder.n, args.steps, s, solver_config, args.start_kind) for s in seeds
+        ]
         with ProcessPoolExecutor(max_workers=workers) as pool:
             results = list(pool.map(_execute_single, *zip(*tasks, strict=True)))
         for r in results:
