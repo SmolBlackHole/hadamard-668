@@ -4,6 +4,10 @@ __pycache__/
 .gremlins_cache/
 .pytest-tmp/
 .cupy-cache/
+runs/
+*.db-shm
+*.db-wal
+data/_bench_*.db
 .venv/
 .env
 .coverage
