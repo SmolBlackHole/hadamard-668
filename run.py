@@ -31,12 +31,12 @@ def _fmt_time(t: float) -> str:
 
 
 def _execute_single(
-    kind: str, n: int, steps: int, seed: int, solver_config: SolverConfig | None = None
+    kind: str, n: int, steps: int, seed: int, solver_config: SolverConfig | None = None, start_kind: str = "random"
 ) -> Result:
     """Run one search (pickle-friendly for ProcessPoolExecutor)."""
     gen = Generator(kind=kind, n=n)
     started = time.perf_counter()
-    result = gen.search(steps=steps, seed=seed, config=solver_config)
+    result = gen.search(steps=steps, seed=seed, config=solver_config, start_kind=start_kind)
     result.elapsed = time.perf_counter() - started
     return result
 
@@ -49,12 +49,13 @@ def _run_sweep(
     workers: int,
     solver_config: SolverConfig,
     output_path: Path | None,
+    start_kind: str = "random",
 ) -> None:
     """Run a sweep: for each n, run ``seeds`` independent searches."""
-    tasks: list[tuple[str, int, int, int, SolverConfig]] = []
+    tasks: list[tuple[str, int, int, int, SolverConfig, str]] = []
     for n in ns:
         for s in range(seeds):
-            tasks.append((strategy, n, steps, s, solver_config))
+            tasks.append((strategy, n, steps, s, solver_config, start_kind))
 
     total = len(tasks)
     results: list[Result] = []
@@ -62,10 +63,10 @@ def _run_sweep(
         with ProcessPoolExecutor(max_workers=workers) as pool:
             results = list(pool.map(_execute_single, *zip(*tasks, strict=True)))
     else:
-        for i, (kind, n, st, seed, cfg) in enumerate(tasks, 1):
+        for i, (kind, n, st, seed, cfg, sk) in enumerate(tasks, 1):
             print(f"[{i}/{total}] n={n}:", end=" ", flush=True)
             try:
-                results.append(_execute_single(kind, n, st, seed, cfg))
+                results.append(_execute_single(kind, n, st, seed, cfg, sk))
             except Exception as exc:
                 print(f"FAILED: {exc}")
 
@@ -73,7 +74,7 @@ def _run_sweep(
         print(f"  {r}")
 
     by_n: dict[int, list[Result]] = {}
-    for r, (_, n, _, _, _) in zip(results, tasks, strict=True):
+    for r, (_, n, _, _, _, _) in zip(results, tasks, strict=True):
         by_n.setdefault(n, []).append(r)
 
     total_t = sum(r.elapsed for r in results)
@@ -98,7 +99,7 @@ def _run_sweep(
         print(line)
 
     if output_path:
-        for r, (_, n, _, _, _) in zip(results, tasks, strict=True):
+        for r, (_, n, _, _, _, _) in zip(results, tasks, strict=True):
             save_run(output_path, strategy, n, r)
 
 
@@ -216,7 +217,7 @@ def main() -> None:
         "--escape-policy",
         choices=("legacy625", "support_lag625"),
         default=SolverConfig.escape_policy,
-        help="Targeted escape candidate policy (default: legacy625)",
+        help="Targeted escape policy (default: legacy625)",
     )
     solver_group.add_argument(
         "--escape-quench-steps",
@@ -226,6 +227,12 @@ def main() -> None:
             "Maximum search steps for each targeted escape candidate "
             f"(default: {SolverConfig.escape_quench_steps})"
         ),
+    )
+    solver_group.add_argument(
+        "--start-kind",
+        choices=("random", "cyclic"),
+        default="random",
+        help="Start sequence generator (default: random)",
     )
     solver_group.add_argument(
         "--no-targeted-escape", action="store_true", help="Disable targeted escape"
@@ -269,6 +276,7 @@ def main() -> None:
             args.workers,
             solver_config,
             output_path,
+            start_kind=args.start_kind,
         )
         if output_path and not args.no_verify:
             ok = verify(output_path)
@@ -287,19 +295,19 @@ def main() -> None:
     if workers == 1:
         for s in seeds:
             try:
-                r = _execute_single(gen.name, gen._builder.n, args.steps, s, solver_config)
+                r = _execute_single(gen.name, gen._builder.n, args.steps, s, solver_config, args.start_kind)
                 results.append(r)
                 print(f"  {r}")
             except Exception as exc:
                 print(f"  run seed={s} FAILED: {exc}")
     else:
-        tasks = [(gen.name, gen._builder.n, args.steps, s, solver_config) for s in seeds]
+        tasks = [(gen.name, gen._builder.n, args.steps, s, solver_config, args.start_kind) for s in seeds]
         with ProcessPoolExecutor(max_workers=workers) as pool:
             results = list(pool.map(_execute_single, *zip(*tasks, strict=True)))
         for r in results:
             print(f"  {r}")
 
-    if args.output:
+    if not args.no_output and args.output:
         for r in results:
             save_run(Path(args.output), gen.name, gen._builder.n, r)
 
