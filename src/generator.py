@@ -2,13 +2,34 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Protocol
+
 import numpy as np
 
 from .constructions import paley_ng_sequences, supports_paley_ng
 from .models import Int8Array
 
 STRATEGIES = ("gs4", "paley-ng", "construct")
-START_KINDS = ("random", "cyclic")
+
+
+class StartConstruction(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    def build(self, n: int, rng: np.random.Generator) -> Int8Array: ...
+
+
+@dataclass(frozen=True)
+class _StartConstruction:
+    name: str
+    builder: Callable[[int, np.random.Generator], Int8Array]
+
+    def build(self, n: int, rng: np.random.Generator) -> Int8Array:
+        if n <= 0:
+            raise ValueError("n must be positive")
+        return self.builder(n, rng)
 
 
 def n_from_order(strategy: str, order: int) -> int:
@@ -19,20 +40,32 @@ def n_from_order(strategy: str, order: int) -> int:
     return order // 4
 
 
-def initial_sequences(n: int, rng: np.random.Generator, start_kind: str) -> Int8Array:
-    if n <= 0:
-        raise ValueError("n must be positive")
-    if start_kind not in START_KINDS:
-        raise ValueError(f"start_kind must be one of {START_KINDS}, got {start_kind!r}")
-    if start_kind == "random":
-        return rng.choice(np.array([-1, 1], dtype=np.int8), size=(4, n))
+def _random_start(n: int, rng: np.random.Generator) -> Int8Array:
+    return rng.choice(np.array([-1, 1], dtype=np.int8), size=(4, n))
 
+
+def _cyclic_start(n: int, rng: np.random.Generator) -> Int8Array:
     base = rng.choice(np.array([-1, 1], dtype=np.int8), size=n)
     sequences = np.empty((4, n), dtype=np.int8)
     sequences[0] = base
     for index, shift in enumerate(rng.integers(1, n, size=3), 1):
         sequences[index] = np.roll(base, int(shift))
     return sequences
+
+
+RANDOM_START: StartConstruction = _StartConstruction("random", _random_start)
+CYCLIC_START: StartConstruction = _StartConstruction("cyclic", _cyclic_start)
+START_CONSTRUCTIONS: dict[str, StartConstruction] = {
+    construction.name: construction for construction in (RANDOM_START, CYCLIC_START)
+}
+START_KINDS = tuple(START_CONSTRUCTIONS)
+
+
+def start_construction(name: str) -> StartConstruction:
+    try:
+        return START_CONSTRUCTIONS[name]
+    except KeyError:
+        raise ValueError(f"start kind must be one of {START_KINDS}, got {name!r}") from None
 
 
 def exact_sequences(strategy: str, n: int) -> Int8Array | None:

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from run import _execute_single, _format_time
+from src.generator import RANDOM_START
 from src.solver import SolverConfig
 
 
@@ -24,6 +25,7 @@ def test_run_help_works() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "--symmetric-bs" not in result.stdout
+    assert "--candidate-budget" in result.stdout
     assert "SQLite" in result.stdout
 
 
@@ -34,17 +36,17 @@ def test_format_time() -> None:
 
 
 def test_execute_single_smoke() -> None:
-    result = _execute_single("gs4", 5, 2_000, 42, SolverConfig(), "random")
+    result = _execute_single("gs4", 5, 200_000, 42, SolverConfig(), RANDOM_START)
     assert result.solved
 
 
 def test_execute_single_paley_ng_smoke() -> None:
-    result = _execute_single("paley-ng", 52, 1, 42, SolverConfig(), "random")
+    result = _execute_single("paley-ng", 52, 1, 42, SolverConfig(), RANDOM_START)
     assert result.solved
     assert result.order == 208
 
 
 def test_execute_single_construct_smoke() -> None:
-    result = _execute_single("construct", 104, 1, 42, SolverConfig(), "random")
+    result = _execute_single("construct", 104, 1, 42, SolverConfig(), RANDOM_START)
     assert result.solved
     assert result.order == 416

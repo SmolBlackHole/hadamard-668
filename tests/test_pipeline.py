@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 
 from src.constructions import double_gs4, paley_ng_sequences
-from src.generator import exact_sequences, n_from_order
+from src.generator import exact_sequences, n_from_order, start_construction
+from src.models import Int8Array
 from src.pipeline import execute
 from src.solver import SolverConfig
 from src.tracker import Tracker
@@ -21,11 +22,38 @@ def test_order_conversion_and_unknown_strategy() -> None:
         n_from_order("gs4", 42)
 
 
+def test_start_construction_registry_rejects_unknown_name() -> None:
+    assert start_construction("random").name == "random"
+    with pytest.raises(ValueError, match="start kind"):
+        start_construction("near-turyn")
+
+
+def test_pipeline_accepts_a_custom_start_construction() -> None:
+    class ConstantStart:
+        name = "constant"
+
+        def build(self, n: int, rng: np.random.Generator) -> Int8Array:
+            del rng
+            return np.ones((4, n), dtype=np.int8)
+
+    result = execute(
+        "gs4",
+        5,
+        1,
+        42,
+        SolverConfig(kick=False, tabu=False),
+        ConstantStart(),
+    )
+
+    assert result.candidate_evals == 1
+    assert np.array_equal(result.sequences, np.ones((4, 5), dtype=np.int8))
+
+
 def test_paley_ng_constructs_verified_order_208() -> None:
     result = execute("paley-ng", 52, 1, 123, SolverConfig())
     assert result.solved
     assert result.order == 208
-    assert result.steps == 0
+    assert result.candidate_evals == 0
     verify_candidate(result.sequences)
 
 
@@ -76,20 +104,20 @@ def test_turyn_double_preserves_gs4_solution() -> None:
 def test_construct_uses_direct_paley_then_turyn() -> None:
     result = execute("construct", 104, 1, 999, SolverConfig())
     assert result.solved
-    assert result.steps == 0
+    assert result.candidate_evals == 0
     assert np.array_equal(result.sequences, double_gs4(paley_ng_sequences(52)))
 
 
 def test_construct_searches_smaller_base_then_lifts() -> None:
-    result = execute("construct", 14, 2_000, 0, SolverConfig())
+    result = execute("construct", 14, 2_000_000, 0, SolverConfig())
     assert result.solved
-    assert result.steps > 0
+    assert result.candidate_evals > 0
 
 
 def test_construct_fallback_matches_gs4_for_odd_n() -> None:
     config = SolverConfig()
-    direct = execute("gs4", 11, 2_000, 42, config)
-    fallback = execute("construct", 11, 2_000, 42, config)
+    direct = execute("gs4", 11, 2_000_000, 42, config)
+    fallback = execute("construct", 11, 2_000_000, 42, config)
     assert direct.energy == fallback.energy
-    assert direct.steps == fallback.steps
+    assert direct.candidate_evals == fallback.candidate_evals
     assert np.array_equal(direct.sequences, fallback.sequences)

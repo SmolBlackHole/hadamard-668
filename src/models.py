@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 import numpy as np
 import numpy.typing as npt
@@ -16,6 +17,69 @@ def _format_energy(energy: int) -> str:
     if energy >= 1_000:
         return f"{energy / 1_000:.0f}k"
     return str(energy)
+
+
+@dataclass
+class CandidateBudget:
+    limit: int
+    used: int = 0
+
+    def __post_init__(self) -> None:
+        if self.limit < 1:
+            raise ValueError("candidate budget must be positive")
+
+    @property
+    def remaining(self) -> int:
+        return self.limit - self.used
+
+    def take(self, requested: int) -> int:
+        granted = min(requested, self.remaining)
+        self.used += granted
+        return granted
+
+
+class SearchPhase(StrEnum):
+    INITIALIZE = "initialize"
+    GREEDY = "greedy"
+    TABU = "tabu"
+    TARGETED = "targeted"
+    RANDOM_KICK = "random_kick"
+
+
+@dataclass(frozen=True)
+class PhaseEvent:
+    phase: SearchPhase
+    q_before: int
+    q_after: int
+    lowest_q: int
+    candidate_evals: int
+    accepted_moves: int
+    downhill_moves: int
+    lateral_moves: int
+    uphill_moves: int
+    basis_minus_before: int
+    basis_minus_after: int
+    state_hash_after: str
+    orbit_hash_after: str
+    outcome: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "phase": self.phase.value,
+            "q_before": self.q_before,
+            "q_after": self.q_after,
+            "lowest_q": self.lowest_q,
+            "candidate_evals": self.candidate_evals,
+            "accepted_moves": self.accepted_moves,
+            "downhill_moves": self.downhill_moves,
+            "lateral_moves": self.lateral_moves,
+            "uphill_moves": self.uphill_moves,
+            "basis_minus_before": self.basis_minus_before,
+            "basis_minus_after": self.basis_minus_after,
+            "state_hash_after": self.state_hash_after,
+            "orbit_hash_after": self.orbit_hash_after,
+            "outcome": self.outcome,
+        }
 
 
 @dataclass
@@ -50,6 +114,7 @@ class SearchStats:
     tabu_time_s: float = 0.0
     solve_phase: str | None = None
     solve_q_before: int | None = None
+    phase_events: list[PhaseEvent] = field(default_factory=list[PhaseEvent])
     _streak: int = 0
 
     @property
@@ -113,6 +178,7 @@ class SearchStats:
             "kick_time_s": self.kick_time_s,
             "rebuild_time_s": self.rebuild_time_s,
             "tabu_time_s": self.tabu_time_s,
+            "phase_events": [event.to_dict() for event in self.phase_events],
         }
 
     def display(self) -> str:
@@ -121,7 +187,9 @@ class SearchStats:
             f"S={self.singles}({_format_energy(self.energy_saved_singles)})",
             f"TB={self.tabu_hits}/{self.tabu_walks}({_format_energy(self.energy_saved_tabu)})",
             f"K={self.kicks}({_format_energy(self.energy_saved_kicks)})",
-            f"evals={self.single_evals}/{self.tabu_candidate_evals}/{self.kick_evals}",
+            f"evals={self.total_candidate_evals}"
+            f"({self.single_evals}/{self.tabu_candidate_evals}/"
+            f"{self.kick_evals}/{self.quench_candidate_evals})",
             f"t={self.single_time_s:.1f}s/{self.tabu_time_s:.1f}s/{self.kick_time_s:.1f}s",
         ]
         if self.singles_streaks:
@@ -136,7 +204,7 @@ class SearchStats:
 class SolverResult:
     sequences: Int8Array
     energy: int
-    steps: int
+    candidate_evals: int
     stats: SearchStats
 
     @property
@@ -151,10 +219,13 @@ class RunResult:
     seed: int
     sequences: Int8Array
     energy: int
-    steps: int
+    candidate_evals: int
     elapsed_seconds: float
     stats: SearchStats
     verified: bool
+    construction: str = "unknown"
+    candidate_budget: int = 0
+    solver_config: dict[str, object] = field(default_factory=dict[str, object])
 
     @property
     def solved(self) -> bool:
@@ -173,8 +244,18 @@ class RunResult:
 class AuditReport:
     checked: int
     valid: int
+    quarantined: int = 0
     failures: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
-        return self.checked > 0 and self.valid == self.checked
+        return (
+            self.checked > 0 and self.valid + self.quarantined == self.checked and not self.failures
+        )
+
+
+@dataclass(frozen=True)
+class MigrationReport:
+    checked: int
+    valid: int
+    quarantined: int

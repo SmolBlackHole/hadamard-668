@@ -14,7 +14,7 @@ def _make_result(
     seed: int,
     energy: int,
     elapsed: float = 1.0,
-    iterations: int = 100,
+    candidate_evals: int = 100,
     stats: SearchStats | None = None,
 ) -> RunResult:
     seqs = np.ones((4, 6), dtype=np.int8)
@@ -25,7 +25,7 @@ def _make_result(
         seed=seed,
         sequences=seqs,
         energy=energy,
-        steps=iterations,
+        candidate_evals=candidate_evals,
         elapsed_seconds=elapsed,
         stats=stats or SearchStats(),
         verified=energy == 0,
@@ -48,22 +48,26 @@ def test_save_and_load_solution(tmp_path: Path) -> None:
     assert r["solved"]
     assert r["energy"] == 0
     assert r["elapsed_s"] == 1.0
-    assert r["iterations"] == 100
+    assert r["candidate_evals"] == 100
     assert r["stats"]["singles"] == 3
     assert len(r["sha256"]) == 64
+    assert r["sha256"] == r["validation_hash"]
+    assert r["class"] == r["orbit_hash"]
+    assert r["canonicalizer"] == "gs4-quick-orbit-v1"
+    assert r["valid"]
     assert len(r["seqs_b64"]) > 0
 
 
 def test_save_and_load_failure(tmp_path: Path) -> None:
     path = tmp_path / "runs.db"
-    save_run(path, _make_result(1, energy=16, elapsed=3.0, iterations=5000))
+    save_run(path, _make_result(1, energy=16, elapsed=3.0, candidate_evals=5000))
 
     data = load_runs(path)
     r = data["gs4"]["6"][0]
     assert not r["solved"]
     assert r["energy"] == 16
     assert r["elapsed_s"] == 3.0
-    assert r["iterations"] == 5000
+    assert r["candidate_evals"] == 5000
 
 
 def test_load_empty_dataset(tmp_path: Path) -> None:
@@ -72,8 +76,8 @@ def test_load_empty_dataset(tmp_path: Path) -> None:
 
 def test_multiple_runs_same_n(tmp_path: Path) -> None:
     path = tmp_path / "runs.db"
-    save_run(path, _make_result(0, energy=0, elapsed=1.0, iterations=100))
-    save_run(path, _make_result(1, energy=4, elapsed=2.0, iterations=200))
+    save_run(path, _make_result(0, energy=0, elapsed=1.0, candidate_evals=100))
+    save_run(path, _make_result(1, energy=4, elapsed=2.0, candidate_evals=200))
 
     data = load_runs(path)
     runs = data["gs4"]["6"]
@@ -92,12 +96,12 @@ def test_identical_states_from_different_seeds_are_retained(tmp_path: Path) -> N
     assert runs[0]["sha256"] == runs[1]["sha256"]
 
 
-def test_repeated_seed_replaces_its_previous_run(tmp_path: Path) -> None:
+def test_repeated_seed_retains_experimental_history(tmp_path: Path) -> None:
     path = tmp_path / "runs.db"
-    save_run(path, _make_result(4, energy=16, iterations=100))
-    save_run(path, _make_result(4, energy=8, iterations=200))
+    save_run(path, _make_result(4, energy=16, candidate_evals=100))
+    save_run(path, _make_result(4, energy=8, candidate_evals=200))
 
     runs = load_runs(path)["gs4"]["6"]
-    assert len(runs) == 1
-    assert runs[0]["energy"] == 8
-    assert runs[0]["iterations"] == 200
+    assert len(runs) == 2
+    assert [run["energy"] for run in runs] == [16, 8]
+    assert [run["candidate_evals"] for run in runs] == [100, 200]

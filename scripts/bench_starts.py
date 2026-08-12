@@ -22,7 +22,7 @@ class SweepEntry(TypedDict):
 def run_sweep(
     n: int,
     seeds: int,
-    steps: int,
+    candidate_budget: int,
     extra_args: Sequence[str],
     label: str,
 ) -> list[SweepEntry]:
@@ -36,8 +36,8 @@ def run_sweep(
             str(n),
             "--seeds",
             str(seeds),
-            "--steps",
-            str(steps),
+            "--candidate-budget",
+            str(candidate_budget),
             "--workers",
             "8",
             "--output",
@@ -80,7 +80,13 @@ def run_sweep(
 
 
 if __name__ == "__main__":
-    for n, seeds, steps in [(44, 30, 200000)]:
+    for n, seeds, candidate_budget in [(44, 30, 100_000_000)]:
         print(f"\n=== n={n} ===")
-        run_sweep(n, seeds, steps, ["--no-targeted-escape"], "random")
-        run_sweep(n, seeds, steps, ["--start-kind", "cyclic", "--no-targeted-escape"], "cyclic")
+        run_sweep(n, seeds, candidate_budget, ["--no-targeted-escape"], "random")
+        run_sweep(
+            n,
+            seeds,
+            candidate_budget,
+            ["--start-kind", "cyclic", "--no-targeted-escape"],
+            "cyclic",
+        )

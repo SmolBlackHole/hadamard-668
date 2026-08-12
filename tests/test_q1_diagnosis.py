@@ -57,7 +57,7 @@ def test_database_diagnosis_reads_persisted_q1_endpoint(tmp_path: Path) -> None:
         seed=17,
         sequences=sequences,
         energy=tracker.energy(),
-        steps=0,
+        candidate_evals=0,
         elapsed_seconds=1.0,
         stats=SearchStats(),
         verified=False,

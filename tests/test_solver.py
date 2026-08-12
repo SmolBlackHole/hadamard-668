@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from src.builder import build_gs4
-from src.models import SearchStats, SolverResult
+from src.models import CandidateBudget, SearchPhase, SearchStats, SolverResult
 from src.solver import (
     SolverConfig,
     TabuWalkResult,
@@ -47,7 +47,7 @@ def test_solver_finds_solution_small_n() -> None:
     seqs = np.random.default_rng(42).choice((-1, 1), size=(4, 5)).astype(np.int8)
     tracker = Tracker()
     tracker.build(seqs)
-    result = ils_search(seqs, tracker, np.random.default_rng(42), steps=5000)
+    result = ils_search(seqs, tracker, np.random.default_rng(42), candidate_budget=500_000)
 
     assert result.solved
     matrix = build_gs4(result.sequences)
@@ -61,9 +61,9 @@ def test_solver_budget_not_exceeded() -> None:
     tracker.build(seqs)
 
     budget = 1000
-    result = ils_search(seqs, tracker, np.random.default_rng(99), steps=budget)
-    assert result.steps <= budget
-    assert result.steps >= 1
+    result = ils_search(seqs, tracker, np.random.default_rng(99), candidate_budget=budget)
+    assert result.candidate_evals <= budget
+    assert result.candidate_evals == result.stats.total_candidate_evals
 
 
 def test_solver_best_e_never_increases() -> None:
@@ -90,7 +90,7 @@ def test_solver_kicks_after_failed_single_scan() -> None:
         seqs,
         cast(Tracker, tracker),
         np.random.default_rng(1),
-        steps=10,
+        candidate_budget=10,
         config=SolverConfig(tabu=False),
     )
 
@@ -161,12 +161,13 @@ def test_targeted_escape_uses_support_lags(monkeypatch: pytest.MonkeyPatch) -> N
         assert empty_tracker._u is None
         return SolverResult(cand, 1, 1, SearchStats())
 
-    monkeypatch.setattr(solver, "search", fake_search)
+    monkeypatch.setattr(solver, "_search", fake_search)
+    budget = CandidateBudget(100)
     result = solver._targeted_kick(
         seqs,
         tracker,
         np.random.default_rng(1),
-        100,
+        budget,
         seqs.copy(),
         tracker.energy(),
         SolverConfig(),
@@ -177,26 +178,26 @@ def test_targeted_escape_uses_support_lags(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 @pytest.mark.parametrize(
-    ("config", "outer_budget", "expected_steps"),
+    ("config", "outer_budget", "expected_budget"),
     [
-        (SolverConfig(), 100_000, 10_000),
-        (SolverConfig(escape_quench_steps=17), 100_000, 17),
-        (SolverConfig(escape_quench_steps=17), 12, 3),
-        (SolverConfig(escape_quench_steps=17), 3, 1),
+        (SolverConfig(), 100_000_000, 10_000_000),
+        (SolverConfig(escape_quench_budget=17), 100_000, 17),
+        (SolverConfig(escape_quench_budget=17), 12, 11),
+        (SolverConfig(escape_quench_budget=17), 3, 2),
     ],
 )
 def test_targeted_escape_passes_limited_quench_budget(
     monkeypatch: pytest.MonkeyPatch,
     config: SolverConfig,
     outer_budget: int,
-    expected_steps: int,
+    expected_budget: int,
 ) -> None:
     from src import solver
 
     seqs = np.ones((4, 3), dtype=np.int8)
     tracker = Tracker()
     tracker.build(seqs)
-    seen_steps: list[int] = []
+    seen_budgets: list[int] = []
 
     def candidates(*_args: object) -> list[tuple[int, int, int, int]]:
         return [(0, 0, 0, 0)]
@@ -206,22 +207,22 @@ def test_targeted_escape_passes_limited_quench_budget(
     def fake_search(
         cand: np.ndarray, _tracker: Tracker, *_args: object, **kwargs: object
     ) -> SolverResult:
-        seen_steps.append(cast(int, kwargs["steps"]))
+        seen_budgets.append(cast(CandidateBudget, kwargs["budget"]).limit)
         return SolverResult(cand, 1, 1, SearchStats())
 
-    monkeypatch.setattr(solver, "search", fake_search)
+    monkeypatch.setattr(solver, "_search", fake_search)
     solver._targeted_kick(
         seqs,
         tracker,
         np.random.default_rng(1),
-        outer_budget,
+        CandidateBudget(outer_budget),
         seqs.copy(),
         tracker.energy(),
         config,
         SearchStats(),
     )
 
-    assert seen_steps == [expected_steps]
+    assert seen_budgets == [expected_budget]
 
 
 def test_targeted_escape_records_nested_solve_and_candidate_work(
@@ -243,15 +244,16 @@ def test_targeted_escape_records_nested_solve_and_candidate_work(
     ) -> SolverResult:
         nested = SearchStats(single_evals=7)
         nested.record_solve("greedy", 1)
-        return SolverResult(cand, 0, 3, nested)
+        return SolverResult(cand, 0, 7, nested)
 
-    monkeypatch.setattr(solver, "search", fake_search)
+    monkeypatch.setattr(solver, "_search", fake_search)
     stats = SearchStats()
+    budget = CandidateBudget(100)
     result = solver._targeted_kick(
         seqs,
         tracker,
         np.random.default_rng(1),
-        100,
+        budget,
         seqs.copy(),
         tracker.energy(),
         SolverConfig(),
@@ -259,7 +261,7 @@ def test_targeted_escape_records_nested_solve_and_candidate_work(
     )
 
     assert result.solved
-    assert result.steps == 3
+    assert budget.used == 8
     assert stats.target_quenches == 1
     assert stats.quench_candidate_evals == 7
     assert stats.total_candidate_evals == 8
@@ -268,17 +270,17 @@ def test_targeted_escape_records_nested_solve_and_candidate_work(
 
 
 def test_targeted_escape_rejects_non_positive_quench_budget() -> None:
-    with pytest.raises(ValueError, match="escape_quench_steps must be positive"):
-        SolverConfig(escape_quench_steps=0)
+    with pytest.raises(ValueError, match="escape_quench_budget must be positive"):
+        SolverConfig(escape_quench_budget=0)
 
 
 def test_solver_stops_when_single_scan_exhausts_budget() -> None:
     tracker = _ScriptedTracker()
     seqs = np.ones((4, 2), dtype=np.int8)
 
-    result = ils_search(seqs, cast(Tracker, tracker), np.random.default_rng(1), steps=8)
+    result = ils_search(seqs, cast(Tracker, tracker), np.random.default_rng(1), candidate_budget=8)
 
-    assert result.steps == 7
+    assert result.candidate_evals == 8
     assert result.stats.kicks == 0
     assert tracker.accepted == []
 
@@ -396,7 +398,7 @@ def test_tabu_walk_does_not_rebuild_a_temporary_tracker(monkeypatch: pytest.Monk
 def test_solver_kicks_after_an_unsuccessful_tabu_walk(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[int] = []
 
-    def failed_tabu(*_args: object) -> TabuWalkResult:
+    def failed_tabu(*_args: object, **_kwargs: object) -> TabuWalkResult:
         calls.append(1)
         return TabuWalkResult(None, 3)
 
@@ -408,7 +410,7 @@ def test_solver_kicks_after_an_unsuccessful_tabu_walk(monkeypatch: pytest.Monkey
         seqs,
         cast(Tracker, tracker),
         np.random.default_rng(1),
-        steps=10,
+        candidate_budget=33,
         config=SolverConfig(tabu=True),
     )
 
@@ -420,7 +422,7 @@ def test_solver_kicks_after_an_unsuccessful_tabu_walk(monkeypatch: pytest.Monkey
 
 
 def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch) -> None:
-    def successful_tabu(*_args: object) -> TabuWalkResult:
+    def successful_tabu(*_args: object, **_kwargs: object) -> TabuWalkResult:
         return TabuWalkResult(0, 3, solve_q_before=4)
 
     monkeypatch.setattr("src.solver._tabu_walk", successful_tabu)
@@ -431,7 +433,7 @@ def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch)
         seqs,
         cast(Tracker, tracker),
         np.random.default_rng(1),
-        steps=10,
+        candidate_budget=32,
         config=SolverConfig(kick=False, tabu=True),
     )
 
@@ -451,3 +453,25 @@ def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch)
 def test_solver_config_validates_search_parameters() -> None:
     with pytest.raises(ValueError, match="tabu_steps cannot be negative"):
         SolverConfig(tabu_steps=-1)
+
+
+def test_phase_trace_is_cost_complete() -> None:
+    sequences = np.random.default_rng(4).choice((-1, 1), size=(4, 9)).astype(np.int8)
+    result = ils_search(
+        sequences,
+        Tracker(),
+        np.random.default_rng(5),
+        candidate_budget=20_000,
+        config=SolverConfig(targeted_escape=False, trace_phases=True),
+    )
+
+    events = result.stats.phase_events
+    assert events[0].phase == SearchPhase.INITIALIZE
+    assert sum(event.candidate_evals for event in events) == result.candidate_evals
+    assert all(event.state_hash_after and event.orbit_hash_after for event in events)
+    for event in events:
+        if event.phase == SearchPhase.TABU:
+            assert (
+                event.downhill_moves + event.lateral_moves + event.uphill_moves
+                == event.accepted_moves
+            )

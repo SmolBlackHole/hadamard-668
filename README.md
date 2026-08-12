@@ -28,14 +28,17 @@ Dev-Werkzeuge: Ruff, Pyright, pytest, Hypothesis, pytest-cov und pytest-gremlins
 ## Schnellstart
 
 ```bash
-# Einzelner Run (Ordnung 128, 200k Steps)
-python run.py --strategy gs4 --order 128 --steps 200000 --seed 42
+# Einzelner Run (Ordnung 128, 100M Kandidatenauswertungen)
+python run.py --strategy gs4 --order 128 --candidate-budget 100000000 --seed 42
 
 # Sweep über mehrere n
-python run.py --sweep gs4 32 34 36 --seeds 100 --steps 200000 --workers 12
+python run.py --sweep gs4 32 34 36 --seeds 100 --candidate-budget 100000000 --workers 12
 
 # Ablationstest
-python -m scripts.ablation
+python -m scripts.ablation --targeted --n 43 --n 47 --n 51 --candidate-budget 6000000
+
+# Lösungskatalog kanonisieren und analysieren
+python -m scripts.analyze_solutions
 
 # Tests
 pytest tests/ -m "not slow"
@@ -95,6 +98,9 @@ Kernpfad: `pipeline.execute()` erzeugt die Startfolgen, ruft `solver.search()`
 auf und verifiziert ausschließlich Nullenergie-Kandidaten unabhängig über
 `builder.build_gs4()` und `verify.independent_audit()`. `output.save_run()`
 persistiert danach nur das geprüfte Ergebnis.
+
+Identitäten, versionierte Lösungsmetriken und Phasen-Traces sind in
+[docs/EXPERIMENT_DATA_MODEL.md](docs/EXPERIMENT_DATA_MODEL.md) definiert.
 
 ## Design-Entscheidungen
 
