@@ -44,8 +44,8 @@ verworfene Experimente sind in `SEARCH_FINDINGS.md` zusammengefasst.
 - [ ] **Strong-Split-Warmstarts:** fast-starke und freie Zustände bei gleichem
   GS4-Start-Q downstream vergleichen; `Q_split` nicht als unabhängigen
   Basin-Indikator behandeln.
-- [ ] **Targeted-Portfolio:** `legacy625` und `support_lag625` mit getrennten,
-  kandidatenstabilen RNG-Streams gepaart testen.
+- [ ] **Targeted-Budget:** Support-Lag-Portfolio gegen deaktivierten Target-Escape
+  unter gleichem Candidate-Evaluationsbudget testen.
 - [ ] **Low-Q-Eintritt messen:** vergleichen, welche Starts die ternäre
   `Q<=8`-Zone früh und häufig erreichen; erst dort Escape auslösen.
 - [ ] **Strukturdiverses BS-Portfolio:** viele Fast-BS-Zustände kurz in GS4

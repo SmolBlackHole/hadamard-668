@@ -37,10 +37,10 @@ Reproduzierter n=52-Vergleich, 120 gepaarte Seeds und 100k Hauptschritte:
 
 | Policy | gelöst | CPU/Run |
 | --- | ---: | ---: |
-| `legacy625`, Quench 10k | 3/120 | 22,1 s |
-| `support_lag625`, Quench 10k | 6/120 | 21,9 s |
-| `support_lag625`, Quench 5k | 3/120 | 10,4 s |
-| `support_lag625`, Quench 2k | 1/120 | 4,3 s |
+| entferntes Dominant-Lag-Portfolio, Quench 10k | 3/120 | 22,1 s |
+| Support-Lag-Portfolio, Quench 10k | 6/120 | 21,9 s |
+| Support-Lag-Portfolio, Quench 5k | 3/120 | 10,4 s |
+| Support-Lag-Portfolio, Quench 2k | 1/120 | 4,3 s |
 
 Der Unterschied 3/120 gegen 6/120 ist nicht signifikant. Die beiden Policys
 öffnen aber verschiedene Proposalräume. Der GPU-Top-Q-Selector ist verworfen:
@@ -314,8 +314,8 @@ dieser Schale. Der Produktionsdefault bleibt unverändert.
 
 ## Nächste belastbare Experimente
 
-1. `legacy625` und `support_lag625` mit kandidatenstabilen RNG-Streams als
-   echtes Portfolio vergleichen.
+1. Support-Lag-Targeting gegen deaktivierten Target-Escape unter gleichem
+   Candidate-Evaluationsbudget vergleichen.
 2. Viele strukturell verschiedene Fast-BS-Zustände nur kurz downstream
    quenchen; nach GS4-Reaktion statt Upstream-Q auswählen.
 3. Messen, ob strukturierte Starts die ternäre Q<=8-Zone häufiger oder früher

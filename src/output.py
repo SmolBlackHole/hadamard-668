@@ -1,9 +1,8 @@
 """SQLite-backed persistence for search results (replaces the JSON dataset).
 
-``save_run(path, strategy, n, result)`` stores one run (solved or unsolved);
+``save_run(path, result)`` stores one run (solved or unsolved);
 solved runs (energy==0) are also recorded in the ``solutions`` table.
 ``load_runs(path)`` loads the full dataset for analysis.
-``verify(path)`` checks SHA-256 integrity and Hadamard property of all solved entries.
 """
 
 from __future__ import annotations
@@ -13,15 +12,11 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
-from .builder import Builder
-from .generator import Result
-
-if TYPE_CHECKING:
-    from .symmetric_bs_searcher import SearchConfig, SearchResult
+from .models import RunResult
 
 
 def _seqs_to_b64(seqs: np.ndarray) -> str:
@@ -32,8 +27,6 @@ def _seqs_from_b64(b64: str, shape: tuple[int, int]) -> np.ndarray:
     raw = base64.b64decode(b64)
     return np.frombuffer(raw, dtype=np.int8).reshape(shape)
 
-
-SOLUTIONS = Path(__file__).resolve().parent.parent / "data" / "hadamard.db"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -70,25 +63,16 @@ CREATE TABLE IF NOT EXISTS solutions (
 CREATE INDEX IF NOT EXISTS idx_runs_strategy_n ON runs(strategy, n);
 CREATE INDEX IF NOT EXISTS idx_runs_sha256 ON runs(sha256);
 CREATE INDEX IF NOT EXISTS idx_solutions_class ON solutions(class_hash);
-CREATE TABLE IF NOT EXISTS symmetric_bs_runs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    profile TEXT NOT NULL,
-    seed INTEGER NOT NULL,
-    solved INTEGER NOT NULL,
-    best_energy INTEGER NOT NULL,
-    active_lags INTEGER NOT NULL,
-    elapsed_s REAL NOT NULL,
-    payload_json TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(profile, seed)
-);
-CREATE INDEX IF NOT EXISTS idx_symmetric_bs_energy
-    ON symmetric_bs_runs(profile, best_energy);
 """
 
 
-def _connect(db_path: Path) -> sqlite3.Connection:
-    """Open a WAL-mode connection and ensure the schema; caller commits and closes."""
+def _connect(db_path: Path, *, initialize: bool) -> sqlite3.Connection:
+    """Open a write connection or a genuinely read-only connection."""
+    if not initialize:
+        connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
+        connection.row_factory = sqlite3.Row
+        return connection
+
     db_path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(db_path, timeout=30, isolation_level=None)
     con.row_factory = sqlite3.Row
@@ -98,67 +82,61 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return con
 
 
-def save_run(db_path: Path, strategy: str, n: int, result: Result) -> None:
+def save_run(db_path: Path, result: RunResult) -> None:
     """Store one run in the database; solved runs are also recorded in ``solutions``."""
     seqs = result.sequences
-    if seqs is None:
-        return
     b64 = _seqs_to_b64(seqs)
     raw = seqs.astype(np.int8, copy=False).tobytes()
     sha = hashlib.sha256(raw).hexdigest()
-    solved = result.metrics.energy == 0
-    stats_json = json.dumps(result.stats.to_dict()) if result.stats else None
-    class_hash = Builder.class_hash(seqs)
+    solved = result.solved
+    stats_json = json.dumps(result.stats.to_dict())
+    class_hash = sha
 
-    con = _connect(db_path)
+    con = _connect(db_path, initialize=True)
     try:
         con.execute("BEGIN IMMEDIATE")
         con.execute(
             "DELETE FROM runs WHERE strategy = ? AND n = ? AND seed = ?",
-            (strategy, n, result.seed),
+            (result.strategy, result.n, result.seed),
         )
         con.execute(
             "INSERT INTO runs (strategy, n, seed, sha256, seqs_b64, solved, energy,"
             " solver_e, elapsed_s, iterations, class_hash, stats_json)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                strategy,
-                n,
+                result.strategy,
+                result.n,
                 result.seed,
                 sha,
                 b64,
                 int(solved),
-                result.metrics.energy,
-                result.solver_e,
-                round(result.elapsed, 3),
-                result.iterations,
+                result.energy,
+                result.energy,
+                round(result.elapsed_seconds, 3),
+                result.steps,
                 class_hash,
                 stats_json,
             ),
         )
         if solved:
-            existing = con.execute(
-                "SELECT 1 FROM solutions WHERE class_hash = ?", (class_hash,)
-            ).fetchone()
-            if not existing:
-                con.execute(
-                    "INSERT OR IGNORE INTO solutions (strategy, n, seed, sha256, seqs_b64,"
-                    " energy, solver_e, elapsed_s, iterations, class_hash, stats_json)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        strategy,
-                        n,
-                        result.seed,
-                        sha,
-                        b64,
-                        result.metrics.energy,
-                        result.solver_e,
-                        round(result.elapsed, 3),
-                        result.iterations,
-                        class_hash,
-                        stats_json,
-                    ),
-                )
+            con.execute(
+                "INSERT OR IGNORE INTO solutions (strategy, n, seed, sha256, seqs_b64,"
+                " energy, solver_e, elapsed_s, iterations, class_hash, stats_json)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    result.strategy,
+                    result.n,
+                    result.seed,
+                    sha,
+                    b64,
+                    result.energy,
+                    result.energy,
+                    round(result.elapsed_seconds, 3),
+                    result.steps,
+                    class_hash,
+                    stats_json,
+                ),
+            )
         con.execute("COMMIT")
     except BaseException:
         con.execute("ROLLBACK")
@@ -167,67 +145,11 @@ def save_run(db_path: Path, strategy: str, n: int, result: Result) -> None:
         con.close()
 
 
-def save_symmetric_bs_result(
-    db_path: Path,
-    result: SearchResult,
-    *,
-    base_seed: int,
-    config: SearchConfig,
-) -> None:
-    """Store one independently verified symmetric BS profile result."""
-    if result.best_energy == 0 and not result.solved:
-        raise ValueError("refusing to store an unverified zero-energy symmetric BS result")
-    payload = result.to_dict()
-    payload["base_seed"] = base_seed
-    payload["config"] = {
-        "restarts": config.restarts,
-        "steps": config.steps,
-        "tabu_tenure": config.tabu_tenure,
-        "pair_top_k": config.pair_top_k,
-        "kick_after": config.kick_after,
-    }
-    profile = json.dumps(result.profile.as_tuple(), separators=(",", ":"))
-    con = _connect(db_path)
-    try:
-        con.execute(
-            "INSERT INTO symmetric_bs_runs "
-            "(profile, seed, solved, best_energy, active_lags, elapsed_s, payload_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(profile, seed) DO UPDATE SET "
-            "solved=excluded.solved, best_energy=excluded.best_energy, "
-            "active_lags=excluded.active_lags, elapsed_s=excluded.elapsed_s, "
-            "payload_json=excluded.payload_json, created_at=datetime('now')",
-            (
-                profile,
-                result.seed,
-                int(result.solved),
-                result.best_energy,
-                int(np.count_nonzero(result.residual)),
-                round(result.elapsed_seconds, 3),
-                json.dumps(payload),
-            ),
-        )
-    finally:
-        con.close()
-
-
-def load_symmetric_bs_runs(db_path: Path) -> list[dict[str, Any]]:
-    """Load persisted symmetric BS profile results in insertion order."""
-    if not db_path.exists():
-        return []
-    con = _connect(db_path)
-    try:
-        rows = con.execute("SELECT payload_json FROM symmetric_bs_runs ORDER BY id").fetchall()
-    finally:
-        con.close()
-    return [json.loads(row["payload_json"]) for row in rows]
-
-
 def load_runs(db_path: Path) -> dict[str, dict[str, list[dict[str, Any]]]]:
     """Load all runs as ``{strategy: {n: [entries]}}`` (same shape as the old JSON format)."""
     if not Path(db_path).exists():
         return {}
-    con = _connect(db_path)
+    con = _connect(db_path, initialize=False)
     try:
         rows = con.execute(
             "SELECT strategy, n, seed, sha256, seqs_b64, solved, energy, solver_e,"
@@ -255,15 +177,10 @@ def load_runs(db_path: Path) -> dict[str, dict[str, list[dict[str, Any]]]]:
     return data
 
 
-def verify(db_path: Path) -> int:
-    """Verify all solved entries: SHA-256 integrity + pure-Python Hadamard audit."""
-    from .generator import Generator
-    from .verify import independent_audit
-
-    if not Path(db_path).exists():
-        print(f"{db_path} not found")
-        return 0
-    con = _connect(db_path)
+def load_solved_records(db_path: Path) -> list[dict[str, Any]]:
+    if not db_path.exists():
+        return []
+    con = _connect(db_path, initialize=False)
     try:
         rows = con.execute(
             "SELECT strategy, n, seed, sha256, seqs_b64 FROM runs WHERE solved = 1"
@@ -271,23 +188,13 @@ def verify(db_path: Path) -> int:
         ).fetchall()
     finally:
         con.close()
-    total = 0
-    ok = 0
-    for r in rows:
-        strategy = r["strategy"]
-        n = r["n"]
-        gen = Generator(kind=strategy, n=n)
-        total += 1
-        seqs = _seqs_from_b64(r["seqs_b64"], (gen._builder.k, n))
-        actual_sha = hashlib.sha256(seqs.astype(np.int8, copy=False).tobytes()).hexdigest()
-        if actual_sha != r["sha256"]:
-            print(f"  CORRUPT {strategy} n={n} seed={r['seed']}: sha256 mismatch")
-            continue
-        H = gen._builder.build(seqs)
-        try:
-            independent_audit(H.tolist())
-            ok += 1
-        except Exception as e:
-            print(f"  FAIL {strategy} n={n} seed={r['seed']}: {e}")
-    print(f"{ok}/{total} valid.")
-    return ok
+    return [
+        {
+            "strategy": row["strategy"],
+            "n": row["n"],
+            "seed": row["seed"],
+            "sha256": row["sha256"],
+            "sequences": _seqs_from_b64(row["seqs_b64"], (4, row["n"])),
+        }
+        for row in rows
+    ]

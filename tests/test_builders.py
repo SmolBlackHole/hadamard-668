@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.builder import Builder
-from src.metrics import check_orthogonality
+from src.builder import build_gs4
+from src.verify import verify_candidate
 
 
 def test_builder_unit_works() -> None:
-    b = Builder(kind="gs4", n=1)
-    seqs = np.ones((b.k, 1), dtype=np.int8)
-    m = check_orthogonality(b.build(seqs))
-    assert m.energy == 0
+    sequences = np.ones((4, 1), dtype=np.int8)
+    matrix = build_gs4(sequences)
+    assert matrix.shape == (4, 4)
+    verify_candidate(sequences)
 
 
-def test_best_factorization() -> None:
-    assert Builder.factorize(15) == [5, 3]
-    assert Builder.factorize(7) == [7]  # prime, no split
+def test_builder_rejects_invalid_shape() -> None:
+    with np.testing.assert_raises_regex(ValueError, "shape"):
+        build_gs4(np.ones((3, 2), dtype=np.int8))

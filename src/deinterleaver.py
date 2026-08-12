@@ -292,9 +292,7 @@ def main() -> None:
     p.add_argument(
         "--sweep", action="store_true", help="Sweep all deinterleavable Paley(2m) -> GS4(m)"
     )
-    p.add_argument(
-        "--verify", action="store_true", help="Verify round-trip: deint(lift(x)) == x"
-    )
+    p.add_argument("--verify", action="store_true", help="Verify round-trip: deint(lift(x)) == x")
     args = p.parse_args()
 
     if args.verify:

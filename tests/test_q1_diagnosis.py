@@ -6,8 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from scripts.q1_diagnosis import analyze_q1_state, diagnose_database
-from src.generator import Result
-from src.metrics import Metrics
+from src.models import RunResult, SearchStats
 from src.output import load_runs, save_run
 from src.tracker import Tracker
 
@@ -52,16 +51,19 @@ def test_database_diagnosis_reads_persisted_q1_endpoint(tmp_path: Path) -> None:
     n = sequences.shape[1]
     tracker = Tracker()
     tracker.build(sequences)
-    result = Result(
-        matrix=np.empty((0, 0), dtype=np.int8),
-        metrics=Metrics(energy=tracker.energy(), orthogonal_pairs=0, max_abs_correlation=0),
-        elapsed=1.0,
+    result = RunResult(
+        strategy="gs4",
+        n=n,
         seed=17,
         sequences=sequences,
-        solver_e=tracker.energy(),
+        energy=tracker.energy(),
+        steps=0,
+        elapsed_seconds=1.0,
+        stats=SearchStats(),
+        verified=False,
     )
     path = tmp_path / "runs.db"
-    save_run(path, "gs4", n, result)
+    save_run(path, result)
 
     report = diagnose_database(path, selected_n={n})
 

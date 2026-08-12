@@ -168,7 +168,7 @@ Gegenüber den Paley-Basen selbst kommen durch den Produktabschluss neu hinzu:
 ```
 
 Das ist Literaturabschluss, kein neuer Existenzsatz. Neu für das Projekt ist,
-dass derselbe Mechanismus direkt als Generatorstrategie und als
+dass derselbe Mechanismus direkt als Konstruktionsstrategie und als
 kleiner-Basis-zuerst-Dispatcher verwendbar ist.
 
 `n=167` profitiert davon nicht: Es ist prim, `2n-1=333` ist keine
@@ -197,9 +197,9 @@ ist eine paraunitäre Faktorisierung über dem Quotientenring `z^n+1`.
 Das ist eine mathematische Vereinheitlichung, aber noch kein neuer allgemeiner
 Konstruktionssatz über die Literatur hinaus.
 
-## 5. Was der Repo-Tensorpfad leistet und was nicht
+## 5. Was der entfernte Repo-Tensorpfad leistete und was nicht
 
-Der aktuelle `tensor`-Pfad löst zwei unabhängige GS4-Probleme und berechnet
+Der inzwischen entfernte `tensor`-Pfad löste zwei unabhängige GS4-Probleme und berechnete
 danach
 
 ```text

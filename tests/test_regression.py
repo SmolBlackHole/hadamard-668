@@ -5,7 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.generator import Generator
+from src.pipeline import execute
+from src.solver import SolverConfig
 
 REGRESSION_PARAMS = [
     (24, 50_000, 30),
@@ -22,9 +23,9 @@ REGRESSION_PARAMS = [
 
 @pytest.mark.parametrize("n,steps,n_seeds", REGRESSION_PARAMS)
 def test_regression_solves_all_random_seeds(n: int, steps: int, n_seeds: int) -> None:
-    gen = Generator(kind="gs4", n=n)
+    config = SolverConfig()
     rng = np.random.default_rng(12345)
     seeds = rng.integers(0, 1_000_000, size=n_seeds)
     for s in seeds:
-        r = gen.search(steps=steps, seed=int(s))
-        assert r.metrics.energy == 0, f"n={n} seed={s} failed with e={r.metrics.energy}"
+        result = execute("gs4", n, steps, int(s), config)
+        assert result.solved, f"n={n} seed={s} failed with e={result.energy}"

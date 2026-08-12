@@ -71,13 +71,13 @@ greedy Singles -> Q-Window -> Tabu-Walk
 
 1. **Singles:** Batch-Scan mit Early Exit; jede unmittelbare Verbesserung wird
    akzeptiert.
-2. **Tabu:** Bis zu 200 zustandsabhängige Single-Schritte dürfen bergauf gehen.
+2. **Tabu:** Bis zu 400 zustandsabhängige Single-Schritte dürfen bergauf gehen.
    Der Numba-Kernel merkt sich den besten besuchten exakten Trackerzustand.
    Übernommen wird er nur, wenn er besser als der Walk-Start ist.
 3. **Target-Escape:** Wird das bisher niedrigste Q wiederholt erreicht, werden
    einmalig bis zu 625 strukturierte Vier-Sequenz-Kandidaten erzeugt. Jeder
-   Kandidat startet einen eigenen ILS-Quench. Die Policy ist konfigurierbar;
-   `legacy625` bleibt der Default.
+   Kandidat startet einen eigenen ILS-Quench. Die Kandidaten werden über alle
+   aktuell verletzten und lokal reparierbaren Residual-Lags verteilt.
 4. **Random Kick:** Andernfalls werden Bits in zwei zufällig ausgewählten
    Folgen geflippt. Dieser schlechtere Zustand wird bewusst übernommen;
    anschließend beginnt der greedy Single-Abstieg erneut.

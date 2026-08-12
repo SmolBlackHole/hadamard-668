@@ -8,14 +8,13 @@ from typing import cast
 import numpy as np
 import pytest
 
-from src.builder import Builder
+from src.builder import build_gs4
+from src.models import SearchStats, SolverResult
 from src.solver import (
-    SearchStats,
     SolverConfig,
     TabuWalkResult,
-    _legacy_escape_candidates,
-    _support_lag625_candidates,
     _tabu_walk,
+    _targeted_candidates,
 )
 from src.solver import search as ils_search
 from src.tracker import Tracker
@@ -45,32 +44,26 @@ class _ScriptedTracker:
 
 
 def test_solver_finds_solution_small_n() -> None:
-    b = Builder(kind="gs4", n=5)
-    seqs = np.random.default_rng(42).choice((-1, 1), size=(b.k, 5)).astype(np.int8)
+    seqs = np.random.default_rng(42).choice((-1, 1), size=(4, 5)).astype(np.int8)
     tracker = Tracker()
     tracker.build(seqs)
-    best_seq, best_e, _iters, _stats = ils_search(
-        seqs, tracker, np.random.default_rng(42), steps=5000
-    )
+    result = ils_search(seqs, tracker, np.random.default_rng(42), steps=5000)
 
-    assert best_e == 0
-    matrix = b.build(best_seq)
+    assert result.solved
+    matrix = build_gs4(result.sequences)
     G = matrix.astype(np.int64) @ matrix.astype(np.int64).T
     assert np.array_equal(G, 20 * np.eye(20, dtype=np.int64))
 
 
 def test_solver_budget_not_exceeded() -> None:
-    b = Builder(kind="gs4", n=3)
-    seqs = np.ones((b.k, 3), dtype=np.int8)
+    seqs = np.ones((4, 3), dtype=np.int8)
     tracker = Tracker()
     tracker.build(seqs)
 
     budget = 1000
-    _best_seq, _best_e, consumed, _stats = ils_search(
-        seqs, tracker, np.random.default_rng(99), steps=budget
-    )
-    assert consumed <= budget
-    assert consumed >= 1
+    result = ils_search(seqs, tracker, np.random.default_rng(99), steps=budget)
+    assert result.steps <= budget
+    assert result.steps >= 1
 
 
 def test_solver_best_e_never_increases() -> None:
@@ -93,7 +86,7 @@ def test_solver_kicks_after_failed_single_scan() -> None:
     tracker = _ScriptedTracker()
     seqs = np.ones((4, 2), dtype=np.int8)
 
-    _best, _energy, _used, stats = ils_search(
+    result = ils_search(
         seqs,
         cast(Tracker, tracker),
         np.random.default_rng(1),
@@ -101,33 +94,11 @@ def test_solver_kicks_after_failed_single_scan() -> None:
         config=SolverConfig(tabu=False),
     )
 
-    assert stats.kicks == 1
+    assert result.stats.kicks == 1
     assert len(tracker.accepted) == 2
 
 
-def test_legacy_escape_candidates_use_dominant_lag_and_first_five_cartesian_order() -> None:
-    n = 52
-    u = np.zeros(25, dtype=np.int32)
-    u[7] = -9
-    delta = np.zeros((4 * n, 25), dtype=np.int8)
-    columns = (
-        [1, 4, 8, 12, 15, 20],
-        [2, 5, 9, 13, 16, 21],
-        [3, 6, 10, 14, 17, 22],
-        [7, 11, 18, 24, 31, 40],
-    )
-    for s, values in enumerate(columns):
-        delta[s * n + np.asarray(values), 7] = 9
-
-    k, candidates = _legacy_escape_candidates(delta, u, n)
-
-    assert k == 7
-    assert len(candidates) == 625
-    assert candidates[:3] == [(1, 2, 3, 7), (1, 2, 3, 11), (1, 2, 3, 18)]
-    assert candidates[-1] == (15, 16, 17, 31)
-
-
-def _support_lag_fixture() -> tuple[np.ndarray, np.ndarray]:
+def _targeted_fixture() -> tuple[np.ndarray, np.ndarray]:
     n = 24
     u = np.zeros(11, dtype=np.int32)
     u[[2, 7]] = [1, -1]
@@ -138,12 +109,12 @@ def _support_lag_fixture() -> tuple[np.ndarray, np.ndarray]:
     return delta, u
 
 
-def test_support_lag625_is_deterministic_bounded_and_covers_support_lags() -> None:
-    delta, u = _support_lag_fixture()
+def test_targeted_candidates_are_deterministic_bounded_and_cover_support_lags() -> None:
+    delta, u = _targeted_fixture()
 
-    candidates = _support_lag625_candidates(delta, u, 24)
+    candidates = _targeted_candidates(delta, u, 24)
 
-    assert candidates == _support_lag625_candidates(delta, u, 24)
+    assert candidates == _targeted_candidates(delta, u, 24)
     assert len(candidates) == 625
     assert len(candidates) == len(set(candidates))
     first_lag = set(product(range(5), repeat=4))
@@ -156,7 +127,7 @@ def test_support_lag625_is_deterministic_bounded_and_covers_support_lags() -> No
     assert (14, 14, 14, 14) in candidates
 
 
-def test_support_lag625_deduplicates_and_backfills() -> None:
+def test_targeted_candidates_deduplicate_and_backfill() -> None:
     n = 8
     u = np.zeros(3, dtype=np.int32)
     u[[0, 1]] = 1
@@ -166,36 +137,35 @@ def test_support_lag625_deduplicates_and_backfills() -> None:
         delta[rows, 0] = -1
         delta[rows, 1] = -1
 
-    candidates = _support_lag625_candidates(delta, u, n)
+    candidates = _targeted_candidates(delta, u, n)
 
     assert len(candidates) == 625
     assert len(candidates) == len(set(candidates))
 
 
-def test_default_targeted_escape_uses_legacy_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_targeted_escape_uses_support_lags(monkeypatch: pytest.MonkeyPatch) -> None:
     from src import solver
 
     seqs = np.ones((4, 3), dtype=np.int8)
     tracker = Tracker()
     tracker.build(seqs)
 
-    def legacy_candidates(*_args: object) -> tuple[int, list[tuple[int, int, int, int]]]:
-        return 0, [(0, 0, 0, 0)]
+    def candidates(*_args: object) -> list[tuple[int, int, int, int]]:
+        return [(0, 0, 0, 0)]
 
-    monkeypatch.setattr(solver, "_legacy_escape_candidates", legacy_candidates)
+    monkeypatch.setattr(solver, "_targeted_candidates", candidates)
 
     def fake_search(
         cand: np.ndarray, empty_tracker: Tracker, *_args: object, **_kwargs: object
-    ) -> tuple[np.ndarray, int, int, SearchStats]:
+    ) -> SolverResult:
         assert empty_tracker._u is None
-        return cand, 1, 1, SearchStats()
+        return SolverResult(cand, 1, 1, SearchStats())
 
     monkeypatch.setattr(solver, "search", fake_search)
     result = solver._targeted_kick(
         seqs,
         tracker,
         np.random.default_rng(1),
-        1,
         100,
         seqs.copy(),
         tracker.energy(),
@@ -228,23 +198,22 @@ def test_targeted_escape_passes_limited_quench_budget(
     tracker.build(seqs)
     seen_steps: list[int] = []
 
-    def legacy_candidates(*_args: object) -> tuple[int, list[tuple[int, int, int, int]]]:
-        return 0, [(0, 0, 0, 0)]
+    def candidates(*_args: object) -> list[tuple[int, int, int, int]]:
+        return [(0, 0, 0, 0)]
 
-    monkeypatch.setattr(solver, "_legacy_escape_candidates", legacy_candidates)
+    monkeypatch.setattr(solver, "_targeted_candidates", candidates)
 
     def fake_search(
         cand: np.ndarray, _tracker: Tracker, *_args: object, **kwargs: object
-    ) -> tuple[np.ndarray, int, int, SearchStats]:
+    ) -> SolverResult:
         seen_steps.append(cast(int, kwargs["steps"]))
-        return cand, 1, 1, SearchStats()
+        return SolverResult(cand, 1, 1, SearchStats())
 
     monkeypatch.setattr(solver, "search", fake_search)
     solver._targeted_kick(
         seqs,
         tracker,
         np.random.default_rng(1),
-        1,
         outer_budget,
         seqs.copy(),
         tracker.energy(),
@@ -264,17 +233,17 @@ def test_targeted_escape_records_nested_solve_and_candidate_work(
     tracker = Tracker()
     tracker.build(seqs)
 
-    def legacy_candidates(*_args: object) -> tuple[int, list[tuple[int, int, int, int]]]:
-        return 0, [(0, 0, 0, 0)]
+    def candidates(*_args: object) -> list[tuple[int, int, int, int]]:
+        return [(0, 0, 0, 0)]
 
-    monkeypatch.setattr(solver, "_legacy_escape_candidates", legacy_candidates)
+    monkeypatch.setattr(solver, "_targeted_candidates", candidates)
 
     def fake_search(
         cand: np.ndarray, _tracker: Tracker, *_args: object, **_kwargs: object
-    ) -> tuple[np.ndarray, int, int, SearchStats]:
+    ) -> SolverResult:
         nested = SearchStats(single_evals=7)
         nested.record_solve("greedy", 1)
-        return cand, 0, 3, nested
+        return SolverResult(cand, 0, 3, nested)
 
     monkeypatch.setattr(solver, "search", fake_search)
     stats = SearchStats()
@@ -282,7 +251,6 @@ def test_targeted_escape_records_nested_solve_and_candidate_work(
         seqs,
         tracker,
         np.random.default_rng(1),
-        1,
         100,
         seqs.copy(),
         tracker.energy(),
@@ -291,7 +259,7 @@ def test_targeted_escape_records_nested_solve_and_candidate_work(
     )
 
     assert result.solved
-    assert result.legacy_steps == 3
+    assert result.steps == 3
     assert stats.target_quenches == 1
     assert stats.quench_candidate_evals == 7
     assert stats.total_candidate_evals == 8
@@ -308,19 +276,17 @@ def test_solver_stops_when_single_scan_exhausts_budget() -> None:
     tracker = _ScriptedTracker()
     seqs = np.ones((4, 2), dtype=np.int8)
 
-    _best, _energy, used, stats = ils_search(
-        seqs, cast(Tracker, tracker), np.random.default_rng(1), steps=8
-    )
+    result = ils_search(seqs, cast(Tracker, tracker), np.random.default_rng(1), steps=8)
 
-    assert used == 7
-    assert stats.kicks == 0
+    assert result.steps == 7
+    assert result.stats.kicks == 0
     assert tracker.accepted == []
 
 
 def test_search_stats_display_flushes_streak() -> None:
     stats = SearchStats()
-    stats._hit_single()
-    stats._hit_single()
+    stats.hit_single()
+    stats.hit_single()
     stats.energy_saved_singles = 2_000
 
     assert "S=2(2k)" in stats.display()
@@ -438,7 +404,7 @@ def test_solver_kicks_after_an_unsuccessful_tabu_walk(monkeypatch: pytest.Monkey
     tracker = _ScriptedTracker()
     seqs = np.ones((4, 2), dtype=np.int8)
 
-    _best, _energy, _used, stats = ils_search(
+    result = ils_search(
         seqs,
         cast(Tracker, tracker),
         np.random.default_rng(1),
@@ -447,10 +413,10 @@ def test_solver_kicks_after_an_unsuccessful_tabu_walk(monkeypatch: pytest.Monkey
     )
 
     assert calls == [1]
-    assert stats.tabu_walks == 1
-    assert stats.tabu_hits == 0
-    assert stats.tabu_evals == 3
-    assert stats.kicks == 1
+    assert result.stats.tabu_walks == 1
+    assert result.stats.tabu_hits == 0
+    assert result.stats.tabu_evals == 3
+    assert result.stats.kicks == 1
 
 
 def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -461,7 +427,7 @@ def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch)
     tracker = _ScriptedTracker(initial_energy=256)
     seqs = np.ones((4, 2), dtype=np.int8)
 
-    _best, energy, _used, stats = ils_search(
+    result = ils_search(
         seqs,
         cast(Tracker, tracker),
         np.random.default_rng(1),
@@ -469,7 +435,8 @@ def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch)
         config=SolverConfig(kick=False, tabu=True),
     )
 
-    assert energy == 0
+    stats = result.stats
+    assert result.solved
     assert stats.tabu_walks_q2 == 1
     assert stats.tabu_hits_q2 == 1
     assert stats.tabu_walks_q1 == 0
@@ -484,5 +451,3 @@ def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch)
 def test_solver_config_validates_search_parameters() -> None:
     with pytest.raises(ValueError, match="tabu_steps cannot be negative"):
         SolverConfig(tabu_steps=-1)
-    with pytest.raises(ValueError, match="Unknown escape policy"):
-        SolverConfig(escape_policy="unknown")

@@ -7,12 +7,12 @@ from itertools import combinations
 import numpy as np
 import pytest
 
-from src.builder import Builder
+from src.builder import build_gs4
 from src.tracker import Tracker
 
 
-def _full_energy(builder: Builder, seqs: np.ndarray) -> int:
-    matrix = builder.build(seqs).astype(np.int64)
+def _full_energy(seqs: np.ndarray) -> int:
+    matrix = build_gs4(seqs).astype(np.int64)
     gram = matrix @ matrix.T
     np.fill_diagonal(gram, 0)
     return int(np.sum(gram * gram) // 2)
@@ -20,8 +20,7 @@ def _full_energy(builder: Builder, seqs: np.ndarray) -> int:
 
 @pytest.mark.parametrize("n", (6, 8, 38, 52))
 def test_even_tracker_omits_dead_midpoint_lag(n: int) -> None:
-    builder = Builder(kind="gs4", n=n)
-    seqs = np.random.default_rng(100 + n).choice((-1, 1), size=(builder.k, n)).astype(np.int8)
+    seqs = np.random.default_rng(100 + n).choice((-1, 1), size=(4, n)).astype(np.int8)
     tracker = Tracker()
     tracker.build(seqs)
 
@@ -31,13 +30,12 @@ def test_even_tracker_omits_dead_midpoint_lag(n: int) -> None:
     assert residual[n // 2] == 0
     assert tracker._u is not None and tracker._u.shape == (width,)
     assert tracker._delta is not None and tracker._delta.shape == (4 * n, width)
-    assert tracker.energy() == _full_energy(builder, seqs)
+    assert tracker.energy() == _full_energy(seqs)
 
 
 @pytest.mark.parametrize("n", (3, 4, 5, 6, 7))
 def test_single_flip_energies_match_full_gram(n: int) -> None:
-    builder = Builder(kind="gs4", n=n)
-    seqs = np.random.default_rng(n).choice((-1, 1), size=(builder.k, n)).astype(np.int8)
+    seqs = np.random.default_rng(n).choice((-1, 1), size=(4, n)).astype(np.int8)
     tracker = Tracker()
     tracker.build(seqs)
 
@@ -45,13 +43,12 @@ def test_single_flip_energies_match_full_gram(n: int) -> None:
     for index, (s, c) in enumerate((s, c) for s in range(4) for c in range(n)):
         flipped = seqs.copy()
         flipped[s, c] *= -1
-        assert tracker.flip(s, c) == energies[index] == _full_energy(builder, flipped)
+        assert tracker.flip(s, c) == energies[index] == _full_energy(flipped)
 
 
 @pytest.mark.parametrize("n", (3, 5, 7))
 def test_combo_energies_cover_odd_middle_lag(n: int) -> None:
-    builder = Builder(kind="gs4", n=n)
-    seqs = np.random.default_rng(20 + n).choice((-1, 1), size=(builder.k, n)).astype(np.int8)
+    seqs = np.random.default_rng(20 + n).choice((-1, 1), size=(4, n)).astype(np.int8)
     tracker = Tracker()
     tracker.build(seqs)
     positions = [(s, c) for s in range(4) for c in range(n)]
@@ -60,20 +57,19 @@ def test_combo_energies_cover_odd_middle_lag(n: int) -> None:
         flipped = seqs.copy()
         for s, c in combo:
             flipped[s, c] *= -1
-        assert tracker.combo_energy(list(combo)) == _full_energy(builder, flipped)
+        assert tracker.combo_energy(list(combo)) == _full_energy(flipped)
 
     combo = [(0, 0), (0, n // 2), (0, n - 1)]
     flipped = seqs.copy()
     for s, c in combo:
         flipped[s, c] *= -1
-    assert tracker.combo_energy(combo) == _full_energy(builder, flipped)
+    assert tracker.combo_energy(combo) == _full_energy(flipped)
 
 
 @pytest.mark.parametrize("n", (4, 5, 8))
 def test_combo_energy_matches_full_gram_for_larger_moves(n: int) -> None:
-    builder = Builder(kind="gs4", n=n)
     rng = np.random.default_rng(40 + n)
-    seqs = rng.choice((-1, 1), size=(builder.k, n)).astype(np.int8)
+    seqs = rng.choice((-1, 1), size=(4, n)).astype(np.int8)
     tracker = Tracker()
     tracker.build(seqs)
     positions: list[tuple[int, int]] = [(s, c) for s in range(4) for c in range(n)]
@@ -83,7 +79,7 @@ def test_combo_energy_matches_full_gram_for_larger_moves(n: int) -> None:
         flipped = seqs.copy()
         for s, c in combo:
             flipped[s, c] *= -1
-        assert tracker.combo_energy(combo) == _full_energy(builder, flipped)
+        assert tracker.combo_energy(combo) == _full_energy(flipped)
 
     assert tracker.combo_energy([(0, 0), (0, 0)]) == tracker.energy()
 
@@ -125,8 +121,7 @@ def test_accept_keeps_cache_equal_to_fresh_build() -> None:
 
 @pytest.mark.parametrize("n", (4, 5, 8))
 def test_flip_batch_matches_single_flip_energies(n: int) -> None:
-    builder = Builder(kind="gs4", n=n)
-    seqs = np.random.default_rng(80 + n).choice((-1, 1), size=(builder.k, n)).astype(np.int8)
+    seqs = np.random.default_rng(80 + n).choice((-1, 1), size=(4, n)).astype(np.int8)
     tracker = Tracker()
     tracker.build(seqs)
 

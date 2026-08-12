@@ -37,9 +37,6 @@ python run.py --sweep gs4 32 34 36 --seeds 100 --steps 200000 --workers 12
 # Ablationstest
 python -m scripts.ablation
 
-# Budget-Scaling
-python -m scripts.budget_scale
-
 # Tests
 pytest tests/ -m "not slow"
 pytest tests/ -m slow          # Regressionstests (n=24, ~1s)
@@ -77,28 +74,27 @@ Charakterisierung: [docs/TIGHT_FRAME_CHARACTERIZATION.md](docs/TIGHT_FRAME_CHARA
 
 ```text
 src/
+  models.py       # Gemeinsame Dataclasses und Int8Array-Vertrag
+  pipeline.py     # Konstruktion -> Solver -> unabhängige Verifikation
   tracker.py      # NAF-Energie-Tracker: Delta-Cache, Batch-Flip, O(1) Accept
   solver.py       # Iterated Local Search: Singles → Tabu → Kick
-  generator.py    # Orchestrierung: Builder → Tracker → Solver → Metrics
-  builder.py      # GS4-Blockmatrix-Konstruktion
-  metrics.py      # Gram-Metriken, Orthogonalitätsprüfung
-  benchmark_stats.py  # Wilson-CI, Z-Test, McNemar
-  output.py       # JSON-Persistenz und Integritätsprüfung
-  fast_hash.py    # Äquivalenzklassen-Hash (negashift + reverse)
-  verify.py       # Dataset-Integritätscheck
+  generator.py    # Startfolgen und exakte Konstruktionen
+  builder.py      # Reine GS4-Blockmatrix-Konstruktion
+  output.py       # SQLite-Persistenz
+  verify.py       # Kandidaten- und Datenbank-Audit
 scripts/
   ablation.py     # Systematischer Komponentenvergleich
-  budget_scale.py # Solve-Rate vs. Step-Budget
 tests/
 data/
-  benchmark.json  # Referenz-Benchmark (100 Seeds × 16 n)
-  solutions.json  # Gefundene Hadamard-Matrizen
+  hadamard.db     # Runs und verifizierte Lösungen
 docs/             # Modell, Benchmarks, Roadmap und Forschungsberichte
+archive/turyn/    # Archivierter Turyn-/Special-BS-Forschungsstrang
 ```
 
-Kernpfad: `generator.search()` → `solver.search()` → `tracker.flip_batch()` /
-`tracker.accept()` → `builder.build()` →
-`metrics.check_orthogonality()`.
+Kernpfad: `pipeline.execute()` erzeugt die Startfolgen, ruft `solver.search()`
+auf und verifiziert ausschließlich Nullenergie-Kandidaten unabhängig über
+`builder.build_gs4()` und `verify.independent_audit()`. `output.save_run()`
+persistiert danach nur das geprüfte Ergebnis.
 
 ## Design-Entscheidungen
 

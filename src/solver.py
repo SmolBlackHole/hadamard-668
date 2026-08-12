@@ -1,13 +1,12 @@
 """Iterated local search — greedy singles, Tabu walk, targeted/random kick.
 
-Pipeline: Greedy -> Tabu -> Kick (targeted + Quench bei Q<=3, sonst random).
-Targeted-Kick = 1 neg-Flip/Seq am dominanten Lag + Quench.
-Quench-Budget = max(5000, original_budget // (q_now + 1))."""
+The solver owns no CLI, construction, persistence, seed, or verification logic.
+Its phases are greedy singles, a Tabu walk, and targeted or random kicks."""
 
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 from itertools import product
 from typing import Any
@@ -16,7 +15,7 @@ import numpy as np
 import numpy.typing as npt
 from numba import njit  # pyright: ignore[reportMissingImports]
 
-from .benchmark_stats import fmt_e
+from .models import Int8Array, SearchStats, SolverResult
 from .tracker import Tracker
 
 SINGLE_BATCH_SIZE = 64
@@ -28,20 +27,20 @@ _jit: Any = njit
 
 @_jit(cache=True)
 def tabu_walk_kernel(
-    seqs: npt.NDArray[np.int8],
-    delta: npt.NDArray[np.int8],
+    seqs: Int8Array,
+    delta: Int8Array,
     norm2: npt.NDArray[np.int32],
     u: npt.NDArray[np.int32],
     q: int,
     update_cols: npt.NDArray[np.intp],
     update_lags: npt.NDArray[np.intp],
-    update_signs: npt.NDArray[np.int8],
+    update_signs: Int8Array,
     noise: npt.NDArray[np.float64],
     tenure: float,
     decay: float,
 ) -> tuple[
-    npt.NDArray[np.int8],
-    npt.NDArray[np.int8],
+    Int8Array,
+    Int8Array,
     npt.NDArray[np.int32],
     npt.NDArray[np.int32],
     int,
@@ -130,7 +129,6 @@ class SolverConfig:
     tabu_noise: float = 0.2
     geo_weight: float = 0.0
     targeted_escape: bool = True
-    escape_policy: str = "legacy625"
     escape_quench_steps: int = 10_000
     qwindow_high: int = 9  # stop greedy at this Q (C-rich band, not floor)
 
@@ -141,8 +139,6 @@ class SolverConfig:
             raise ValueError("tabu_tenure must be non-negative and tabu_decay must be in [0, 1]")
         if self.tabu_noise < 0 or self.geo_weight < 0:
             raise ValueError("tabu_noise and geo_weight cannot be negative")
-        if self.escape_policy not in {"legacy625", "support_lag625"}:
-            raise ValueError(f"Unknown escape policy: {self.escape_policy}")
         if self.escape_quench_steps <= 0:
             raise ValueError("escape_quench_steps must be positive")
         if self.qwindow_high < 0:
@@ -159,11 +155,11 @@ class TabuWalkResult:
 @dataclass(frozen=True)
 class TargetedKickResult:
     solved: bool
-    sequences: npt.NDArray[np.int8]
+    sequences: Int8Array
     energy: int
-    best_sequences: npt.NDArray[np.int8]
+    best_sequences: Int8Array
     best_energy: int
-    legacy_steps: int
+    steps: int
 
 
 @lru_cache(maxsize=16)
@@ -172,30 +168,18 @@ def _positions(n_seqs: int, n_cols: int) -> tuple[tuple[int, int], ...]:
 
 
 def _update_best(
-    cur_seq: npt.NDArray[np.int8],
+    cur_seq: Int8Array,
     cur_e: int,
-    best_seq: npt.NDArray[np.int8],
+    best_seq: Int8Array,
     best_e: int,
-) -> tuple[npt.NDArray[np.int8], int]:
+) -> tuple[Int8Array, int]:
     if cur_e < best_e:
         return cur_seq.copy(), cur_e
     return best_seq, best_e
 
 
-def _legacy_escape_candidates(
-    delta: npt.NDArray[np.int8], u: npt.NDArray[np.int32], n: int
-) -> tuple[int, list[tuple[int, int, int, int]]]:
-    """Return historical dominant-lag candidates in natural Cartesian order."""
-    k = int(np.argmax(np.abs(u)))
-    target = -u[k]
-    columns = [[c for c in range(n) if delta[s * n + c, k] == target][:5] for s in range(4)]
-    if not all(columns):
-        return k, []
-    return k, [(c0, c1, c2, c3) for c0, c1, c2, c3 in product(*columns)]
-
-
-def _support_lag625_candidates(
-    delta: npt.NDArray[np.int8], u: npt.NDArray[np.int32], n: int
+def _targeted_candidates(
+    delta: Int8Array, u: npt.NDArray[np.int32], n: int
 ) -> list[tuple[int, int, int, int]]:
     """Spread at most 625 targeted candidates over all feasible residual lags."""
     per_lag: list[list[tuple[int, int, int, int]]] = []
@@ -245,129 +229,11 @@ def _support_lag625_candidates(
     return selected
 
 
-@dataclass
-class SearchStats:
-    """Hit counters + streak histogram + phase timing + Q-level tracking."""
-
-    singles: int = 0
-    kicks: int = 0
-    single_evals: int = 0
-    kick_evals: int = 0
-    tabu_evals: int = 0
-    tabu_candidate_evals: int = 0
-    quench_candidate_evals: int = 0
-    target_quenches: int = 0
-    tabu_hits: int = 0
-    tabu_hits_q1: int = 0
-    tabu_hits_q2: int = 0
-    tabu_hits_q3plus: int = 0
-    tabu_solves: int = 0
-    tabu_solves_q1: int = 0
-    tabu_solves_q2: int = 0
-    tabu_solves_q3plus: int = 0
-    tabu_walks: int = 0
-    tabu_walks_q1: int = 0
-    tabu_walks_q2: int = 0
-    tabu_walks_q3plus: int = 0
-    singles_streaks: list[int] = field(default_factory=list[int])
-    energy_saved_singles: int = 0
-    energy_saved_kicks: int = 0
-    energy_saved_tabu: int = 0
-    single_time_s: float = 0.0
-    kick_time_s: float = 0.0
-    rebuild_time_s: float = 0.0
-    tabu_time_s: float = 0.0
-    solve_phase: str | None = None
-    solve_q_before: int | None = None
-    _streak: int = 0
-
-    @property
-    def total_candidate_evals(self) -> int:
-        return (
-            self.single_evals
-            + self.tabu_candidate_evals
-            + self.kick_evals
-            + self.quench_candidate_evals
-        )
-
-    def record_solve(self, phase: str, q_before: int) -> None:
-        if self.solve_phase is None:
-            self.solve_phase = phase
-            self.solve_q_before = q_before
-
-    def _hit_single(self) -> None:
-        self.singles += 1
-        self._streak += 1
-
-    def _hit_other(self) -> None:
-        if self._streak > 0:
-            self.singles_streaks.append(self._streak)
-            self._streak = 0
-
-    def _flush(self) -> None:
-        if self._streak > 0:
-            self.singles_streaks.append(self._streak)
-            self._streak = 0
-
-    def to_dict(self) -> dict[str, object]:
-        """Full stats for JSON persistence."""
-        self._flush()
-        return {
-            "singles": self.singles,
-            "kicks": self.kicks,
-            "e_singles": self.energy_saved_singles,
-            "e_kicks": self.energy_saved_kicks,
-            "e_tabu": self.energy_saved_tabu,
-            "single_evals": self.single_evals,
-            "kick_evals": self.kick_evals,
-            "tabu_evals": self.tabu_evals,
-            "tabu_candidate_evals": self.tabu_candidate_evals,
-            "quench_candidate_evals": self.quench_candidate_evals,
-            "total_candidate_evals": self.total_candidate_evals,
-            "target_quenches": self.target_quenches,
-            "tabu_hits": self.tabu_hits,
-            "tabu_walks": self.tabu_walks,
-            "tabu_hits_q1": self.tabu_hits_q1,
-            "tabu_hits_q2": self.tabu_hits_q2,
-            "tabu_hits_q3plus": self.tabu_hits_q3plus,
-            "tabu_walks_q1": self.tabu_walks_q1,
-            "tabu_walks_q2": self.tabu_walks_q2,
-            "tabu_walks_q3plus": self.tabu_walks_q3plus,
-            "tabu_solves": self.tabu_solves,
-            "tabu_solves_q1": self.tabu_solves_q1,
-            "tabu_solves_q2": self.tabu_solves_q2,
-            "tabu_solves_q3plus": self.tabu_solves_q3plus,
-            "solve_phase": self.solve_phase,
-            "solve_q_before": self.solve_q_before,
-            "single_time_s": self.single_time_s,
-            "kick_time_s": self.kick_time_s,
-            "rebuild_time_s": self.rebuild_time_s,
-            "tabu_time_s": self.tabu_time_s,
-        }
-
-    def display(self) -> str:
-        """Compact one-line summary for CLI output."""
-        self._flush()
-        parts = [
-            f"S={self.singles}({fmt_e(self.energy_saved_singles)})",
-            f"TB={self.tabu_hits}/{self.tabu_walks}({fmt_e(self.energy_saved_tabu)})",
-            f"K={self.kicks}({fmt_e(self.energy_saved_kicks)})",
-            f"evals={self.single_evals}/{self.tabu_candidate_evals}/{self.kick_evals}",
-            f"t={self.single_time_s:.1f}s/{self.tabu_time_s:.1f}s/{self.kick_time_s:.1f}s",
-        ]
-        if self.singles_streaks:
-            s = self.singles_streaks
-            parts.append(f"strk={sum(s) / len(s):.1f}/{max(s)}")
-        else:
-            parts.append("strk=-")
-        return " ".join(parts)
-
-
 # --- Core Phases --------------------------------------------------------------
 
 
 def _greedy_descent(
-    cur_seq: npt.NDArray[np.int8],
+    cur_seq: Int8Array,
     tracker: Tracker,
     positions: tuple[tuple[int, int], ...],
     cur_e: int,
@@ -407,7 +273,7 @@ def _greedy_descent(
         prev_e = cur_e
         cur_e = tracker.accept(cur_seq, s, c)
         stats.energy_saved_singles += prev_e - cur_e
-        stats._hit_single()
+        stats.hit_single()
         if cur_e == 0:
             stats.record_solve("greedy", prev_e // q_scale)
         improved = True
@@ -420,7 +286,7 @@ def _greedy_descent(
 
 
 def _tabu_phase(
-    cur_seq: npt.NDArray[np.int8],
+    cur_seq: Int8Array,
     tracker: Tracker,
     cur_e: int,
     rng: np.random.Generator,
@@ -462,34 +328,27 @@ def _tabu_phase(
                 stats.tabu_solves_q3plus += 1
             q_before = result.solve_q_before if result.solve_q_before is not None else q_start
             stats.record_solve("tabu", q_before)
-        stats._hit_other()
+        stats.hit_other()
         return True, result.energy, result.steps
     return False, cur_e, result.steps
 
 
 def _targeted_kick(
-    cur_seq: npt.NDArray[np.int8],
+    cur_seq: Int8Array,
     tracker: Tracker,
     rng: np.random.Generator,
-    q_now: int,
     budget: int,
-    best_seq: npt.NDArray[np.int8],
+    best_seq: Int8Array,
     best_e: int,
     cfg: SolverConfig,
     stats: SearchStats,
 ) -> TargetedKickResult:
-    """Quench targeted candidates selected by the configured escape policy."""
+    """Quench candidates spread across all feasible residual lags."""
     n = cur_seq.shape[1]
     assert tracker._delta is not None and tracker._u is not None
     _d = tracker._delta
     _u = tracker._u
-    candidates: list[tuple[int, int, int, int]]
-    if cfg.escape_policy == "legacy625":
-        _, candidates = _legacy_escape_candidates(_d, _u, n)
-    elif cfg.escape_policy == "support_lag625":
-        candidates = _support_lag625_candidates(_d, _u, n)
-    else:
-        raise ValueError(f"Unknown escape policy: {cfg.escape_policy}")
+    candidates = _targeted_candidates(_d, _u, n)
 
     if not candidates:
         return TargetedKickResult(False, cur_seq, tracker.energy(), best_seq, best_e, 0)
@@ -508,31 +367,31 @@ def _targeted_kick(
         cand[2, c2] *= -1
         cand[3, c3] *= -1
         t2 = Tracker()
-        sol, be, used, quench_stats = search(
+        quench = search(
             cand,
             t2,
             rng,
             steps=quench_budget,
             config=quench_cfg,
         )
-        total_used += used
+        total_used += quench.steps
         stats.target_quenches += 1
-        stats.quench_candidate_evals += quench_stats.total_candidate_evals
+        stats.quench_candidate_evals += quench.stats.total_candidate_evals
         stats.kicks += 1
         stats.kick_evals += 1
-        if be < best_e:
-            best_seq, best_e = sol.copy(), be
-        if be == 0:
-            phase = quench_stats.solve_phase or "unknown"
-            q_before = quench_stats.solve_q_before if quench_stats.solve_q_before is not None else 0
+        if quench.energy < best_e:
+            best_seq, best_e = quench.sequences.copy(), quench.energy
+        if quench.solved:
+            phase = quench.stats.solve_phase or "unknown"
+            q_before = quench.stats.solve_q_before if quench.stats.solve_q_before is not None else 0
             stats.record_solve(f"targeted:{phase}", q_before)
-            return TargetedKickResult(True, sol, 0, best_seq, best_e, total_used)
+            return TargetedKickResult(True, quench.sequences, 0, best_seq, best_e, total_used)
 
     return TargetedKickResult(False, cur_seq, tracker.energy(), best_seq, best_e, total_used)
 
 
 def _random_kick(
-    cur_seq: npt.NDArray[np.int8],
+    cur_seq: Int8Array,
     tracker: Tracker,
     rng: np.random.Generator,
 ) -> int:
@@ -550,14 +409,14 @@ def _random_kick(
 
 
 def search(
-    seqs: npt.NDArray[np.int8],
+    seqs: Int8Array,
     tracker: Tracker,
     rng: np.random.Generator,
     *,
     steps: int,
     config: SolverConfig | None = None,
-) -> tuple[npt.NDArray[np.int8], int, int, SearchStats]:
-    """Iterated local search. Returns (best_seq, best_energy, evals, stats)."""
+) -> SolverResult:
+    """Run iterated local search and return the best state found."""
     cfg = config if config is not None else SolverConfig()
     n_seqs, n_cols = seqs.shape
     positions = _positions(n_seqs, n_cols)
@@ -624,14 +483,14 @@ def search(
             ):
                 early_escape_done = True
                 targeted = _targeted_kick(
-                    cur_seq, tracker, rng, q_now, total_budget, best_seq, best_e, cfg, stats
+                    cur_seq, tracker, rng, total_budget, best_seq, best_e, cfg, stats
                 )
                 improved = targeted.solved
                 cur_seq = targeted.sequences
                 cur_e = targeted.energy
                 best_seq = targeted.best_sequences
                 best_e = targeted.best_energy
-                steps -= targeted.legacy_steps
+                steps -= targeted.steps
             else:
                 cur_e = _random_kick(cur_seq, tracker, rng)
                 improved = True
@@ -644,18 +503,18 @@ def search(
             stats.energy_saved_kicks += prev_e - cur_e
             stats.kick_time_s += time.perf_counter() - t_kick
             if not improved:
-                stats._hit_other()
+                stats.hit_other()
 
         best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
 
-    return best_seq, best_e, total_budget - max(steps, 0), stats
+    return SolverResult(best_seq, best_e, total_budget - max(steps, 0), stats)
 
 
 # --- Tabu Walk Helper ---------------------------------------------------------
 
 
 def _tabu_walk(
-    cur_seq: npt.NDArray[np.int8],
+    cur_seq: Int8Array,
     tracker: Tracker,
     cur_e: int,
     rng: np.random.Generator,

@@ -5,9 +5,9 @@ from __future__ import annotations
 from math import isqrt
 
 import numpy as np
-import numpy.typing as npt
 
-Int8Array = npt.NDArray[np.int8]
+from .models import Int8Array
+
 FieldElement = tuple[int, int]
 
 
