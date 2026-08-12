@@ -2,40 +2,73 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import ClassVar
 
 import numpy as np
 import numpy.typing as npt
 
+Int8Array = npt.NDArray[np.int8]
+Int64Array = npt.NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class MatrixMetrics:
+    energy: int
+    orthogonal_pairs: int
+    max_abs_correlation: int
+
+
+def gram_matrix(matrix: npt.ArrayLike) -> Int64Array:
+    values = np.asarray(matrix, dtype=np.int64)
+    gram = values @ values.T
+    np.fill_diagonal(gram, 0)
+    return gram
+
+
+def check_orthogonality(matrix: npt.ArrayLike) -> MatrixMetrics:
+    gram = gram_matrix(matrix)
+    size = gram.shape[0]
+    pair_count = size * (size - 1) // 2
+    if pair_count == 0:
+        return MatrixMetrics(0, 0, 0)
+    upper = gram[np.triu_indices(size, k=1)]
+    return MatrixMetrics(
+        energy=int(upper @ upper),
+        orthogonal_pairs=int(np.count_nonzero(upper == 0)),
+        max_abs_correlation=int(np.abs(upper).max(initial=0)),
+    )
+
+
 # --- low-level helpers --------------------------------------------------------
 
 
 @lru_cache(maxsize=8)
-def _circ_idx(n: int) -> npt.NDArray[np.int64]:
+def _circ_idx(n: int) -> Int64Array:
     return (np.arange(n)[None, :] - np.arange(n)[:, None]) % n
 
 
 @lru_cache(maxsize=8)
-def _negacirc_sign(n: int) -> npt.NDArray[np.int8]:
+def _negacirc_sign(n: int) -> Int8Array:
     return np.where(np.arange(n)[None, :] >= np.arange(n)[:, None], np.int8(1), np.int8(-1))
 
 
-def _circulant(values: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
+def _circulant(values: Int8Array) -> Int8Array:
     return values[_circ_idx(values.size)]  # type: ignore[return-value]
 
 
-def _negacirculant(values: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
+def _negacirculant(values: Int8Array) -> Int8Array:
     sign = _negacirc_sign(values.size)
     return sign * _circulant(values)  # int8 * int8 -> int8
 
 
 def _gs4_block(
-    A: npt.NDArray[np.int8],
-    B: npt.NDArray[np.int8],
-    C: npt.NDArray[np.int8],
-    D: npt.NDArray[np.int8],
-) -> npt.NDArray[np.int8]:
+    A: Int8Array,
+    B: Int8Array,
+    C: Int8Array,
+    D: Int8Array,
+) -> Int8Array:
     BR, CR, DR = B[:, ::-1], C[:, ::-1], D[:, ::-1]
     BtR, CtR, DtR = B.T[:, ::-1], C.T[:, ::-1], D.T[:, ::-1]
     return np.block(
@@ -64,13 +97,6 @@ class Builder:
             raise ValueError(f"unknown kind {kind!r}")
         return cls._CONFIG[kind][2]
 
-    @classmethod
-    def class_hash(cls, seqs: npt.NDArray[np.int8]) -> str:
-        """Invariant hash for deduplication.  Dispatches on ``self.kind``."""
-        from .fast_hash import gs4_class_hash
-
-        return gs4_class_hash(seqs)
-
     @staticmethod
     def factorize(n: int) -> list[int]:
         pairs = [(p, n // p) for p in range(3, int(n**0.5) + 1) if n % p == 0 and n // p >= 3]
@@ -88,7 +114,7 @@ class Builder:
         self.k: int = cfg[0]
         self.order: int = cfg[1] * n
 
-    def build(self, seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
+    def build(self, seqs: Int8Array) -> Int8Array:
         return _gs4_block(
             _negacirculant(seqs[0]),
             _negacirculant(seqs[1]),
