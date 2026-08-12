@@ -10,12 +10,14 @@ hit counts + energy saved.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, cast
 
 from src.benchmark_stats import fmt_e, mcnemar, wilson_ci, z_test
@@ -23,7 +25,7 @@ from src.generator import Generator
 from src.solver import SolverConfig
 
 
-@dataclass
+@dataclass(frozen=True)
 class AblationConfig:
     name: str
     config: SolverConfig
@@ -41,14 +43,17 @@ STEPS = 200_000
 WORKERS = max(1, int((os.cpu_count() or 2) * 0.8))
 
 
-def _run_one(args: tuple[int, int, int, SolverConfig]) -> dict[str, Any]:
+def _run_one(args: tuple[str, int, int, int, str, SolverConfig]) -> dict[str, Any]:
     """Run a single search.  Pickle-friendly for ProcessPoolExecutor."""
-    n, seed, steps, config = args
+    name, n, seed, steps, start_kind, config = args
     gen = Generator(kind="gs4", n=n)
     started = time.perf_counter()
-    result = gen.search(steps=steps, seed=seed, config=config)
+    result = gen.search(steps=steps, seed=seed, config=config, start_kind=start_kind)
     elapsed = time.perf_counter() - started
     return {
+        "config_name": name,
+        "config": asdict(config),
+        "start_kind": start_kind,
         "n": n,
         "seed": seed,
         "energy": result.metrics.energy,
@@ -84,8 +89,25 @@ def _aggregate(runs: list[dict[str, Any]]) -> dict[str, Any]:
     agg["kick_evals"] = sum(r["stats"].get("kick_evals", 0) for r in runs)
     agg["tabu_hits"] = sum(r["stats"].get("tabu_hits", 0) for r in runs)
     agg["tabu_evals"] = sum(r["stats"].get("tabu_evals", 0) for r in runs)
+    agg["tabu_solves"] = sum(r["stats"].get("tabu_solves", 0) for r in runs)
+    agg["target_quenches"] = sum(r["stats"].get("target_quenches", 0) for r in runs)
+    agg["candidate_evals"] = sum(r["stats"].get("total_candidate_evals", 0) for r in runs)
+    agg["solve_phases"] = dict(
+        Counter(
+            cast(str, r["stats"]["solve_phase"])
+            for r in runs
+            if r["stats"].get("solve_phase") is not None
+        )
+    )
 
     return agg
+
+
+def _write_output(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    temporary.replace(path)
 
 
 def main() -> None:
@@ -93,7 +115,12 @@ def main() -> None:
         description="Measure solver component and escape-policy ablations."
     )
     parser.add_argument("--targeted", action="store_true", help="Compare targeted escape policies.")
-    parser.add_argument("--n", type=int, default=NS[0], help=f"Sequence length (default: {NS[0]}).")
+    parser.add_argument(
+        "--n",
+        type=int,
+        action="append",
+        help=f"Sequence length; repeat for multiple values (default: {NS[0]}).",
+    )
     parser.add_argument(
         "--seeds", type=int, default=N_SEEDS, help=f"Paired seed count (default: {N_SEEDS})."
     )
@@ -103,24 +130,27 @@ def main() -> None:
     parser.add_argument(
         "--workers", type=int, default=WORKERS, help=f"Worker count (default: {WORKERS})."
     )
+    parser.add_argument("--start-kind", choices=("random", "cyclic"), default="random")
+    parser.add_argument("--output", type=Path, default=Path("runs/ablation.json"))
     args = parser.parse_args()
     configs: list[AblationConfig] = (
         [
             AblationConfig("legacy625", SolverConfig(escape_policy="legacy625")),
+            AblationConfig("no-targeted", SolverConfig(targeted_escape=False)),
             AblationConfig("support_lag625", SolverConfig(escape_policy="support_lag625")),
         ]
         if args.targeted
         else CONFIGS
     )
-    ns = [args.n] if args.targeted else NS
+    ns = args.n or ([NS[0]] if args.targeted else NS)
     workers = args.workers
 
     # Build task list: one (n, seed, steps, config) per run
-    tasks: list[tuple[int, int, int, SolverConfig]] = []
+    tasks: list[tuple[str, int, int, int, str, SolverConfig]] = []
     for ac in configs:
         for n in ns:
             for seed in range(args.seeds):
-                tasks.append((n, seed, args.steps, ac.config))
+                tasks.append((ac.name, n, seed, args.steps, args.start_kind, ac.config))
 
     total = len(tasks)
     print(
@@ -147,9 +177,26 @@ def main() -> None:
 
     # Group by config and n
     by_config: dict[str, dict[int, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
-    for i, r in enumerate(results):
-        ac = cast(AblationConfig, configs[i // (len(ns) * args.seeds)])
-        by_config[ac.name][r["n"]].append(r)
+    for result in results:
+        by_config[cast(str, result["config_name"])][cast(int, result["n"])].append(result)
+
+    aggregates: dict[str, dict[str, dict[str, Any]]] = {}
+    for ac in configs:
+        aggregates[ac.name] = {str(n): _aggregate(by_config[ac.name][n]) for n in ns}
+
+    _write_output(
+        args.output,
+        {
+            "steps": args.steps,
+            "seeds": args.seeds,
+            "workers": workers,
+            "start_kind": args.start_kind,
+            "elapsed_seconds": elapsed,
+            "configs": {ac.name: asdict(ac.config) for ac in configs},
+            "aggregates": aggregates,
+            "runs": results,
+        },
+    )
 
     # Print table
     by_cfg_n_solved: dict[str, dict[int, tuple[int, int]]] = defaultdict(
@@ -163,7 +210,7 @@ def main() -> None:
         print(header)
         print("-" * len(header))
         for n in ns:
-            a = _aggregate(by_config[ac.name][n])
+            a = aggregates[ac.name][str(n)]
             solved, total = a["solved"].split("/")
             k, tot = int(solved), int(total)
             by_cfg_n_solved[ac.name][n] = (k, tot)
@@ -175,6 +222,8 @@ def main() -> None:
             )
             print(line)
         print()
+
+    print(f"Raw results: {args.output}")
 
     # Z-tests against baseline (first config)
     if len(configs) > 1:
@@ -190,17 +239,19 @@ def main() -> None:
         print()
 
     if args.targeted:
-        legacy, candidate = configs[0].name, configs[1].name
-        print(f"-- Paired McNemar: {candidate} vs {legacy} --")
-        for n in ns:
-            legacy_runs = {r["seed"]: r["energy"] == 0 for r in by_config[legacy][n]}
-            candidate_runs = {r["seed"]: r["energy"] == 0 for r in by_config[candidate][n]}
-            a = sum(legacy_runs[s] and candidate_runs[s] for s in legacy_runs)
-            b = sum(legacy_runs[s] and not candidate_runs[s] for s in legacy_runs)
-            c = sum(not legacy_runs[s] and candidate_runs[s] for s in legacy_runs)
-            d = sum(not legacy_runs[s] and not candidate_runs[s] for s in legacy_runs)
-            chi2, p = mcnemar(a, b, c, d)
-            print(f"  n={n}: a/b/c/d={a}/{b}/{c}/{d}  chi2={chi2:.3f}  p={p:.4f}")
+        legacy = configs[0].name
+        for config in configs[1:]:
+            candidate = config.name
+            print(f"-- Paired McNemar: {candidate} vs {legacy} --")
+            for n in ns:
+                legacy_runs = {r["seed"]: r["energy"] == 0 for r in by_config[legacy][n]}
+                candidate_runs = {r["seed"]: r["energy"] == 0 for r in by_config[candidate][n]}
+                a = sum(legacy_runs[s] and candidate_runs[s] for s in legacy_runs)
+                b = sum(legacy_runs[s] and not candidate_runs[s] for s in legacy_runs)
+                c = sum(not legacy_runs[s] and candidate_runs[s] for s in legacy_runs)
+                d = sum(not legacy_runs[s] and not candidate_runs[s] for s in legacy_runs)
+                chi2, p = mcnemar(a, b, c, d)
+                print(f"  n={n}: a/b/c/d={a}/{b}/{c}/{d}  chi2={chi2:.3f}  p={p:.4f}")
 
 
 if __name__ == "__main__":

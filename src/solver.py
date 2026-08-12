@@ -7,7 +7,7 @@ Quench-Budget = max(5000, original_budget // (q_now + 1))."""
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from itertools import product
 from typing import Any
@@ -46,6 +46,7 @@ def tabu_walk_kernel(
     npt.NDArray[np.int32],
     int,
     int,
+    int,
 ]:
     """Run exact Tabu steps and return the best visited tracker state."""
     n_seqs, n_cols = seqs.shape
@@ -57,6 +58,7 @@ def tabu_walk_kernel(
     best_u = np.empty_like(u)
     best_q = q
     used = 0
+    solve_q_before = -1
 
     for step in range(noise.shape[0]):
         best_score = np.inf
@@ -77,6 +79,7 @@ def tabu_walk_kernel(
         delta_q = int(norm2[index])
         for lag in range(n_lags):
             delta_q += 2 * int(delta[index, lag]) * int(u[lag])
+        previous_q = q
         q += delta_q
         for lag in range(n_lags):
             u[lag] += delta[index, lag]
@@ -108,15 +111,16 @@ def tabu_walk_kernel(
             best_norm2[:] = norm2
             best_u[:] = u
             if best_q == 0:
+                solve_q_before = previous_q
                 break
 
-    return best_seq, best_delta, best_norm2, best_u, best_q, used
+    return best_seq, best_delta, best_norm2, best_u, best_q, used, solve_q_before
 
 
 # --- Config & Helpers ---------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class SolverConfig:
     kick: bool = True
     tabu: bool = True
@@ -129,6 +133,37 @@ class SolverConfig:
     escape_policy: str = "legacy625"
     escape_quench_steps: int = 10_000
     qwindow_high: int = 9  # stop greedy at this Q (C-rich band, not floor)
+
+    def __post_init__(self) -> None:
+        if self.tabu_steps < 0:
+            raise ValueError("tabu_steps cannot be negative")
+        if self.tabu_tenure < 0 or not 0 <= self.tabu_decay <= 1:
+            raise ValueError("tabu_tenure must be non-negative and tabu_decay must be in [0, 1]")
+        if self.tabu_noise < 0 or self.geo_weight < 0:
+            raise ValueError("tabu_noise and geo_weight cannot be negative")
+        if self.escape_policy not in {"legacy625", "support_lag625"}:
+            raise ValueError(f"Unknown escape policy: {self.escape_policy}")
+        if self.escape_quench_steps <= 0:
+            raise ValueError("escape_quench_steps must be positive")
+        if self.qwindow_high < 0:
+            raise ValueError("qwindow_high cannot be negative")
+
+
+@dataclass(frozen=True)
+class TabuWalkResult:
+    energy: int | None
+    steps: int
+    solve_q_before: int | None = None
+
+
+@dataclass(frozen=True)
+class TargetedKickResult:
+    solved: bool
+    sequences: npt.NDArray[np.int8]
+    energy: int
+    best_sequences: npt.NDArray[np.int8]
+    best_energy: int
+    legacy_steps: int
 
 
 @lru_cache(maxsize=16)
@@ -210,57 +245,55 @@ def _support_lag625_candidates(
     return selected
 
 
+@dataclass
 class SearchStats:
     """Hit counters + streak histogram + phase timing + Q-level tracking."""
 
-    __slots__ = (
-        "_streak",
-        "energy_saved_kicks",
-        "energy_saved_singles",
-        "energy_saved_tabu",
-        "kick_evals",
-        "kick_time_s",
-        "kicks",
-        "rebuild_time_s",
-        "single_evals",
-        "single_time_s",
-        "singles",
-        "singles_streaks",
-        "tabu_evals",
-        "tabu_hits",
-        "tabu_hits_q1",
-        "tabu_hits_q2",
-        "tabu_hits_q3plus",
-        "tabu_time_s",
-        "tabu_walks",
-        "tabu_walks_q1",
-        "tabu_walks_q2",
-        "tabu_walks_q3plus",
-    )
+    singles: int = 0
+    kicks: int = 0
+    single_evals: int = 0
+    kick_evals: int = 0
+    tabu_evals: int = 0
+    tabu_candidate_evals: int = 0
+    quench_candidate_evals: int = 0
+    target_quenches: int = 0
+    tabu_hits: int = 0
+    tabu_hits_q1: int = 0
+    tabu_hits_q2: int = 0
+    tabu_hits_q3plus: int = 0
+    tabu_solves: int = 0
+    tabu_solves_q1: int = 0
+    tabu_solves_q2: int = 0
+    tabu_solves_q3plus: int = 0
+    tabu_walks: int = 0
+    tabu_walks_q1: int = 0
+    tabu_walks_q2: int = 0
+    tabu_walks_q3plus: int = 0
+    singles_streaks: list[int] = field(default_factory=list[int])
+    energy_saved_singles: int = 0
+    energy_saved_kicks: int = 0
+    energy_saved_tabu: int = 0
+    single_time_s: float = 0.0
+    kick_time_s: float = 0.0
+    rebuild_time_s: float = 0.0
+    tabu_time_s: float = 0.0
+    solve_phase: str | None = None
+    solve_q_before: int | None = None
+    _streak: int = 0
 
-    def __init__(self) -> None:
-        self.singles: int = 0
-        self.kicks: int = 0
-        self.single_evals: int = 0
-        self.kick_evals: int = 0
-        self.tabu_evals: int = 0
-        self.tabu_hits: int = 0
-        self.tabu_hits_q1: int = 0
-        self.tabu_hits_q2: int = 0
-        self.tabu_hits_q3plus: int = 0
-        self.tabu_walks: int = 0
-        self.tabu_walks_q1: int = 0
-        self.tabu_walks_q2: int = 0
-        self.tabu_walks_q3plus: int = 0
-        self.singles_streaks: list[int] = []
-        self._streak: int = 0
-        self.energy_saved_singles: int = 0
-        self.energy_saved_kicks: int = 0
-        self.energy_saved_tabu: int = 0
-        self.single_time_s: float = 0.0
-        self.kick_time_s: float = 0.0
-        self.rebuild_time_s: float = 0.0
-        self.tabu_time_s: float = 0.0
+    @property
+    def total_candidate_evals(self) -> int:
+        return (
+            self.single_evals
+            + self.tabu_candidate_evals
+            + self.kick_evals
+            + self.quench_candidate_evals
+        )
+
+    def record_solve(self, phase: str, q_before: int) -> None:
+        if self.solve_phase is None:
+            self.solve_phase = phase
+            self.solve_q_before = q_before
 
     def _hit_single(self) -> None:
         self.singles += 1
@@ -288,6 +321,10 @@ class SearchStats:
             "single_evals": self.single_evals,
             "kick_evals": self.kick_evals,
             "tabu_evals": self.tabu_evals,
+            "tabu_candidate_evals": self.tabu_candidate_evals,
+            "quench_candidate_evals": self.quench_candidate_evals,
+            "total_candidate_evals": self.total_candidate_evals,
+            "target_quenches": self.target_quenches,
             "tabu_hits": self.tabu_hits,
             "tabu_walks": self.tabu_walks,
             "tabu_hits_q1": self.tabu_hits_q1,
@@ -296,6 +333,12 @@ class SearchStats:
             "tabu_walks_q1": self.tabu_walks_q1,
             "tabu_walks_q2": self.tabu_walks_q2,
             "tabu_walks_q3plus": self.tabu_walks_q3plus,
+            "tabu_solves": self.tabu_solves,
+            "tabu_solves_q1": self.tabu_solves_q1,
+            "tabu_solves_q2": self.tabu_solves_q2,
+            "tabu_solves_q3plus": self.tabu_solves_q3plus,
+            "solve_phase": self.solve_phase,
+            "solve_q_before": self.solve_q_before,
             "single_time_s": self.single_time_s,
             "kick_time_s": self.kick_time_s,
             "rebuild_time_s": self.rebuild_time_s,
@@ -309,7 +352,7 @@ class SearchStats:
             f"S={self.singles}({fmt_e(self.energy_saved_singles)})",
             f"TB={self.tabu_hits}/{self.tabu_walks}({fmt_e(self.energy_saved_tabu)})",
             f"K={self.kicks}({fmt_e(self.energy_saved_kicks)})",
-            f"evals={self.single_evals}/{self.tabu_evals}/{self.kick_evals}",
+            f"evals={self.single_evals}/{self.tabu_candidate_evals}/{self.kick_evals}",
             f"t={self.single_time_s:.1f}s/{self.tabu_time_s:.1f}s/{self.kick_time_s:.1f}s",
         ]
         if self.singles_streaks:
@@ -365,6 +408,8 @@ def _greedy_descent(
         cur_e = tracker.accept(cur_seq, s, c)
         stats.energy_saved_singles += prev_e - cur_e
         stats._hit_single()
+        if cur_e == 0:
+            stats.record_solve("greedy", prev_e // q_scale)
         improved = True
         scan_count = idx + 1
         break
@@ -387,18 +432,19 @@ def _tabu_phase(
     t0 = time.perf_counter()
     q_start = cur_e // (64 * n_cols)
     prev_e = cur_e
-    result, evaluations = _tabu_walk(cur_seq, tracker, cur_e, rng, cfg)
+    result = _tabu_walk(cur_seq, tracker, cur_e, rng, cfg)
     stats.tabu_time_s += time.perf_counter() - t0
     stats.tabu_walks += 1
-    stats.tabu_evals += evaluations
+    stats.tabu_evals += result.steps
+    stats.tabu_candidate_evals += result.steps * cur_seq.size
     if q_start == 1:
         stats.tabu_walks_q1 += 1
     elif q_start == 2:
         stats.tabu_walks_q2 += 1
     else:
         stats.tabu_walks_q3plus += 1
-    if result is not None:
-        stats.energy_saved_tabu += prev_e - result
+    if result.energy is not None:
+        stats.energy_saved_tabu += prev_e - result.energy
         stats.tabu_hits += 1
         if q_start == 1:
             stats.tabu_hits_q1 += 1
@@ -406,9 +452,19 @@ def _tabu_phase(
             stats.tabu_hits_q2 += 1
         else:
             stats.tabu_hits_q3plus += 1
+        if result.energy == 0:
+            stats.tabu_solves += 1
+            if q_start == 1:
+                stats.tabu_solves_q1 += 1
+            elif q_start == 2:
+                stats.tabu_solves_q2 += 1
+            else:
+                stats.tabu_solves_q3plus += 1
+            q_before = result.solve_q_before if result.solve_q_before is not None else q_start
+            stats.record_solve("tabu", q_before)
         stats._hit_other()
-        return True, result, evaluations
-    return False, cur_e, evaluations
+        return True, result.energy, result.steps
+    return False, cur_e, result.steps
 
 
 def _targeted_kick(
@@ -421,10 +477,8 @@ def _targeted_kick(
     best_e: int,
     cfg: SolverConfig,
     stats: SearchStats,
-) -> tuple[bool, npt.NDArray[np.int8], int, npt.NDArray[np.int8], int, int]:
+) -> TargetedKickResult:
     """Quench targeted candidates selected by the configured escape policy."""
-    if cfg.escape_quench_steps <= 0:
-        raise ValueError("escape_quench_steps must be positive")
     n = cur_seq.shape[1]
     assert tracker._delta is not None and tracker._u is not None
     _d = tracker._delta
@@ -438,7 +492,7 @@ def _targeted_kick(
         raise ValueError(f"Unknown escape policy: {cfg.escape_policy}")
 
     if not candidates:
-        return False, cur_seq, tracker.energy(), best_seq, best_e, 0
+        return TargetedKickResult(False, cur_seq, tracker.energy(), best_seq, best_e, 0)
     quench_budget = min(cfg.escape_quench_steps, max(1, budget // 4))
     total_used = 0
     quench_cfg = SolverConfig(targeted_escape=False)
@@ -454,16 +508,27 @@ def _targeted_kick(
         cand[2, c2] *= -1
         cand[3, c3] *= -1
         t2 = Tracker()
-        sol, be, used, _ = search(cand, t2, rng, steps=quench_budget, config=quench_cfg)
+        sol, be, used, quench_stats = search(
+            cand,
+            t2,
+            rng,
+            steps=quench_budget,
+            config=quench_cfg,
+        )
         total_used += used
+        stats.target_quenches += 1
+        stats.quench_candidate_evals += quench_stats.total_candidate_evals
         stats.kicks += 1
         stats.kick_evals += 1
         if be < best_e:
             best_seq, best_e = sol.copy(), be
         if be == 0:
-            return True, sol, 0, best_seq, best_e, total_used
+            phase = quench_stats.solve_phase or "unknown"
+            q_before = quench_stats.solve_q_before if quench_stats.solve_q_before is not None else 0
+            stats.record_solve(f"targeted:{phase}", q_before)
+            return TargetedKickResult(True, sol, 0, best_seq, best_e, total_used)
 
-    return False, cur_seq, tracker.energy(), best_seq, best_e, total_used
+    return TargetedKickResult(False, cur_seq, tracker.energy(), best_seq, best_e, total_used)
 
 
 def _random_kick(
@@ -508,6 +573,8 @@ def search(
 
     total_budget = steps
     best_seq, best_e = cur_seq.copy(), cur_e
+    if cur_e == 0:
+        stats.record_solve("initial", 0)
     lowest_q_seen = cur_e // q_scale  # niedrigstes Q bisher
     times_at_lowest = 0  # wie oft schon beim niedrigsten Q gestuckt
     early_escape_done = False
@@ -556,15 +623,22 @@ def search(
                 and times_at_lowest >= 2
             ):
                 early_escape_done = True
-                improved, cur_seq, cur_e, best_seq, best_e, kick_used = _targeted_kick(
+                targeted = _targeted_kick(
                     cur_seq, tracker, rng, q_now, total_budget, best_seq, best_e, cfg, stats
                 )
-                steps -= kick_used
+                improved = targeted.solved
+                cur_seq = targeted.sequences
+                cur_e = targeted.energy
+                best_seq = targeted.best_sequences
+                best_e = targeted.best_energy
+                steps -= targeted.legacy_steps
             else:
                 cur_e = _random_kick(cur_seq, tracker, rng)
                 improved = True
                 steps -= 1
                 stats.kick_evals += 1
+                if cur_e == 0:
+                    stats.record_solve("random_kick", prev_e // q_scale)
 
             stats.kicks += 1
             stats.energy_saved_kicks += prev_e - cur_e
@@ -586,10 +660,10 @@ def _tabu_walk(
     cur_e: int,
     rng: np.random.Generator,
     config: SolverConfig,
-) -> tuple[int | None, int]:
+) -> TabuWalkResult:
     """Explore uphill single flips and retain only the best visited state."""
     if config.tabu_steps <= 0:
-        return None, 0
+        return TabuWalkResult(None, 0)
 
     n_seqs, n_cols = cur_seq.shape
     assert (
@@ -601,23 +675,29 @@ def _tabu_walk(
         and tracker._update_signs is not None
     )
     noise = config.tabu_noise * rng.random((config.tabu_steps, n_seqs, n_cols))
-    best_seq, best_delta, best_norm2, best_u, best_q, evaluations = tabu_walk_kernel(
-        cur_seq.copy(),
-        tracker._delta.copy(),
-        tracker._norm2.copy(),
-        tracker._u.copy(),
-        tracker._q,
-        tracker._update_cols,
-        tracker._update_lags,
-        tracker._update_signs,
-        noise,
-        config.tabu_tenure,
-        config.tabu_decay,
+    best_seq, best_delta, best_norm2, best_u, best_q, evaluations, solve_q_before = (
+        tabu_walk_kernel(
+            cur_seq.copy(),
+            tracker._delta.copy(),
+            tracker._norm2.copy(),
+            tracker._u.copy(),
+            tracker._q,
+            tracker._update_cols,
+            tracker._update_lags,
+            tracker._update_signs,
+            noise,
+            config.tabu_tenure,
+            config.tabu_decay,
+        )
     )
     best_e = 64 * n_cols * best_q
     if best_e >= cur_e:
-        return None, evaluations
+        return TabuWalkResult(None, evaluations)
 
     cur_seq[...] = best_seq
     tracker._adopt(best_seq, best_u, best_q, best_delta, best_norm2)
-    return best_e, evaluations
+    return TabuWalkResult(
+        best_e,
+        evaluations,
+        solve_q_before if solve_q_before >= 0 else None,
+    )

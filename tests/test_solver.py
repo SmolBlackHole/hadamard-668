@@ -12,6 +12,7 @@ from src.builder import Builder
 from src.solver import (
     SearchStats,
     SolverConfig,
+    TabuWalkResult,
     _legacy_escape_candidates,
     _support_lag625_candidates,
     _tabu_walk,
@@ -202,7 +203,7 @@ def test_default_targeted_escape_uses_legacy_policy(monkeypatch: pytest.MonkeyPa
         SearchStats(),
     )
 
-    assert result[0] is False
+    assert result.solved is False
 
 
 @pytest.mark.parametrize(
@@ -254,25 +255,53 @@ def test_targeted_escape_passes_limited_quench_budget(
     assert seen_steps == [expected_steps]
 
 
-def test_targeted_escape_rejects_non_positive_quench_budget() -> None:
+def test_targeted_escape_records_nested_solve_and_candidate_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from src import solver
 
     seqs = np.ones((4, 3), dtype=np.int8)
     tracker = Tracker()
     tracker.build(seqs)
 
+    def legacy_candidates(*_args: object) -> tuple[int, list[tuple[int, int, int, int]]]:
+        return 0, [(0, 0, 0, 0)]
+
+    monkeypatch.setattr(solver, "_legacy_escape_candidates", legacy_candidates)
+
+    def fake_search(
+        cand: np.ndarray, _tracker: Tracker, *_args: object, **_kwargs: object
+    ) -> tuple[np.ndarray, int, int, SearchStats]:
+        nested = SearchStats(single_evals=7)
+        nested.record_solve("greedy", 1)
+        return cand, 0, 3, nested
+
+    monkeypatch.setattr(solver, "search", fake_search)
+    stats = SearchStats()
+    result = solver._targeted_kick(
+        seqs,
+        tracker,
+        np.random.default_rng(1),
+        1,
+        100,
+        seqs.copy(),
+        tracker.energy(),
+        SolverConfig(),
+        stats,
+    )
+
+    assert result.solved
+    assert result.legacy_steps == 3
+    assert stats.target_quenches == 1
+    assert stats.quench_candidate_evals == 7
+    assert stats.total_candidate_evals == 8
+    assert stats.solve_phase == "targeted:greedy"
+    assert stats.solve_q_before == 1
+
+
+def test_targeted_escape_rejects_non_positive_quench_budget() -> None:
     with pytest.raises(ValueError, match="escape_quench_steps must be positive"):
-        solver._targeted_kick(
-            seqs,
-            tracker,
-            np.random.default_rng(1),
-            1,
-            100,
-            seqs.copy(),
-            tracker.energy(),
-            SolverConfig(escape_quench_steps=0),
-            SearchStats(),
-        )
+        SolverConfig(escape_quench_steps=0)
 
 
 def test_solver_stops_when_single_scan_exhausts_budget() -> None:
@@ -308,7 +337,7 @@ def test_tabu_walk_replays_its_best_state() -> None:
     expected = seqs.copy()
     expected[expected_index // 4, expected_index % 4] *= -1
 
-    result, evaluations = _tabu_walk(
+    result = _tabu_walk(
         seqs,
         tracker,
         before,
@@ -316,8 +345,8 @@ def test_tabu_walk_replays_its_best_state() -> None:
         SolverConfig(tabu=True, tabu_steps=1, tabu_noise=0.0),
     )
 
-    assert evaluations == 1
-    assert result == expected_energy
+    assert result.steps == 1
+    assert result.energy == expected_energy
     assert np.array_equal(seqs, expected)
     assert tracker.energy() == expected_energy
 
@@ -337,7 +366,7 @@ def test_tabu_walk_adopts_an_exact_tracker_snapshot() -> None:
     tracker = Tracker()
     tracker.build(seqs)
 
-    result, _ = _tabu_walk(
+    result = _tabu_walk(
         seqs,
         tracker,
         tracker.energy(),
@@ -345,8 +374,8 @@ def test_tabu_walk_adopts_an_exact_tracker_snapshot() -> None:
         SolverConfig(tabu=True, tabu_steps=10),
     )
 
-    assert result is not None
-    assert result == tracker.energy()
+    assert result.energy is not None
+    assert result.energy == tracker.energy()
     rebuilt = Tracker()
     rebuilt.build(seqs)
     assert (
@@ -363,7 +392,7 @@ def test_tabu_walk_adopts_an_exact_tracker_snapshot() -> None:
     assert np.array_equal(tracker.flip_qs(), rebuilt.flip_qs())
     original = seqs.copy()
 
-    result, evaluations = _tabu_walk(
+    result = _tabu_walk(
         seqs,
         tracker,
         0,
@@ -371,8 +400,8 @@ def test_tabu_walk_adopts_an_exact_tracker_snapshot() -> None:
         SolverConfig(tabu=True, tabu_steps=3, tabu_noise=0.0),
     )
 
-    assert result is None
-    assert evaluations == 3
+    assert result.energy is None
+    assert result.steps == 3
     assert np.array_equal(seqs, original)
     assert tracker.energy() == 0
 
@@ -386,7 +415,7 @@ def test_tabu_walk_does_not_rebuild_a_temporary_tracker(monkeypatch: pytest.Monk
         raise AssertionError("Tabu walk must reuse the main tracker cache")
 
     monkeypatch.setattr(Tracker, "build", unexpected_build)
-    result, evaluations = _tabu_walk(
+    result = _tabu_walk(
         seqs,
         tracker,
         tracker.energy(),
@@ -394,16 +423,16 @@ def test_tabu_walk_does_not_rebuild_a_temporary_tracker(monkeypatch: pytest.Monk
         SolverConfig(tabu=True, tabu_steps=10),
     )
 
-    assert result == tracker.energy()
-    assert evaluations == 1
+    assert result.energy == tracker.energy()
+    assert result.steps == 1
 
 
 def test_solver_kicks_after_an_unsuccessful_tabu_walk(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[int] = []
 
-    def failed_tabu(*_args: object) -> tuple[None, int]:
+    def failed_tabu(*_args: object) -> TabuWalkResult:
         calls.append(1)
-        return None, 3
+        return TabuWalkResult(None, 3)
 
     monkeypatch.setattr("src.solver._tabu_walk", failed_tabu)
     tracker = _ScriptedTracker()
@@ -425,8 +454,8 @@ def test_solver_kicks_after_an_unsuccessful_tabu_walk(monkeypatch: pytest.Monkey
 
 
 def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch) -> None:
-    def successful_tabu(*_args: object) -> tuple[int, int]:
-        return 0, 3
+    def successful_tabu(*_args: object) -> TabuWalkResult:
+        return TabuWalkResult(0, 3, solve_q_before=4)
 
     monkeypatch.setattr("src.solver._tabu_walk", successful_tabu)
     tracker = _ScriptedTracker(initial_energy=256)
@@ -445,3 +474,15 @@ def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch)
     assert stats.tabu_hits_q2 == 1
     assert stats.tabu_walks_q1 == 0
     assert stats.tabu_hits_q1 == 0
+    assert stats.tabu_solves == 1
+    assert stats.tabu_solves_q2 == 1
+    assert stats.solve_phase == "tabu"
+    assert stats.solve_q_before == 4
+    assert stats.tabu_candidate_evals == 24
+
+
+def test_solver_config_validates_search_parameters() -> None:
+    with pytest.raises(ValueError, match="tabu_steps cannot be negative"):
+        SolverConfig(tabu_steps=-1)
+    with pytest.raises(ValueError, match="Unknown escape policy"):
+        SolverConfig(escape_policy="unknown")
