@@ -6,9 +6,11 @@ import sqlite3
 from pathlib import Path
 
 import numpy as np
+import pytest
 
+import src.output as output
 from src.models import RunResult, SearchStats
-from src.output import load_runs, save_run
+from src.output import load_runs, save_run, save_runs
 
 
 def _make_result(
@@ -88,6 +90,32 @@ def test_multiple_runs_same_n(tmp_path: Path) -> None:
     assert len(runs) == 2
     assert [r["seed"] for r in runs] == [0, 1]
     assert [r["solved"] for r in runs] == [True, False]
+
+
+def test_save_runs_uses_one_revision_and_reports_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "runs.db"
+    revision_calls = 0
+    progress: list[tuple[int, int]] = []
+
+    def revision() -> str:
+        nonlocal revision_calls
+        revision_calls += 1
+        return "test-revision"
+
+    monkeypatch.setattr(output, "_code_revision", revision)
+    save_runs(
+        path,
+        [_make_result(0, energy=0), _make_result(1, energy=4)],
+        lambda saved, total: progress.append((saved, total)),
+    )
+
+    runs = load_runs(path)["gs4"]["6"]
+    assert revision_calls == 1
+    assert progress == [(1, 2), (2, 2)]
+    assert [run["seed"] for run in runs] == [0, 1]
+    assert [run["code_revision"] for run in runs] == ["test-revision", "test-revision"]
 
 
 def test_identical_states_from_different_seeds_are_retained(tmp_path: Path) -> None:

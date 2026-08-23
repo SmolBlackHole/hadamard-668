@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 from base64 import b64decode
 from binascii import Error as Base64Error
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -92,14 +92,14 @@ def validate_database_record(
     return None, identity
 
 
-def audit_database(path: Path) -> AuditReport:
+def audit_database(path: Path, progress: Callable[[int, int], None] | None = None) -> AuditReport:
     from .output import load_audit_records
 
     failures: list[str] = []
     quarantined = 0
     valid = 0
     records = load_audit_records(path)
-    for record in records:
+    for checked, record in enumerate(records, 1):
         label = (
             f"{record['source_table']} id={record['id']} {record['strategy']}"
             f" n={record['n']} seed={record['seed']}"
@@ -115,6 +115,8 @@ def audit_database(path: Path) -> AuditReport:
             failures.append(f"{label}: valid record is quarantined")
         else:
             failures.append(f"{label}: {error}")
+        if progress is not None:
+            progress(checked, len(records))
 
     return AuditReport(
         checked=len(records),

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ProcessPoolExecutor
+import signal
+import time
+from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 from src.generator import (
@@ -14,7 +16,7 @@ from src.generator import (
     start_construction,
 )
 from src.models import RunResult
-from src.output import save_run
+from src.output import save_runs
 from src.pipeline import execute
 from src.solver import SolverConfig
 from src.verify import audit_database
@@ -26,6 +28,78 @@ def _format_time(seconds: float) -> str:
     if seconds < 1.0:
         return f"{seconds * 1000:.0f}ms"
     return f"{seconds:.1f}s"
+
+
+def _print_status(status: str, *, final: bool) -> None:
+    print(f"\r{status:<79}", end="\n" if final else "", flush=True)
+
+
+def _audit_with_progress(path: Path):
+    started = time.perf_counter()
+    last_update = started
+
+    def progress(checked: int, total: int) -> None:
+        nonlocal last_update
+        now = time.perf_counter()
+        if now - last_update >= 0.5 or checked == total:
+            rate = checked / max(now - started, 1e-9)
+            eta = (total - checked) / rate
+            _print_status(
+                f"DB audit [{checked}/{total}] {rate:.1f} rows/s ETA {_format_time(eta)}",
+                final=checked == total,
+            )
+            last_update = now
+
+    return audit_database(path, progress)
+
+
+def _print_run_plan(
+    tasks: list[tuple[str, int, int, int, SolverConfig, StartConstruction]],
+    workers: int,
+    output: Path | None,
+) -> None:
+    strategy, _, budget, _, config, start = tasks[0]
+    ns = sorted({task[1] for task in tasks})
+    seeds = sorted({task[3] for task in tasks})
+    n_label = ",".join(str(n) for n in ns)
+    order_label = ",".join(str(4 * n) for n in ns)
+    seed_label = str(seeds[0]) if len(seeds) == 1 else f"{seeds[0]}..{seeds[-1]}"
+    tabu = str(config.tabu_steps) if config.tabu else "off"
+    print(
+        f"Search: strategy={strategy} n={n_label} order={order_label} "
+        f"runs={len(tasks)} seeds={seed_label}"
+    )
+    print(
+        f"  budget={budget:,} candidate evaluations/run workers={workers} start={start.name} "
+        f"tabu={tabu} kick={'on' if config.kick else 'off'} "
+        f"targeted={'on' if config.targeted_escape else 'off'}"
+    )
+    print(f"  output={output if output is not None else 'disabled'}\n")
+
+
+def _save_all(path: Path, results: list[RunResult]) -> None:
+    noun = "run" if len(results) == 1 else "runs"
+    print(f"\nSaving {len(results)} {noun} to {path}...", flush=True)
+    started = time.perf_counter()
+    last_update = started
+
+    def progress(saved: int, total: int) -> None:
+        nonlocal last_update
+        now = time.perf_counter()
+        if now - last_update >= 0.5 or saved == total:
+            rate = saved / max(now - started, 1e-9)
+            eta = (total - saved) / rate
+            _print_status(
+                f"DB write [{saved}/{total}] {rate:.1f} rows/s ETA {_format_time(eta)}",
+                final=saved == total,
+            )
+            last_update = now
+
+    save_runs(path, results, progress)
+
+
+def _ignore_sigint() -> None:
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
 def _execute_single(
@@ -43,8 +117,50 @@ def _execute_all(
     tasks: list[tuple[str, int, int, int, SolverConfig, StartConstruction]], workers: int
 ) -> list[RunResult]:
     if workers > 1:
-        with ProcessPoolExecutor(max_workers=min(workers, len(tasks))) as pool:
-            return list(pool.map(_execute_single, *zip(*tasks, strict=True)))
+        total = len(tasks)
+        ordered: list[RunResult | None] = [None] * total
+        failures: list[tuple[int, Exception]] = []
+        started = time.perf_counter()
+        last_update = started
+        future_indexes: dict[Future[RunResult], int] = {}
+        with ProcessPoolExecutor(
+            max_workers=min(workers, len(tasks)), initializer=_ignore_sigint
+        ) as pool:
+            try:
+                for index, task in enumerate(tasks):
+                    future_indexes[pool.submit(_execute_single, *task)] = index
+                for completed, future in enumerate(as_completed(future_indexes), 1):
+                    index = future_indexes[future]
+                    try:
+                        ordered[index] = future.result()
+                    except Exception as error:
+                        failures.append((index, error))
+
+                    now = time.perf_counter()
+                    if now - last_update >= 0.5 or completed == total:
+                        results = [result for result in ordered if result is not None]
+                        solved = sum(result.solved for result in results)
+                        best_q = min(
+                            (result.energy // (64 * result.n) for result in results), default=None
+                        )
+                        rate = completed / max(now - started, 1e-9)
+                        eta = (total - completed) / rate
+                        status = (
+                            f"[{completed}/{total}] solved={solved} failed={len(failures)} "
+                            f"bestQ={best_q if best_q is not None else '-'} "
+                            f"{rate:.1f} runs/s ETA {_format_time(eta)}"
+                        )
+                        _print_status(status, final=completed == total)
+                        last_update = now
+            except KeyboardInterrupt:
+                for future in future_indexes:
+                    future.cancel()
+                pool.shutdown(wait=True, cancel_futures=True)
+                raise
+
+        for index, error in failures:
+            print(f"seed={tasks[index][3]} FAILED: {error}")
+        return [result for result in ordered if result is not None]
 
     results: list[RunResult] = []
     for index, task in enumerate(tasks, 1):
@@ -65,8 +181,10 @@ def _print_summary(results: list[RunResult]) -> None:
         return
     total_seconds = sum(result.elapsed_seconds for result in results)
     solved = sum(result.solved for result in results)
+    noun = "run" if len(results) == 1 else "runs"
     print(
-        f"\n{len(results)} runs, {solved} solved, {_format_time(total_seconds)} accumulated runtime"
+        f"\n{len(results)} {noun}, {solved} solved, "
+        f"{_format_time(total_seconds)} accumulated runtime"
     )
     by_n: dict[int, list[RunResult]] = {}
     for result in results:
@@ -139,7 +257,8 @@ def main() -> int:
     if args.candidate_budget < 1 or args.runs < 1 or args.seeds < 1 or args.workers < 1:
         parser.error("candidate-budget, runs, seeds, and workers must be positive")
     if args.check is not None:
-        report = audit_database(args.check)
+        print(f"Auditing database {args.check}...")
+        report = _audit_with_progress(args.check)
         for failure in report.failures:
             print(f"  FAIL {failure}")
         print(f"{report.valid}/{report.checked} valid, {report.quarantined} quarantined")
@@ -176,20 +295,32 @@ def main() -> int:
     except ValueError as error:
         parser.error(str(error))
 
+    _print_run_plan(tasks, args.workers, None if args.no_output else args.output)
     results = _execute_all(tasks, args.workers)
     _print_summary(results)
     if not results:
         return 1
     if not args.no_output:
-        for result in results:
-            save_run(args.output, result)
+        _save_all(args.output, results)
+    else:
+        print("\nOutput disabled; results were not saved.")
     if args.sweep and not args.no_output and not args.no_verify:
-        report = audit_database(args.output)
+        print(f"\nAuditing database {args.output}...")
+        report = _audit_with_progress(args.output)
         print(f"DB audit: {report.valid}/{report.checked} valid, {report.quarantined} quarantined")
         if not report.ok:
+            print("Database audit failed, see above for details.")
             return 1
+    elif args.sweep and not args.no_output:
+        print("Database audit skipped (--no-verify).")
+    print("\nAll done.")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        exit_code = main()
+    except KeyboardInterrupt:
+        print("\nInterrupted; pending work stopped.")
+        exit_code = 130
+    raise SystemExit(exit_code)

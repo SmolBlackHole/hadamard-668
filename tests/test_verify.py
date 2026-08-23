@@ -51,12 +51,14 @@ def test_database_audit_fails_when_only_some_rows_are_valid(tmp_path: Path) -> N
     with sqlite3.connect(path) as connection:
         connection.execute("UPDATE runs SET sha256 = 'corrupt' WHERE seed = 2")
 
-    report = audit_database(path)
+    progress: list[tuple[int, int]] = []
+    report = audit_database(path, lambda checked, total: progress.append((checked, total)))
 
     assert report.checked == 3
     assert report.valid == 2
     assert not report.ok
     assert report.failures == ("runs id=2 gs4 n=1 seed=2: sha256 mismatch",)
+    assert progress == [(1, 3), (2, 3), (3, 3)]
 
 
 def test_database_audit_does_not_create_a_missing_database(tmp_path: Path) -> None:

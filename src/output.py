@@ -1,6 +1,7 @@
 """SQLite-backed persistence for search results (replaces the JSON dataset).
 
-``save_run(path, result)`` stores one run (solved or unsolved);
+``save_runs(path, results)`` stores a batch of runs in one transaction;
+``save_run(path, result)`` is the single-run convenience wrapper.
 solved runs (energy==0) are also recorded in the ``solutions`` table.
 ``load_runs(path)`` loads the full dataset for analysis.
 """
@@ -11,6 +12,7 @@ import base64
 import json
 import sqlite3
 import subprocess
+from collections.abc import Callable, Sequence
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -152,63 +154,41 @@ def _code_revision() -> str | None:
     return revision.stdout.strip() + suffix
 
 
-def save_run(db_path: Path, result: RunResult) -> None:
-    """Store one run in the database; solved runs are also recorded in ``solutions``."""
-    seqs = result.sequences
-    b64 = _seqs_to_b64(seqs)
-    identity = identify_state(seqs)
-    solved = result.solved
-    stats_json = json.dumps(result.stats.to_dict())
+def save_runs(
+    db_path: Path,
+    results: Sequence[RunResult],
+    progress: Callable[[int, int], None] | None = None,
+) -> None:
+    """Store a batch atomically; solved runs are also recorded in ``solutions``."""
+    if not results:
+        return
 
+    revision = _code_revision()
+    total = len(results)
     con = _connect(db_path, initialize=True)
     try:
         con.execute("BEGIN IMMEDIATE")
-        con.execute(
-            "INSERT INTO runs (strategy, n, seed, sha256, seqs_b64, solved, energy,"
-            " solver_e, elapsed_s, iterations, candidate_evals, candidate_budget,"
-            " construction, solver_config_json, code_revision, class_hash,"
-            " validation_hash, orbit_hash,"
-            " canonical_b64, canonicalizer, valid, validation_error, stats_json)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                result.strategy,
-                result.n,
-                result.seed,
-                identity.validation_hash,
-                b64,
-                int(solved),
-                result.energy,
-                result.energy,
-                round(result.elapsed_seconds, 3),
-                0,
-                result.candidate_evals,
-                result.candidate_budget,
-                result.construction,
-                json.dumps(result.solver_config, sort_keys=True),
-                _code_revision(),
-                identity.orbit_hash,
-                identity.validation_hash,
-                identity.orbit_hash,
-                identity.canonical_b64,
-                identity.canonicalizer,
-                1,
-                None,
-                stats_json,
-            ),
-        )
-        if solved:
+        for saved, result in enumerate(results, 1):
+            seqs = result.sequences
+            b64 = _seqs_to_b64(seqs)
+            identity = identify_state(seqs)
+            solved = result.solved
+            stats_json = json.dumps(result.stats.to_dict())
+
             con.execute(
-                "INSERT OR IGNORE INTO solutions (strategy, n, seed, sha256, seqs_b64,"
-                " energy, solver_e, elapsed_s, iterations, candidate_evals, candidate_budget,"
-                " construction, solver_config_json, code_revision, class_hash, validation_hash,"
-                " orbit_hash, canonical_b64, canonicalizer, valid, validation_error, stats_json)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO runs (strategy, n, seed, sha256, seqs_b64, solved, energy,"
+                " solver_e, elapsed_s, iterations, candidate_evals, candidate_budget,"
+                " construction, solver_config_json, code_revision, class_hash,"
+                " validation_hash, orbit_hash,"
+                " canonical_b64, canonicalizer, valid, validation_error, stats_json)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     result.strategy,
                     result.n,
                     result.seed,
                     identity.validation_hash,
                     b64,
+                    int(solved),
                     result.energy,
                     result.energy,
                     round(result.elapsed_seconds, 3),
@@ -217,7 +197,7 @@ def save_run(db_path: Path, result: RunResult) -> None:
                     result.candidate_budget,
                     result.construction,
                     json.dumps(result.solver_config, sort_keys=True),
-                    _code_revision(),
+                    revision,
                     identity.orbit_hash,
                     identity.validation_hash,
                     identity.orbit_hash,
@@ -228,12 +208,54 @@ def save_run(db_path: Path, result: RunResult) -> None:
                     stats_json,
                 ),
             )
+            if solved:
+                con.execute(
+                    "INSERT OR IGNORE INTO solutions (strategy, n, seed, sha256, seqs_b64,"
+                    " energy, solver_e, elapsed_s, iterations, candidate_evals, candidate_budget,"
+                    " construction, solver_config_json, code_revision, class_hash,"
+                    " validation_hash, orbit_hash, canonical_b64, canonicalizer, valid,"
+                    " validation_error, stats_json)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        result.strategy,
+                        result.n,
+                        result.seed,
+                        identity.validation_hash,
+                        b64,
+                        result.energy,
+                        result.energy,
+                        round(result.elapsed_seconds, 3),
+                        0,
+                        result.candidate_evals,
+                        result.candidate_budget,
+                        result.construction,
+                        json.dumps(result.solver_config, sort_keys=True),
+                        revision,
+                        identity.orbit_hash,
+                        identity.validation_hash,
+                        identity.orbit_hash,
+                        identity.canonical_b64,
+                        identity.canonicalizer,
+                        1,
+                        None,
+                        stats_json,
+                    ),
+                )
+            if progress is not None and saved < total:
+                progress(saved, total)
         con.execute("COMMIT")
+        if progress is not None:
+            progress(total, total)
     except BaseException:
         con.execute("ROLLBACK")
         raise
     finally:
         con.close()
+
+
+def save_run(db_path: Path, result: RunResult) -> None:
+    """Store one run in the database."""
+    save_runs(db_path, (result,))
 
 
 def load_runs(db_path: Path) -> dict[str, dict[str, list[dict[str, Any]]]]:
