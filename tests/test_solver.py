@@ -43,6 +43,24 @@ class _ScriptedTracker:
         return self._energy
 
 
+class _OneStepImprovementTracker(_ScriptedTracker):
+    def __init__(self, initial_energy: int, accepted_energy: int) -> None:
+        super().__init__(initial_energy)
+        self._accepted_energy = accepted_energy
+
+    def flip_batch(self, start: int, stop: int) -> np.ndarray:
+        energies = super().flip_batch(start, stop)
+        if start == 0:
+            energies[0] = self._accepted_energy
+        return energies
+
+    def accept(self, seqs: np.ndarray, s: int, c: int) -> int:
+        del seqs
+        self.accepted.append((s, c))
+        self._energy = self._accepted_energy
+        return self._energy
+
+
 def test_solver_finds_solution_small_n() -> None:
     seqs = np.random.default_rng(42).choice((-1, 1), size=(4, 5)).astype(np.int8)
     tracker = Tracker()
@@ -63,6 +81,77 @@ def test_solver_budget_not_exceeded() -> None:
     budget = 1000
     result = ils_search(seqs, tracker, np.random.default_rng(99), candidate_budget=budget)
     assert result.candidate_evals <= budget
+    assert result.candidate_evals == result.stats.total_candidate_evals
+
+
+def test_solver_stops_immediately_after_greedy_solution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_tabu(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        pytest.fail("tabu must not run after greedy reaches zero energy")
+
+    monkeypatch.setattr("src.solver._tabu_phase", fail_tabu)
+    tracker = _OneStepImprovementTracker(initial_energy=64, accepted_energy=0)
+    seqs = np.ones((4, 2), dtype=np.int8)
+
+    result = ils_search(
+        seqs,
+        cast(Tracker, tracker),
+        np.random.default_rng(99),
+        candidate_budget=1_000,
+        config=SolverConfig(trace_phases=True),
+    )
+
+    assert result.solved
+    assert result.candidate_evals == seqs.size
+    assert result.stats.tabu_walks == 0
+    assert [phase.phase for phase in result.stats.phase_events] == [
+        SearchPhase.INITIALIZE,
+        SearchPhase.GREEDY,
+    ]
+
+
+def test_qwindow_hands_low_q_greedy_improvement_to_tabu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tabu_calls = 0
+
+    def record_tabu(
+        cur_seq: np.ndarray,
+        tracker: Tracker,
+        cur_e: int,
+        rng: np.random.Generator,
+        budget: CandidateBudget,
+        cfg: SolverConfig,
+        stats: SearchStats,
+    ) -> tuple[bool, int, int]:
+        del cur_seq, tracker, rng, cfg
+        nonlocal tabu_calls
+        tabu_calls += 1
+        budget.take(1)
+        stats.tabu_candidate_evals += 1
+        return False, cur_e, 0
+
+    monkeypatch.setattr("src.solver._tabu_phase", record_tabu)
+    n = 2
+    q_scale = 64 * n
+    tracker = _OneStepImprovementTracker(
+        initial_energy=11 * q_scale,
+        accepted_energy=9 * q_scale,
+    )
+    seqs = np.ones((4, n), dtype=np.int8)
+
+    result = ils_search(
+        seqs,
+        cast(Tracker, tracker),
+        np.random.default_rng(99),
+        candidate_budget=seqs.size + 1,
+        config=SolverConfig(qwindow_high=9, kick=False),
+    )
+
+    assert tabu_calls == 1
+    assert result.stats.greedy_moves == 1
     assert result.candidate_evals == result.stats.total_candidate_evals
 
 

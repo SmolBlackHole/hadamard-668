@@ -10,8 +10,9 @@ import pytest
 from scripts import quality
 
 
-def test_check_runs_every_command(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_runs_every_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(quality, "ROOT", tmp_path)
 
     def fake_run(
         command: tuple[str, ...], *, cwd: Path, check: bool
@@ -25,6 +26,7 @@ def test_check_runs_every_command(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert quality.main(["check"]) == 0
     assert calls == list(quality.COMMANDS["check"])
+    assert (tmp_path / "runs").is_dir()
 
 
 def test_runner_stops_at_first_failure(monkeypatch: pytest.MonkeyPatch) -> None:

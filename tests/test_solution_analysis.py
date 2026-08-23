@@ -7,7 +7,9 @@ import sqlite3
 from pathlib import Path
 
 import numpy as np
+import pytest
 
+from scripts.analyze_solutions import main as analyze_main
 from src.models import RunResult, SearchStats
 from src.output import save_run
 from src.solution_analysis import FEATURE_VERSION, analyze_solution_database, solution_features
@@ -54,3 +56,17 @@ def test_analysis_persists_versioned_features_and_catalog(tmp_path: Path) -> Non
     assert row is not None
     assert row[0] == FEATURE_VERSION
     assert json.loads(row[1])["strong_split"]
+
+
+def test_analysis_cli_does_not_replace_catalog_without_database(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    database = tmp_path / "missing.db"
+    output = tmp_path / "catalog.json"
+
+    with pytest.raises(SystemExit) as error:
+        analyze_main(["--database", str(database), "--output", str(output)])
+
+    assert error.value.code == 2
+    assert "database does not exist" in capsys.readouterr().err
+    assert not output.exists()

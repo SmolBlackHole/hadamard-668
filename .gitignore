@@ -13,5 +13,7 @@ data/_bench_*.db
 .coverage
 coverage.json
 reference_pzinn/
+data/hadamard.db
+data/archive/
 
 experiments/learning/_archive/

@@ -1,12 +1,9 @@
 [project]
 name = "hadamard-668"
 version = "0.1.0"
-description = "GPU-accelerated heuristic search for Hadamard matrices"
+description = "CPU heuristic search for negacyclic Goethals-Seidel Hadamard matrices"
 requires-python = ">=3.11"
-dependencies = [
-    "numpy>=1.24,<3",
-    "numba>=0.66,<0.67",
-]
+dependencies = ["numpy>=1.24,<3", "numba>=0.66,<0.67"]
 
 [project.optional-dependencies]
 dev = [

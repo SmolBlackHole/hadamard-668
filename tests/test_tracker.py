@@ -186,3 +186,47 @@ def test_delta_gram_does_not_determine_solving_single_rows() -> None:
     assert np.array_equal(delta0.T @ delta0, delta1.T @ delta1)
     assert np.count_nonzero(trackers[0].flip_qs() == 0) == 0
     assert np.count_nonzero(trackers[1].flip_qs() == 0) == 6
+
+
+@pytest.mark.parametrize("n", range(5, 11))
+def test_delta_gram_and_frame_norm_identities(n: int) -> None:
+    sequences = np.random.default_rng(900 + n).choice((-1, 1), size=(4, n)).astype(np.int8)
+    tracker = Tracker()
+    tracker.build(sequences)
+
+    residual = Tracker._compute_residual(sequences)
+    delta = tracker._delta
+    u = tracker._u
+    assert delta is not None and u is not None
+
+    def extended_residual(lag: int) -> int:
+        reduced = lag % (2 * n)
+        return int(residual[reduced]) if reduced < n else -int(residual[reduced - n])
+
+    width = u.size
+    expected = np.empty((width, width), dtype=np.int64)
+    for row, t in enumerate(range(1, width + 1)):
+        for column, lag in enumerate(range(1, width + 1)):
+            expected[row, column] = (extended_residual(lag - t) + extended_residual(lag + t)) // 2
+
+    gram = delta.astype(np.int64).T @ delta.astype(np.int64)
+    assert np.array_equal(gram, expected)
+    assert np.array_equal(delta.sum(axis=0), -4 * u)
+
+    frame_defect = gram - 2 * n * np.eye(width, dtype=np.int64)
+    norm_squared = int(np.sum(frame_defect * frame_defect))
+    if n % 2 == 0:
+        assert norm_squared == 4 * (n - 4) * tracker._q
+    else:
+        alternating = sum((-1) ** t * int(u[t - 1]) for t in range(1, width + 1))
+        assert norm_squared == 4 * (n - 4) * tracker._q + 8 * alternating**2
+
+
+def test_n4_tight_frame_is_not_sufficient_for_solution() -> None:
+    sequences = np.ones((4, 4), dtype=np.int8)
+    tracker = Tracker()
+    tracker.build(sequences)
+
+    delta = tracker._delta
+    assert delta is not None and tracker._q > 0
+    assert np.array_equal(delta.astype(np.int64).T @ delta, np.asarray([[8]]))

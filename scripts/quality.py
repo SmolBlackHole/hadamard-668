@@ -67,6 +67,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="check (default), fix, coverage, or mutate",
     )
     args = parser.parse_args(argv)
+    if args.action == "check":
+        (ROOT / "runs").mkdir(exist_ok=True)
     return _run(COMMANDS[args.action])
 
 

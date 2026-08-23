@@ -1,150 +1,132 @@
 # Hadamard-668
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
-![Tests](https://img.shields.io/badge/tests-passing-green)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
 
-Suche nach einer reellen Hadamard-Matrix der Ordnung 668 über die
-Goethals-Seidel-Konstruktion mit vier negazyklischen (±1)-Folgen.
+CPU-basierte Suche nach reellen Hadamard-Matrizen in der negazyklischen
+Goethals-Seidel-Familie. Das konkrete Fernziel ist eine Matrix der Ordnung 668,
+also vier binäre Folgen der Länge `n = 167`.
 
-## Stand
+## Projektstatus
 
-Der NAF-/Tabu-Solver löst kleine und mittlere GS4-Instanzen zuverlässig und
-hat mit erhöhtem Budget bereits Lösungen für `n=52` beziehungsweise Ordnung
-208 erzeugt. Das eigentliche Projektziel bleibt `n=167` beziehungsweise eine
-Hadamard-Matrix der Ordnung 668.
+Für Ordnung 668 wurde keine Matrix gefunden. Der heuristische Solver löst
+kleinere GS4-Instanzen und speichert seine Ergebnisse reproduzierbar in SQLite.
+Der versionierte Katalog enthält derzeit 794 verifizierte Lösungen aus 794
+Quick-Orbits für `n = 31` bis `n = 64`.
 
-Reproduzierbare Messwerte: [docs/BENCHMARK.md](docs/BENCHMARK.md)
+`n = 52` ist kein ungelöstes Konstruktionsproblem: Weil `2n - 1 = 103` prim
+ist, erzeugt der implementierte Paley/Ito-Pfad deterministisch eine Matrix der
+Ordnung 208. Heuristische Lösungen für dieselbe Länge werden im Katalog davon
+getrennt ausgewiesen.
 
 ## Installation
 
 ```bash
 git clone <repo-url>
 cd hadamard-668
-pip install -e ".[dev]"
+python -m pip install -e ".[dev]"
 ```
-
-Dev-Werkzeuge: Ruff, Pyright, pytest, Hypothesis, pytest-cov und pytest-gremlins.
 
 ## Schnellstart
 
-```bash
-# Einzelner Run (Ordnung 128, 100M Kandidatenauswertungen)
-python run.py --strategy gs4 --order 128 --candidate-budget 100000000 --seed 42
-
-# Sweep über mehrere n
-python run.py --sweep gs4 32 34 36 --seeds 100 --candidate-budget 100000000 --workers 12
-
-# Ablationstest
-python -m scripts.ablation --targeted --n 43 --n 47 --n 51 --candidate-budget 6000000
-
-# Lösungskatalog kanonisieren und analysieren
-python -m scripts.analyze_solutions
-
-# Tests
-pytest tests/ -m "not slow"
-pytest tests/ -m slow          # Regressionstests (n=24, ~1s)
-```
-
-## Qualität prüfen
+Ein heuristischer Lauf ohne Datenbankausgabe:
 
 ```bash
-python scripts/quality.py          # Format, Lint, Typen, Tests, compileall
-python scripts/quality.py fix      # Ruff formatieren und sichere Fixes anwenden
-python scripts/quality.py coverage # Testabdeckung anzeigen
-python scripts/quality.py mutate   # Tracker und Solver mutieren
+python run.py --strategy gs4 --order 128 --candidate-budget 6000000 --seed 42 --no-output
 ```
 
-Mutationstests sind wegen ihrer Laufzeit absichtlich nicht Teil von `check`.
+Ein paralleler Sweep über mehrere Sequenzlängen:
 
-## Wie es funktioniert
+```bash
+python run.py --sweep gs4 32 34 36 --seeds 100 --candidate-budget 6000000 --workers 12
+```
 
-Vier ±1-Folgen `a,b,c,d` der Länge `n` bilden über negazyklische Matrizen eine
-GS4-Blockmatrix. Die Hadamard-Bedingung ist äquivalent zu:
+Die exakte Paley/Ito-Konstruktion für Ordnung 208:
+
+```bash
+python run.py --strategy paley-ng --order 208 --no-output
+```
+
+Eine vorhandene Datenbank read-only prüfen:
+
+```bash
+python run.py --check data/hadamard.db
+```
+
+## Modell
+
+Vier Folgen `a, b, c, d` aus `{+1, -1}^n` bestimmen vier negazyklische
+Blöcke und daraus eine GS4-Matrix `H` der Ordnung `4n`. Die
+Hadamard-Bedingung ist äquivalent zu
 
 ```text
-NAF_a(t) + NAF_b(t) + NAF_c(t) + NAF_d(t) = 0    für alle t = 1,…,n-1
+NAF_a(t) + NAF_b(t) + NAF_c(t) + NAF_d(t) = 0
+für t = 1, ..., n - 1.
 ```
 
-Der Tracker speichert `u_t = r_t/4` (nur `⌊(n-1)/2⌋` unabhängige Residuen) und
-berechnet die Orthogonalitätsenergie als `E = 64n · Σ u_t²`. Ein Single-Flip
-ändert jedes `u_t` um `{-1,0,+1}` — die Energieänderung ist ein Skalarprodukt
-über kleine Ganzzahlen.
+Der Tracker speichert nur die unabhängigen, durch vier geteilten Residuen
+`u`. Seine Zielfunktion ist `Q = ||u||²`; die im Repository verwendete
+Gram-Energie ist `E = 64nQ`. `Q = 0` ist exakt die GS4-Bedingung.
 
-Kompaktes Modell: [docs/SOLVER_MODEL.md](docs/SOLVER_MODEL.md). Ausführliche neue
-Charakterisierung: [docs/TIGHT_FRAME_CHARACTERIZATION.md](docs/TIGHT_FRAME_CHARACTERIZATION.md).
+Die vollständige Herleitung steht in
+[`docs/mathematics.md`](docs/mathematics.md).
 
-## Architektur
+## Systemfluss
 
-```text
-src/
-  models.py       # Gemeinsame Dataclasses und Int8Array-Vertrag
-  pipeline.py     # Konstruktion -> Solver -> unabhängige Verifikation
-  tracker.py      # NAF-Energie-Tracker: Delta-Cache, Batch-Flip, O(1) Accept
-  solver.py       # Iterated Local Search: Singles → Tabu → Kick
-  generator.py    # Startfolgen und exakte Konstruktionen
-  builder.py      # Reine GS4-Blockmatrix-Konstruktion
-  output.py       # SQLite-Persistenz
-  verify.py       # Kandidaten- und Datenbank-Audit
-scripts/
-  ablation.py     # Systematischer Komponentenvergleich
-tests/
-data/
-  hadamard.db     # Runs und verifizierte Lösungen
-docs/             # Modell, Benchmarks, Roadmap und Forschungsberichte
-archive/turyn/    # Archivierter Turyn-/Special-BS-Forschungsstrang
+```mermaid
+flowchart TD
+    CLI["run.py"] --> Tasks["Seeds und Konfigurationen"]
+    Tasks --> Pipeline["pipeline.execute"]
+    Pipeline --> Strategy{"Strategie"}
+    Strategy -->|gs4| Search["Heuristische Suche"]
+    Strategy -->|paley-ng| Supported{"Paley-Bedingung erfüllt?"}
+    Supported -->|ja| Construction["Paley/Ito"]
+    Supported -->|nein| InputError["Eingabefehler"]
+    Strategy -->|construct| Construct["Paley, Rekursion oder GS4-Fallback"]
+    Construction --> Verify["Folgen und GS4-Matrix prüfen"]
+    Search --> Solved{"Q = 0?"}
+    Solved -->|ja| Verify
+    Solved -->|nein| Result["Bester gefundener Zustand"]
+    Verify --> Result
+    Construct --> Result
+    Result --> Store{"Ausgabe aktiviert?"}
+    Store -->|ja| Database["SQLite: runs und solutions"]
+    Store -->|nein| Done["Fertig"]
+    Database --> Audit["Optionaler DB-Audit"]
+    Audit --> Done
+    InputError --> Done
 ```
 
-Kernpfad: `pipeline.execute()` erzeugt die Startfolgen, ruft `solver.search()`
-auf und verifiziert ausschließlich Nullenergie-Kandidaten unabhängig über
-`builder.build_gs4()` und `verify.independent_audit()`. `output.save_run()`
-persistiert danach nur das geprüfte Ergebnis.
+Jeder abgeschlossene Lauf kann in `runs` gespeichert werden. Nur ein
+Nullenergie-Kandidat wird im Pipelinepfad unabhängig geprüft und zusätzlich in
+`solutions` übernommen. Die lokale Datei `data/hadamard.db` ist absichtlich
+nicht versioniert.
 
-Identitäten, versionierte Lösungsmetriken und Phasen-Traces sind in
-[docs/EXPERIMENT_DATA_MODEL.md](docs/EXPERIMENT_DATA_MODEL.md) definiert.
+## Dokumentation
 
-## Design-Entscheidungen
+- [`docs/mathematics.md`](docs/mathematics.md): GS4-Gleichung, Energie,
+  Flip-Algebra und Tight-Frame-Struktur.
+- [`docs/solver.md`](docs/solver.md): aktueller Suchalgorithmus, Defaults,
+  Budget und Kontrollfluss.
+- [`docs/constructions.md`](docs/constructions.md): implementierte exakte
+  Konstruktionen und tatsächlicher `construct`-Dispatcher.
+- [`docs/experiments.md`](docs/experiments.md): Datenmodell, Identitäten,
+  Metriken und Reproduktionsvertrag.
 
-- **NAF-Reduktion** statt voller Gram-Matrix: 446k → 83 Einträge bei n=167.
-- **u = r/4, int8-Delta-Cache**: 8× kompakter, integer-norm2 ist gecached.
-- **Batch-Flip**: `D @ u` Matmul statt 64 einzelner Dot-Produkte, Early-Exit
-  beim ersten Treffer.
-- **Vorkomputierte Geometrie**: `accept()` ist reine Indexed-Addition.
-- **Tabu-Walk**: kompiliertes, nichtmonotones Escape aus lokalen Minima.
-- **Kein Pair-Rescue**: gepaarte Ablationen waren langsamer und lösten bei
-  n=36–40 seltener; auch der verbleibende Top-K-Overhead wurde entfernt.
-- **Kick statt Restart**: Kicks sind explorativ und werden immer akzeptiert.
-  Restarts warfen gute Zustände weg (–20% Lösungen bei n=32).
+Der Einstieg und die Quellenhierarchie stehen in
+[`docs/README.md`](docs/README.md).
 
-## Was wir verworfen haben
+## Qualität
 
-| Feature | Grund |
-| --- | --- |
-| Triples | 1000-Seed-Test: keine signifikante Verbesserung (p=0.855) |
-| Pair-Rescue | langsamer und bei n=36/38 signifikant schlechter |
-| monotones Gray | viele Q-Verbesserungen, aber schlechtere Solve-Rate |
-| einzelne Intervallflips | kein Low-Q-Treffer auf n=52-Zuständen |
-| Hard-Restarts | –20% Lösungen bei n=32, destruktiv |
-| rescue_mode | kein messbarer Effekt |
-| Random-Scan-Start | kein systematischer Gewinn |
-| GramTracker | korrekt, aber ~5000× langsamer als NAF-Tracker |
+```bash
+python scripts/quality.py check
+```
 
-## Nächste Schritte
+Der Check umfasst Ruff, Pyright, pytest und `compileall`. Lang laufende
+Mutationstests werden separat mit `python scripts/quality.py mutate` gestartet.
 
-Der Solver erreicht bei `n=52` häufig die letzten ein oder zwei
-Residualfehler. Der nächste Test erlaubt eine strukturierte vorübergehende
-Verschlechterung und bewertet erst das lokale Minimum nach einem erneuten
-Single-Abstieg. Damit wird Reachability statt nur unmittelbares Q untersucht.
+## Literatur
 
-Aktuelle Roadmap: [docs/TODO.md](docs/TODO.md). Offene Forschungsannahmen:
-[docs/HYPOTHESES.md](docs/HYPOTHESES.md). Übersicht aller Dokumente:
-[docs/README.md](docs/README.md). Reproduzierte Suchbefunde:
-[docs/SEARCH_FINDINGS.md](docs/SEARCH_FINDINGS.md).
-
-## Referenzen
-
-- Goethals & Seidel (1970): GS4-Blockstruktur
-- Djoković & Kotsireas: *Negaperiodic Golay pairs and Hadamard matrices*,
-  [arXiv:1508.00640](https://arxiv.org/abs/1508.00640)
-- P. Zinn et al.: *Generating Hadamard matrices with transformers*,
-  [arXiv:2604.11101](https://arxiv.org/abs/2604.11101)
-  ([Code](https://github.com/pzinn/hadamard))
+- J. M. Goethals und J. J. Seidel, *A skew Hadamard matrix of order 36*,
+  [doi:10.1017/S144678870000673X](https://doi.org/10.1017/S144678870000673X)
+- N. A. Balonin und D. Z. Djokovic, *Negaperiodic Golay pairs and Hadamard
+  matrices*, [arXiv:1508.00640](https://arxiv.org/abs/1508.00640)

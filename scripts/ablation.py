@@ -173,6 +173,11 @@ def main() -> None:
     )
     parser.add_argument("--targeted", action="store_true", help="Compare targeted escape on/off.")
     parser.add_argument(
+        "--qwindow",
+        action="store_true",
+        help="Compare the default Q handoff threshold 9 with the disabled threshold 0.",
+    )
+    parser.add_argument(
         "--n",
         type=int,
         action="append",
@@ -196,14 +201,20 @@ def main() -> None:
     args = parser.parse_args()
     if args.candidate_budget < 1 or args.seeds < 1 or args.workers < 1:
         parser.error("candidate-budget, seeds, and workers must be positive")
-    configs: list[AblationConfig] = (
-        [
+    if args.targeted and args.qwindow:
+        parser.error("--targeted and --qwindow are mutually exclusive")
+    if args.qwindow:
+        configs = [
+            AblationConfig("qwindow=9", SolverConfig(qwindow_high=9)),
+            AblationConfig("qwindow=off", SolverConfig(qwindow_high=0)),
+        ]
+    elif args.targeted:
+        configs = [
             AblationConfig("targeted", SolverConfig()),
             AblationConfig("no-targeted", SolverConfig(targeted_escape=False)),
         ]
-        if args.targeted
-        else CONFIGS
-    )
+    else:
+        configs = CONFIGS
     if args.trace_phases:
         configs = [
             replace(item, config=replace(item.config, trace_phases=True)) for item in configs

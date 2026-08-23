@@ -161,7 +161,7 @@ class SolverConfig:
     geo_weight: float = 0.0
     targeted_escape: bool = True
     escape_quench_budget: int = 10_000_000
-    qwindow_high: int = 9  # stop greedy at this Q (C-rich band, not floor)
+    qwindow_high: int = 9  # empirical handoff from greedy to escape phases
     trace_phases: bool = False
 
     def __post_init__(self) -> None:
@@ -516,7 +516,7 @@ def _random_kick(
 ) -> int:
     """Random kick: flip two randomly selected sequences."""
     n_seqs, n_cols = cur_seq.shape
-    n_flips = 2  # small kicks keep state near C-rich band
+    n_flips = 2
     cols = np.asarray(rng.integers(0, n_cols, size=n_seqs), dtype=np.intp)
     cur_e = 0
     for s in rng.choice(n_seqs, size=min(n_flips, n_seqs), replace=False):
@@ -581,7 +581,7 @@ def _search(
     )
 
     while budget.remaining > 0 and best_e > 0:
-        # Phase 1: Greedy descent — stop at QWindow (don't grind to floor)
+        # Phase 1: first-improvement greedy scan
         t_phase = time.perf_counter()
         phase_before = cur_seq.copy() if cfg.trace_phases else cur_seq
         q_before = cur_e // q_scale
@@ -606,11 +606,15 @@ def _search(
             "solved" if cur_e == 0 else ("improved" if improved else "local_minimum"),
         )
 
+        if cur_e == 0:
+            best_seq, best_e = cur_seq.copy(), 0
+            break
+
         if budget.remaining <= 0:
             best_seq, best_e = _update_best(cur_seq, cur_e, best_seq, best_e)
             break
 
-        # QWindow: if greedy hit the C-rich band, stop further descent
+        # Hand off low-Q improvements instead of starting another greedy scan.
         q_now = cur_e // q_scale
         if cfg.qwindow_high > 0 and q_now <= cfg.qwindow_high:
             improved = False  # force tabu/escape instead of more greedy
