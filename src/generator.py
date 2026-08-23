@@ -1,127 +1,82 @@
-"""Generator — search orchestration: Builder -> Tracker -> Solver."""
+"""Sequence generation and exact construction helpers."""
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 import numpy as np
-import numpy.typing as npt
 
-from .builder import Builder
-from .metrics import Metrics, check_orthogonality
-from .solver import SearchStats
-from .solver import search as ils_search
+from .constructions import paley_ng_sequences, supports_paley_ng
+from .models import Int8Array
 
-if TYPE_CHECKING:
-    from .solver import SolverConfig
+STRATEGIES = ("gs4", "paley-ng", "construct")
 
 
-@dataclass
-class Result:
-    matrix: npt.NDArray[np.int8]
-    metrics: Metrics
-    elapsed: float
-    seed: int
-    iterations: int = 0
-    sequences: npt.NDArray[np.int8] | None = None
-    stats: SearchStats | None = None
-    solver_e: int = 0  # tracker.energy() at best_seq (internal search metric)
-
-    def __str__(self) -> str:
-        order = self.matrix.shape[0]
-        head = f"OK {order}x{order}" if self.metrics.energy == 0 else f"e={self.metrics.energy}"
-        line = f"seed={self.seed:<4} {head}  {self.elapsed:.1f}s"
-        if self.stats:
-            line += "  " + self.stats.display()
-        return line
-
-
-class Generator:
-    """Hadamard search via KFlip + NAF Tracker (Goethals-Seidel GS4)."""
-
-    def __init__(self, *, kind: str, n: int) -> None:
-        self._builder = Builder(kind=kind, n=n)
-        self.tensor_n: tuple[int, int] | None = None
-        self.order = self._builder.order
-
-    @classmethod
-    def tensor(cls, *, n1: int, n2: int) -> Generator:
-        g = cls(kind="gs4", n=max(n1, n2))
-        g.tensor_n = (n1, n2)
-        g.order = 16 * n1 * n2
-        return g
-
-    @classmethod
-    def from_cli(cls, name: str, order: int) -> Generator:
-        if name == "tensor":
-            n = order // 16
-            dims = Builder.factorize(n)
-            return cls.tensor(n1=dims[0], n2=dims[1])
-        divisor = Builder.k_for(name)
-        return cls(kind=name, n=order // divisor)
-
+class StartConstruction(Protocol):
     @property
-    def name(self) -> str:
-        return self._builder.kind
+    def name(self) -> str: ...
 
-    def search(self, steps: int, seed: int, *, config: SolverConfig | None = None) -> Result:
-        started = time.perf_counter()
-        rng = np.random.default_rng(seed)
+    def build(self, n: int, rng: np.random.Generator) -> Int8Array: ...
 
-        if self.tensor_n is not None:
-            return self._tensor_search(steps, seed, started)
 
-        b = self._builder
+@dataclass(frozen=True)
+class _StartConstruction:
+    name: str
+    builder: Callable[[int, np.random.Generator], Int8Array]
 
-        sequences = rng.choice(np.array([-1, 1], dtype=np.int8), size=(b.k, b.n))
+    def build(self, n: int, rng: np.random.Generator) -> Int8Array:
+        if n <= 0:
+            raise ValueError("n must be positive")
+        return self.builder(n, rng)
 
-        from .tracker import Tracker
 
-        tracker = Tracker()
-        tracker.build(sequences)
-        best_seq, best_e, iters, stats = ils_search(
-            sequences, tracker, rng, steps=steps, config=config
-        )
-        elapsed = time.perf_counter() - started
+def n_from_order(strategy: str, order: int) -> int:
+    if strategy not in STRATEGIES:
+        raise ValueError(f"strategy must be one of {STRATEGIES}, got {strategy!r}")
+    if order <= 0 or order % 4:
+        raise ValueError(f"{strategy} requires a positive order divisible by 4")
+    return order // 4
 
-        matrix = b.build(best_seq)
-        metrics = check_orthogonality(matrix)
-        return Result(
-            matrix=matrix,
-            metrics=metrics,
-            elapsed=elapsed,
-            seed=seed,
-            iterations=iters,
-            sequences=best_seq,
-            stats=stats,
-            solver_e=best_e,
-        )
 
-    def _tensor_search(self, steps: int, seed: int, started: float) -> Result:
-        assert self.tensor_n is not None
-        n1, n2 = self.tensor_n
+def _random_start(n: int, rng: np.random.Generator) -> Int8Array:
+    return rng.choice(np.array([-1, 1], dtype=np.int8), size=(4, n))
 
-        def _fail() -> Result:
-            # best_seq not available across the kron boundary; report sentinel
-            return Result(
-                matrix=np.ones((self.order, self.order), dtype=np.int8),
-                metrics=Metrics(energy=-1, orthogonal_pairs=0, max_abs_correlation=0),
-                elapsed=time.perf_counter() - started,
-                seed=seed,
-                solver_e=-1,
-            )
 
-        r1 = Generator(kind="gs4", n=n1).search(steps=steps, seed=seed)
-        if r1.metrics.energy != 0:
-            return _fail()
+def _cyclic_start(n: int, rng: np.random.Generator) -> Int8Array:
+    base = rng.choice(np.array([-1, 1], dtype=np.int8), size=n)
+    sequences = np.empty((4, n), dtype=np.int8)
+    sequences[0] = base
+    for index, shift in enumerate(rng.integers(1, n, size=3), 1):
+        sequences[index] = np.roll(base, int(shift))
+    return sequences
 
-        r2 = Generator(kind="gs4", n=n2).search(steps=steps, seed=seed + 1)
-        if r2.metrics.energy != 0:
-            return _fail()
 
-        H = np.kron(r1.matrix, r2.matrix)
-        m = check_orthogonality(H)
-        elapsed = time.perf_counter() - started
-        return Result(matrix=H, metrics=m, elapsed=elapsed, seed=seed)
+RANDOM_START: StartConstruction = _StartConstruction("random", _random_start)
+CYCLIC_START: StartConstruction = _StartConstruction("cyclic", _cyclic_start)
+START_CONSTRUCTIONS: dict[str, StartConstruction] = {
+    construction.name: construction for construction in (RANDOM_START, CYCLIC_START)
+}
+START_KINDS = tuple(START_CONSTRUCTIONS)
+
+
+def start_construction(name: str) -> StartConstruction:
+    try:
+        return START_CONSTRUCTIONS[name]
+    except KeyError:
+        raise ValueError(f"start kind must be one of {START_KINDS}, got {name!r}") from None
+
+
+def exact_sequences(strategy: str, n: int) -> Int8Array | None:
+    if strategy == "gs4":
+        return None
+    if strategy == "paley-ng":
+        if n % 2:
+            raise ValueError("paley-ng requires even n")
+        if not supports_paley_ng(n):
+            raise ValueError(f"paley-ng requires p=2n-1 to be prime, got {2 * n - 1}")
+        return paley_ng_sequences(n)
+    if strategy == "construct":
+        return paley_ng_sequences(n) if supports_paley_ng(n) else None
+    raise ValueError(f"strategy must be one of {STRATEGIES}, got {strategy!r}")

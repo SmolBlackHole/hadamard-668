@@ -1,214 +1,195 @@
-"""Hadamard matrix search — single runs and multi-n sweeps.
-
-Usage::
-
-    python run.py --strategy gs4 --order 128 --steps 200000 --seed 42 --output data/runs.json
-    python run.py --sweep gs4 32 34 36 --seeds 10 --steps 200000 --workers 4 --output data/baseline.json
-    python run.py --check data/runs.json
-"""
+"""CLI for GS4 search, construction, persistence, and database audits."""
 
 from __future__ import annotations
 
 import argparse
-import sys
-import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from src.benchmark_stats import wilson_ci
-from src.generator import Generator, Result
-from src.output import save_run, verify
+from src.generator import (
+    START_KINDS,
+    STRATEGIES,
+    StartConstruction,
+    n_from_order,
+    start_construction,
+)
+from src.models import RunResult
+from src.output import save_run
+from src.pipeline import execute
+from src.solver import SolverConfig
+from src.verify import audit_database
 
 
-def _fmt_time(t: float) -> str:
-    """Format a duration in seconds to human-readable (us / ms / s)."""
-    if t < 0.001:
-        return f"{t * 1_000_000:.0f}us"
-    if t < 1.0:
-        return f"{t * 1000:.0f}ms"
-    return f"{t:.1f}s"
+def _format_time(seconds: float) -> str:
+    if seconds < 0.001:
+        return f"{seconds * 1_000_000:.0f}us"
+    if seconds < 1.0:
+        return f"{seconds * 1000:.0f}ms"
+    return f"{seconds:.1f}s"
 
 
-def _execute_single(kind: str, n: int, steps: int, seed: int) -> Result:
-    """Run one search (pickle-friendly for ProcessPoolExecutor)."""
-    gen = Generator(kind=kind, n=n)
-    started = time.perf_counter()
-    result = gen.search(steps=steps, seed=seed)
-    result.elapsed = time.perf_counter() - started
-    return result
-
-
-def _run_sweep(
+def _execute_single(
     strategy: str,
-    ns: list[int],
-    seeds: int,
-    steps: int,
-    workers: int,
-    output_path: Path | None,
-) -> None:
-    """Run a sweep: for each n, run ``seeds`` independent searches."""
-    tasks: list[tuple[str, int, int, int]] = []
-    for n in ns:
-        for s in range(seeds):
-            tasks.append((strategy, n, steps, s))
+    n: int,
+    candidate_budget: int,
+    seed: int,
+    solver_config: SolverConfig,
+    start: StartConstruction,
+) -> RunResult:
+    return execute(strategy, n, candidate_budget, seed, solver_config, start)
 
-    total = len(tasks)
-    results: list[Result] = []
+
+def _execute_all(
+    tasks: list[tuple[str, int, int, int, SolverConfig, StartConstruction]], workers: int
+) -> list[RunResult]:
     if workers > 1:
-        with ProcessPoolExecutor(max_workers=workers) as pool:
-            results = list(pool.map(_execute_single, *zip(*tasks, strict=True)))
-    else:
-        for i, (kind, n, st, seed) in enumerate(tasks, 1):
-            print(f"[{i}/{total}] n={n}:", end=" ", flush=True)
-            try:
-                results.append(_execute_single(kind, n, st, seed))
-            except Exception as exc:
-                print(f"FAILED: {exc}")
+        with ProcessPoolExecutor(max_workers=min(workers, len(tasks))) as pool:
+            return list(pool.map(_execute_single, *zip(*tasks, strict=True)))
 
-    for r in results:
-        print(f"  {r}")
-
-    by_n: dict[int, list[Result]] = {}
-    for r, (_, n, _, _) in zip(results, tasks, strict=True):
-        by_n.setdefault(n, []).append(r)
-
-    total_t = sum(r.elapsed for r in results)
-    print(f"\nSweep {strategy} ({seeds} seeds x {len(ns)} n, {_fmt_time(total_t)} total)")
-    for n in sorted(by_n):
-        rs = by_n[n]
-        solved = sum(1 for r in rs if r.metrics.energy == 0)
-        best_e = min(r.metrics.energy for r in rs)
-        avg_t = sum(r.elapsed for r in rs) / len(rs)
-        lo, hi = wilson_ci(solved, len(rs))
-        line = f"  n={n:>3}  {solved}/{len(rs)} solved  best_e={best_e}  avg {_fmt_time(avg_t)}  ci=[{lo:.3f}, {hi:.3f}]"
-        if solved < len(rs):
-            failed = [r.metrics.energy for r in rs if r.metrics.energy > 0]
-            line += f"  failed_e={failed}"
-        print(line)
-
-    if output_path:
-        for r, (_, n, _, _) in zip(results, tasks, strict=True):
-            save_run(output_path, strategy, n, r)
+    results: list[RunResult] = []
+    for index, task in enumerate(tasks, 1):
+        print(f"[{index}/{len(tasks)}] n={task[1]}:", end=" ", flush=True)
+        try:
+            result = _execute_single(*task)
+        except Exception as error:
+            print(f"FAILED: {error}")
+            continue
+        results.append(result)
+        print(result)
+    return results
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Hadamard matrix search via GS4 construction.",
-        epilog="sweep example: python run.py --sweep gs4 32 34 36 --seeds 10 --workers 4 --output data.json",
-    )
-    parser.add_argument(
-        "--strategy",
-        default="gs4",
-        help="Search strategy (default: gs4)",
-    )
-    parser.add_argument(
-        "--steps",
-        type=int,
-        default=200_000,
-        help="Maximum flip evaluations per run (default: 200000)",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Base RNG seed; when --runs > 1, seeds are seed, seed+1, ...",
-    )
-    parser.add_argument(
-        "--runs",
-        type=int,
-        default=1,
-        help="Number of independent searches for single-run mode (default: 1)",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=1,
-        help="Parallel worker processes (default: 1; set to cpu count for sweep)",
-    )
-    parser.add_argument(
-        "--order",
-        type=int,
-        default=668,
-        help="Target Hadamard matrix order for single-run mode (default: 668)",
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        default=None,
-        help="Append ALL runs (solved + unsolved) to this JSON dataset file",
-    )
-    parser.add_argument(
-        "--check",
-        type=str,
-        default=None,
-        help="Verify SHA-256 integrity and Hadamard property of a dataset file, then exit",
-    )
-
-    # sweep mode
-    parser.add_argument(
-        "--sweep",
-        type=str,
-        nargs="*",
-        default=None,
-        help="Sweep mode: STRATEGY followed by one or more n values to test",
-    )
-    parser.add_argument(
-        "--seeds",
-        type=int,
-        default=10,
-        help="Number of independent seeds per n in sweep mode (default: 10)",
-    )
-    args = parser.parse_args()
-
-    if args.check is not None:
-        ok = verify(Path(args.check))
-        sys.exit(0 if ok > 0 else 1)
-
-    # --- sweep mode -----------------------------------------------------------
-    if args.sweep is not None:
-        if len(args.sweep) < 2:
-            parser.error("--sweep STRATEGY N1 [N2 ...]")
-        strategy = args.sweep[0]
-        ns = [int(x) for x in args.sweep[1:]]
-        output_path = Path(args.output) if args.output else None
-        _run_sweep(strategy, ns, args.seeds, args.steps, args.workers, output_path)
+def _print_summary(results: list[RunResult]) -> None:
+    if not results:
+        print("No run completed successfully.")
         return
+    total_seconds = sum(result.elapsed_seconds for result in results)
+    solved = sum(result.solved for result in results)
+    print(
+        f"\n{len(results)} runs, {solved} solved, {_format_time(total_seconds)} accumulated runtime"
+    )
+    by_n: dict[int, list[RunResult]] = {}
+    for result in results:
+        by_n.setdefault(result.n, []).append(result)
+    for n, runs in sorted(by_n.items()):
+        count = sum(result.solved for result in runs)
+        best = min(result.energy for result in runs)
+        average = sum(result.elapsed_seconds for result in runs) / len(runs)
+        print(f"  n={n:>3}  {count}/{len(runs)} solved  best_e={best}  avg {_format_time(average)}")
 
-    # --- single-run mode ------------------------------------------------------
+
+def _solver_config(args: argparse.Namespace) -> SolverConfig:
+    return SolverConfig(
+        tabu_steps=args.tabu_steps,
+        tabu_tenure=args.tabu_tenure,
+        tabu_decay=args.tabu_decay,
+        tabu_noise=args.tabu_noise,
+        geo_weight=args.geo_weight,
+        targeted_escape=not args.no_targeted_escape,
+        escape_quench_budget=args.escape_quench_budget,
+        tabu=not args.no_tabu,
+        kick=not args.no_kick,
+        trace_phases=args.trace_phases,
+    )
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    construction = parser.add_argument_group("construction")
+    construction.add_argument("--strategy", choices=STRATEGIES, default="gs4")
+    construction.add_argument("--order", type=int, default=668)
+    construction.add_argument("--start-kind", choices=START_KINDS, default="random")
+    construction.add_argument(
+        "--sweep",
+        nargs="+",
+        metavar=("STRATEGY", "N"),
+        help="Run one strategy for one or more sequence lengths n",
+    )
+
+    execution = parser.add_argument_group("execution")
+    execution.add_argument("--candidate-budget", type=int, default=100_000_000)
+    execution.add_argument("--seed", type=int, default=42)
+    execution.add_argument("--runs", type=int, default=1)
+    execution.add_argument("--seeds", type=int, default=10)
+    execution.add_argument("--workers", type=int, default=1)
+    execution.add_argument("--output", type=Path, default=Path("data/hadamard.db"))
+    execution.add_argument("--no-output", action="store_true")
+    execution.add_argument("--no-verify", action="store_true", help="Skip the post-sweep DB audit")
+    execution.add_argument("--check", type=Path, help="Audit an existing SQLite database and exit")
+
+    solver = parser.add_argument_group("solver")
+    solver.add_argument("--tabu-steps", type=int, default=SolverConfig.tabu_steps)
+    solver.add_argument("--tabu-tenure", type=float, default=SolverConfig.tabu_tenure)
+    solver.add_argument("--tabu-decay", type=float, default=SolverConfig.tabu_decay)
+    solver.add_argument("--tabu-noise", type=float, default=SolverConfig.tabu_noise)
+    solver.add_argument("--geo-weight", type=float, default=SolverConfig.geo_weight)
+    solver.add_argument(
+        "--escape-quench-budget", type=int, default=SolverConfig.escape_quench_budget
+    )
+    solver.add_argument("--no-targeted-escape", action="store_true")
+    solver.add_argument("--no-tabu", action="store_true")
+    solver.add_argument("--no-kick", action="store_true")
+    solver.add_argument("--trace-phases", action="store_true")
+    return parser
+
+
+def main() -> int:
+    parser = _parser()
+    args = parser.parse_args()
+    if args.candidate_budget < 1 or args.runs < 1 or args.seeds < 1 or args.workers < 1:
+        parser.error("candidate-budget, runs, seeds, and workers must be positive")
+    if args.check is not None:
+        report = audit_database(args.check)
+        for failure in report.failures:
+            print(f"  FAIL {failure}")
+        print(f"{report.valid}/{report.checked} valid, {report.quarantined} quarantined")
+        return 0 if report.ok else 1
+
     try:
-        gen = Generator.from_cli(args.strategy, args.order)
-        seeds = [args.seed + offset for offset in range(args.runs)]
-        workers = min(args.runs, args.workers)
-    except ValueError as e:
-        parser.error(str(e))
+        config = _solver_config(args)
+        start = start_construction(args.start_kind)
+        if args.sweep:
+            strategy = args.sweep[0]
+            if strategy not in STRATEGIES:
+                parser.error(f"strategy must be one of {STRATEGIES}")
+            ns = [int(value) for value in args.sweep[1:]]
+            if not ns:
+                parser.error("--sweep requires at least one n")
+            tasks = [
+                (strategy, n, args.candidate_budget, args.seed + offset, config, start)
+                for n in ns
+                for offset in range(args.seeds)
+            ]
+        else:
+            n = n_from_order(args.strategy, args.order)
+            tasks = [
+                (
+                    args.strategy,
+                    n,
+                    args.candidate_budget,
+                    args.seed + offset,
+                    config,
+                    start,
+                )
+                for offset in range(args.runs)
+            ]
+    except ValueError as error:
+        parser.error(str(error))
 
-    results: list[Result] = []
-    if workers == 1:
-        for s in seeds:
-            try:
-                r = _execute_single(gen._builder.kind, gen._builder.n, args.steps, s)
-                results.append(r)
-                print(f"  {r}")
-            except Exception as exc:
-                print(f"  run seed={s} FAILED: {exc}")
-    else:
-        tasks = [(gen._builder.kind, gen._builder.n, args.steps, s) for s in seeds]
-        with ProcessPoolExecutor(max_workers=workers) as pool:
-            results = list(pool.map(_execute_single, *zip(*tasks, strict=True)))
-        for r in results:
-            print(f"  {r}")
-
-    if args.output:
-        for r in results:
-            save_run(Path(args.output), gen.name, gen._builder.n, r)
-
-    best = min(results, key=lambda r: r.metrics.energy)
-    print("\nRun summary")
-    for r in results:
-        print(f"  {r}{' *' if r.seed == best.seed else ''}")
-    if best.metrics.energy == 0:
-        print("*** HADAMARD! ***")
+    results = _execute_all(tasks, args.workers)
+    _print_summary(results)
+    if not results:
+        return 1
+    if not args.no_output:
+        for result in results:
+            save_run(args.output, result)
+    if args.sweep and not args.no_output and not args.no_verify:
+        report = audit_database(args.output)
+        print(f"DB audit: {report.valid}/{report.checked} valid, {report.quarantined} quarantined")
+        if not report.ok:
+            return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -1,36 +1,21 @@
-"""Property tests for metrics and gram primitives."""
+"""Property tests for exact tracker energy updates."""
 
 from __future__ import annotations
 
 import numpy as np
 import numpy.typing as npt
-import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 
-from src.builder import Builder
-from src.metrics import Metrics, check_orthogonality, gram_matrix, metrics_from_gram
+from src.builder import build_gs4
 from src.tracker import Tracker
 
 
-def _reference_metrics(matrix: np.ndarray) -> Metrics:
+def _matrix_energy(matrix: np.ndarray) -> int:
     gram = matrix.astype(np.int64) @ matrix.astype(np.int64).T
     upper = gram[np.triu_indices(matrix.shape[0], k=1)]
-    return Metrics(
-        energy=int(np.dot(upper, upper)),
-        orthogonal_pairs=int(np.count_nonzero(upper == 0)),
-        max_abs_correlation=int(np.abs(upper).max(initial=0)),
-    )
-
-
-def _hadamard2():
-    return np.array([[1, 1], [1, -1]], dtype=np.int8)
-
-
-def _hadamard_sylvester4():
-    h2 = _hadamard2()
-    return np.block([[h2, h2], [h2, -h2]])
+    return int(np.dot(upper, upper))
 
 
 @st.composite
@@ -65,24 +50,7 @@ def _tracker_combo(
 
 
 def _full_tracker_energy(seqs: npt.NDArray[np.int8]) -> int:
-    return _reference_metrics(Builder(kind="gs4", n=seqs.shape[1]).build(seqs)).energy
-
-
-@pytest.mark.parametrize(
-    "matrix",
-    [
-        _hadamard2(),
-        _hadamard_sylvester4(),
-        np.ones((3, 3), dtype=np.int8),
-    ],
-)
-def test_metrics_and_gram_primitives_match_independent_reference(
-    matrix: npt.NDArray[np.int8],
-) -> None:
-    expected = _reference_metrics(matrix)
-    gram = gram_matrix(matrix)
-    assert check_orthogonality(matrix) == expected
-    assert metrics_from_gram(gram) == expected
+    return _matrix_energy(build_gs4(seqs))
 
 
 @given(case=_tracker_case())

@@ -7,7 +7,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from run import _execute_single, _fmt_time
+from run import _execute_single, _format_time
+from src.generator import RANDOM_START
+from src.solver import SolverConfig
 
 
 def test_run_help_works() -> None:
@@ -22,15 +24,29 @@ def test_run_help_works() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+    assert "--symmetric-bs" not in result.stdout
+    assert "--candidate-budget" in result.stdout
+    assert "SQLite" in result.stdout
 
 
-def test_fmt_time() -> None:
-    assert _fmt_time(0.0005) == "500us"
-    assert _fmt_time(0.5) == "500ms"
-    assert _fmt_time(5.0) == "5.0s"
+def test_format_time() -> None:
+    assert _format_time(0.0005) == "500us"
+    assert _format_time(0.5) == "500ms"
+    assert _format_time(5.0) == "5.0s"
 
 
 def test_execute_single_smoke() -> None:
-    r = _execute_single("gs4", 5, 2000, 42)
-    assert r.metrics.energy == 0
-    assert r.sequences is not None
+    result = _execute_single("gs4", 5, 200_000, 42, SolverConfig(), RANDOM_START)
+    assert result.solved
+
+
+def test_execute_single_paley_ng_smoke() -> None:
+    result = _execute_single("paley-ng", 52, 1, 42, SolverConfig(), RANDOM_START)
+    assert result.solved
+    assert result.order == 208
+
+
+def test_execute_single_construct_smoke() -> None:
+    result = _execute_single("construct", 104, 1, 42, SolverConfig(), RANDOM_START)
+    assert result.solved
+    assert result.order == 416

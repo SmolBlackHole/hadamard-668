@@ -4,8 +4,14 @@ __pycache__/
 .gremlins_cache/
 .pytest-tmp/
 .cupy-cache/
+runs/
+*.db-shm
+*.db-wal
+data/_bench_*.db
 .venv/
 .env
 .coverage
 coverage.json
 reference_pzinn/
+
+experiments/learning/_archive/
