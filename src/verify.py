@@ -1,6 +1,7 @@
-"""Independent reference verification for Hadamard constructions.
+"""Acceptance and persistence checks for Hadamard constructions.
 
-Pure-Python, deliberately avoids the solver's NumPy/CuPy code paths.
+Only :func:`independent_audit` is a pure-Python reference path. Sequence,
+identity, and database checks use NumPy and the production GS4 builder.
 """
 
 from __future__ import annotations
@@ -24,7 +25,18 @@ class InvalidMatrix(ValueError):
 
 
 def independent_audit(rows: list[list[int]]) -> None:
-    """Verify rows form a Hadamard matrix: pure-Python, no NumPy."""
+    """Verify a Hadamard matrix through a pure-Python row audit.
+
+    Args:
+        rows: Square matrix represented as Python integer rows.
+
+    Raises:
+        InvalidMatrix: If an entry is not ``+1`` or ``-1``, a row has the
+            wrong length, or two distinct rows are not orthogonal.
+
+    Note:
+        This path deliberately avoids NumPy and the solver's residual tracker.
+    """
     order = len(rows)
     for i in range(order):
         if any(v not in (-1, 1) for v in rows[i]):
@@ -40,12 +52,32 @@ def independent_audit(rows: list[list[int]]) -> None:
 
 
 def verify_candidate(sequences: Int8Array) -> None:
+    """Apply the complete acceptance contract to a GS4 candidate.
+
+    Args:
+        sequences: Four binary sequences with shape ``(4, n)``.
+
+    Raises:
+        InvalidMatrix: If the negaperiodic residual equations fail or the
+            assembled ``4n`` by ``4n`` matrix fails the independent row audit.
+
+    Note:
+        This is the final pipeline acceptance boundary for search results.
+    """
     verify_gs4_sequences(sequences)
     independent_audit(build_gs4(sequences).tolist())
 
 
 def verify_gs4_sequences(sequences: Int8Array) -> None:
-    """Independently verify the exact negaperiodic GS4 equations."""
+    """Verify the exact negaperiodic GS4 residual equations.
+
+    Args:
+        sequences: Four candidate sequences with shape ``(4, n)``.
+
+    Raises:
+        InvalidMatrix: If the shape or alphabet is invalid, or any nonzero lag
+            has a nonzero combined negaperiodic autocorrelation.
+    """
     if sequences.ndim != 2 or sequences.shape[0] != 4:
         raise InvalidMatrix("candidate must have shape (4, n)")
     if not np.all(np.abs(sequences) == 1):
@@ -60,6 +92,22 @@ def verify_gs4_sequences(sequences: Int8Array) -> None:
 def validate_database_record(
     record: Mapping[str, Any], *, check_stored_identity: bool = True
 ) -> tuple[str | None, StateIdentity | None]:
+    """Return validation failures for one decoded database audit record.
+
+    Args:
+        record: Row mapping produced by the database audit loader.
+        check_stored_identity: Whether to compare the recomputed exact and
+            canonical identities with their persisted values.
+
+    Returns:
+        An error message and the recomputed identity. The error is ``None`` for
+        a valid record; the identity is ``None`` when decoding or basic state
+        validation failed.
+
+    Note:
+        Solved rows are checked against the GS4 residual equations. This
+        record-level audit does not assemble the full Hadamard matrix.
+    """
     try:
         raw = b64decode(str(record["seqs_b64"]), validate=True)
     except (Base64Error, ValueError):
@@ -93,6 +141,19 @@ def validate_database_record(
 
 
 def audit_database(path: Path, progress: Callable[[int, int], None] | None = None) -> AuditReport:
+    """Audit every stored run and solution in an existing database.
+
+    Args:
+        path: SQLite database to open through the read-only audit loader.
+        progress: Optional callback receiving checked and total row counts.
+
+    Returns:
+        Counts of valid and consistently quarantined rows plus unexpected
+        failures.
+
+    Note:
+        A missing database is not created and produces an empty, non-OK report.
+    """
     from .output import load_audit_records
 
     failures: list[str] = []

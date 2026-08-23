@@ -17,6 +17,13 @@ CANONICALIZER = "gs4-quick-orbit-v1"
 
 @dataclass(frozen=True)
 class StateIdentity:
+    """Store exact and quick-orbit identities for one GS4 state.
+
+    ``validation_hash`` identifies the raw ``int8`` payload. ``orbit_hash``
+    identifies the restricted equivalence class defined by
+    :data:`CANONICALIZER`, and ``canonical_b64`` preserves its representative.
+    """
+
     validation_hash: str
     orbit_hash: str
     canonical_b64: str
@@ -31,6 +38,17 @@ def _validate(sequences: Int8Array) -> None:
 
 
 def validation_hash(sequences: Int8Array) -> str:
+    """Hash the exact bytes of a GS4 state.
+
+    Args:
+        sequences: Four binary sequences with shape ``(4, n)``.
+
+    Returns:
+        A lowercase SHA-256 hexadecimal digest of the row-major ``int8`` bytes.
+
+    Raises:
+        ValueError: If the shape is invalid or an entry is not ``-1`` or ``1``.
+    """
     _validate(sequences)
     return hashlib.sha256(sequences.astype(np.int8, copy=False).tobytes()).hexdigest()
 
@@ -43,6 +61,7 @@ def _to_int(sequence: Int8Array) -> int:
 
 
 def _canonical_int(value: int, n: int) -> int:
+    """Choose the smallest negashift/reversal representative of one row."""
     mask = (1 << n) - 1
     best = value
     current = value
@@ -63,6 +82,7 @@ def _canonical_int(value: int, n: int) -> int:
 
 
 def _sequence_orbit(value: int, n: int) -> set[int]:
+    """Enumerate distinct negashifts and reversals of one encoded row."""
     mask = (1 << n) - 1
     variants: set[int] = set()
     for initial in (value, int(f"{value:0{n}b}"[::-1], 2)):
@@ -74,6 +94,21 @@ def _sequence_orbit(value: int, n: int) -> set[int]:
 
 
 def canonical_sequences(sequences: Int8Array) -> Int8Array:
+    """Return the quick-orbit representative of a GS4 state.
+
+    The quick orbit allows independent negashifts and reversals of each row,
+    followed by arbitrary row permutation. It does not include decimation or
+    full Hadamard equivalence.
+
+    Args:
+        sequences: Four binary sequences with shape ``(4, n)``.
+
+    Returns:
+        A newly allocated canonical array with shape ``(4, n)``.
+
+    Raises:
+        ValueError: If the shape is invalid or an entry is not ``-1`` or ``1``.
+    """
     _validate(sequences)
     n = sequences.shape[1]
     values = sorted(_canonical_int(_to_int(row), n) for row in sequences)
@@ -88,6 +123,17 @@ def canonical_sequences(sequences: Int8Array) -> Int8Array:
 
 
 def orbit_hash(sequences: Int8Array) -> str:
+    """Hash the quick-orbit representative of a GS4 state.
+
+    Args:
+        sequences: Four binary sequences with shape ``(4, n)``.
+
+    Returns:
+        A lowercase SHA-256 digest stable under the quick-orbit actions.
+
+    Raises:
+        ValueError: If the state fails shape or binary-value validation.
+    """
     _validate(sequences)
     n = sequences.shape[1]
     width = (n + 7) // 8
@@ -97,6 +143,18 @@ def orbit_hash(sequences: Int8Array) -> str:
 
 
 def quick_orbit_size(sequences: Int8Array) -> int:
+    """Count distinct states in the restricted quick orbit.
+
+    Args:
+        sequences: Four binary sequences with shape ``(4, n)``.
+
+    Returns:
+        The product of distinct row permutations and each row's negashift and
+        reversal orbit size.
+
+    Raises:
+        ValueError: If the state fails shape or binary-value validation.
+    """
     _validate(sequences)
     n = sequences.shape[1]
     values = [_to_int(row) for row in sequences]
@@ -108,6 +166,17 @@ def quick_orbit_size(sequences: Int8Array) -> int:
 
 
 def identify_state(sequences: Int8Array) -> StateIdentity:
+    """Compute all persisted identities for one GS4 state.
+
+    Args:
+        sequences: Four binary sequences with shape ``(4, n)``.
+
+    Returns:
+        Exact hash, quick-orbit hash, canonical payload, and canonicalizer ID.
+
+    Raises:
+        ValueError: If the state fails shape or binary-value validation.
+    """
     canonical = canonical_sequences(sequences)
     raw = sequences.astype(np.int8, copy=False).tobytes()
     canonical_raw = canonical.tobytes()

@@ -15,10 +15,24 @@ STRATEGIES = ("gs4", "paley-ng", "construct")
 
 
 class StartConstruction(Protocol):
-    @property
-    def name(self) -> str: ...
+    """Build a reproducible ``(4, n)`` binary search start from an RNG."""
 
-    def build(self, n: int, rng: np.random.Generator) -> Int8Array: ...
+    @property
+    def name(self) -> str:
+        """Return the stable name stored with each run."""
+        ...
+
+    def build(self, n: int, rng: np.random.Generator) -> Int8Array:
+        """Build four binary sequences of length ``n``.
+
+        Args:
+            n: Positive sequence length.
+            rng: Random generator that owns all stochastic choices.
+
+        Returns:
+            A new array with shape ``(4, n)`` and values in ``{-1, 1}``.
+        """
+        ...
 
 
 @dataclass(frozen=True)
@@ -33,6 +47,18 @@ class _StartConstruction:
 
 
 def n_from_order(strategy: str, order: int) -> int:
+    """Convert a GS4 matrix order to its sequence length.
+
+    Args:
+        strategy: Registered execution strategy.
+        order: Positive Hadamard order divisible by four.
+
+    Returns:
+        The sequence length ``n = order / 4``.
+
+    Raises:
+        ValueError: If the strategy is unknown or the order is unsupported.
+    """
     if strategy not in STRATEGIES:
         raise ValueError(f"strategy must be one of {STRATEGIES}, got {strategy!r}")
     if order <= 0 or order % 4:
@@ -62,6 +88,17 @@ START_KINDS = tuple(START_CONSTRUCTIONS)
 
 
 def start_construction(name: str) -> StartConstruction:
+    """Resolve a registered initial-state construction.
+
+    Args:
+        name: Stable construction name such as ``"random"`` or ``"cyclic"``.
+
+    Returns:
+        The stateless construction object.
+
+    Raises:
+        ValueError: If no construction is registered under ``name``.
+    """
     try:
         return START_CONSTRUCTIONS[name]
     except KeyError:
@@ -69,6 +106,23 @@ def start_construction(name: str) -> StartConstruction:
 
 
 def exact_sequences(strategy: str, n: int) -> Int8Array | None:
+    """Return a direct exact construction when the strategy supports one.
+
+    ``gs4`` always delegates to heuristic search. ``paley-ng`` requires the
+    implemented prime-field case, while ``construct`` uses it when available
+    and otherwise delegates to the pipeline's recursive or search fallback.
+
+    Args:
+        strategy: Registered execution strategy.
+        n: Requested sequence length.
+
+    Returns:
+        A deterministic ``(4, n)`` solution, or ``None`` when search or a
+        recursive construction is required.
+
+    Raises:
+        ValueError: If the strategy is unknown or ``paley-ng`` is unsupported.
+    """
     if strategy == "gs4":
         return None
     if strategy == "paley-ng":

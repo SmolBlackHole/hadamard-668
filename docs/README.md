@@ -48,3 +48,16 @@ ist für sich allein kein Beleg für einen besseren Solver.
 Ordnung `4n`. `r` bezeichnet das kombinierte negaperiodische Residuum,
 `u = r/4` seine reduzierte Form, `Q = ||u||²` die Solverzielfunktion und
 `E = 64nQ` die im Repository verwendete Gram-Energie.
+
+## Quellcode-Dokumentation
+
+Python-Docstrings sind englisch und folgen PEP 257 im Google-Stil. Die erste
+Zeile fasst den Vertrag zusammen. `Args:`, `Returns:`, `Raises:`, `Attributes:`,
+`Note:` und `Warning:` erscheinen nur, wenn sie zusätzliche Information
+tragen. Typen stehen in den Annotationen; Docstrings erklären stattdessen
+Form, Einheit, Reihenfolge, Mutation, Besitz und fachliche Bedeutung.
+
+Öffentliche Module, Klassen und Funktionen benötigen einen Docstring. Private
+Helfer werden nur dokumentiert, wenn ihr Vertrag nicht aus Signatur und Code
+hervorgeht. Tests sind ausgenommen, weil ihre Namen das geprüfte Verhalten
+beschreiben. Ruff erzwingt diese Grenze als Teil von `scripts/quality.py check`.

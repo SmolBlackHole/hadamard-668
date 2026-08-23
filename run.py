@@ -35,6 +35,7 @@ def _print_status(status: str, *, final: bool) -> None:
 
 
 def _audit_with_progress(path: Path):
+    """Audit a database while rate-limiting terminal progress updates."""
     started = time.perf_counter()
     last_update = started
 
@@ -78,6 +79,7 @@ def _print_run_plan(
 
 
 def _save_all(path: Path, results: list[RunResult]) -> None:
+    """Persist all run results while reporting batched write progress."""
     noun = "run" if len(results) == 1 else "runs"
     print(f"\nSaving {len(results)} {noun} to {path}...", flush=True)
     started = time.perf_counter()
@@ -99,6 +101,7 @@ def _save_all(path: Path, results: list[RunResult]) -> None:
 
 
 def _ignore_sigint() -> None:
+    """Leave Ctrl+C handling to the parent process in worker processes."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
@@ -110,12 +113,18 @@ def _execute_single(
     solver_config: SolverConfig,
     start: StartConstruction,
 ) -> RunResult:
+    """Execute one task through a top-level, process-pickleable boundary."""
     return execute(strategy, n, candidate_budget, seed, solver_config, start)
 
 
 def _execute_all(
     tasks: list[tuple[str, int, int, int, SolverConfig, StartConstruction]], workers: int
 ) -> list[RunResult]:
+    """Execute tasks in input order and isolate failures by seed.
+
+    Parallel completion is reported as futures finish, but successful results
+    retain the task order expected by persistence and summary output.
+    """
     if workers > 1:
         total = len(tasks)
         ordered: list[RunResult | None] = [None] * total
@@ -252,6 +261,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    """Run a search, construction, or database-audit command.
+
+    Returns:
+        Process exit status, with nonzero values for failed runs or audits.
+    """
     parser = _parser()
     args = parser.parse_args()
     if args.candidate_budget < 1 or args.runs < 1 or args.seeds < 1 or args.workers < 1:

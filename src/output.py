@@ -1,8 +1,8 @@
-"""SQLite-backed persistence for search results (replaces the JSON dataset).
+"""SQLite-backed persistence for search results and verified solutions.
 
 ``save_runs(path, results)`` stores a batch of runs in one transaction;
 ``save_run(path, result)`` is the single-run convenience wrapper.
-solved runs (energy==0) are also recorded in the ``solutions`` table.
+Verified zero-energy runs are also recorded in the ``solutions`` table.
 ``load_runs(path)`` loads the full dataset for analysis.
 """
 
@@ -109,6 +109,7 @@ _IDENTITY_COLUMNS = {
 
 
 def _ensure_identity_columns(connection: sqlite3.Connection) -> None:
+    """Add identity and provenance columns missing from a legacy database."""
     for table in ("runs", "solutions"):
         present = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
         for name, sql_type in _IDENTITY_COLUMNS.items():
@@ -119,7 +120,11 @@ def _ensure_identity_columns(connection: sqlite3.Connection) -> None:
 
 
 def _connect(db_path: Path, *, initialize: bool) -> sqlite3.Connection:
-    """Open a write connection or a genuinely read-only connection."""
+    """Open an initialized writer or a genuinely read-only SQLite connection.
+
+    Writer setup creates parent directories, enables WAL, applies the schema,
+    and extends legacy tables. Read-only setup never creates a missing file.
+    """
     if not initialize:
         connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
         connection.row_factory = sqlite3.Row
@@ -137,6 +142,7 @@ def _connect(db_path: Path, *, initialize: bool) -> sqlite3.Connection:
 
 @cache
 def _code_revision() -> str | None:
+    """Return the cached Git revision, marked dirty when the worktree differs."""
     root = Path(__file__).resolve().parents[1]
     revision = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=False
@@ -159,7 +165,26 @@ def save_runs(
     results: Sequence[RunResult],
     progress: Callable[[int, int], None] | None = None,
 ) -> None:
-    """Store a batch atomically; solved runs are also recorded in ``solutions``."""
+    """Store a batch atomically and index verified solved runs as solutions.
+
+    Every result is appended to ``runs``. Results whose :attr:`RunResult.solved`
+    property is true are inserted into ``solutions`` and deduplicated by their
+    exact payload hash.
+
+    Args:
+        db_path: SQLite file to create or update.
+        results: Completed runs to write in one transaction.
+        progress: Optional callback receiving saved and total row counts.
+
+    Raises:
+        ValueError: If a sequence payload fails identity validation.
+        sqlite3.Error: If the transaction cannot be completed.
+
+    Note:
+        Intermediate progress callbacks occur while the transaction is open;
+        the final ``(total, total)`` callback occurs after commit. An empty
+        input performs no filesystem or callback work.
+    """
     if not results:
         return
 
@@ -254,12 +279,26 @@ def save_runs(
 
 
 def save_run(db_path: Path, result: RunResult) -> None:
-    """Store one run in the database."""
+    """Store one completed run using :func:`save_runs`.
+
+    Args:
+        db_path: SQLite file to create or update.
+        result: Completed run to persist.
+    """
     save_runs(db_path, (result,))
 
 
 def load_runs(db_path: Path) -> dict[str, dict[str, list[dict[str, Any]]]]:
-    """Load all runs as ``{strategy: {n: [entries]}}`` (same shape as the old JSON format)."""
+    """Load the complete run history into the legacy nested mapping shape.
+
+    Args:
+        db_path: Existing SQLite database.
+
+    Returns:
+        ``{strategy: {str(n): [run dictionaries]}}`` ordered by strategy,
+        length, seed, and insertion ID. A missing database yields an empty
+        mapping and is not created.
+    """
     if not Path(db_path).exists():
         return {}
     con = _connect(db_path, initialize=False)
@@ -304,6 +343,15 @@ def load_runs(db_path: Path) -> dict[str, dict[str, list[dict[str, Any]]]]:
 
 
 def load_audit_records(db_path: Path) -> list[dict[str, Any]]:
+    """Load raw run and solution rows required by the read-only audit.
+
+    Args:
+        db_path: Existing SQLite database.
+
+    Returns:
+        Rows from both tables, annotated with ``source_table``. A missing
+        database yields an empty list and is not created.
+    """
     if not db_path.exists():
         return []
     con = _connect(db_path, initialize=False)
@@ -329,7 +377,21 @@ def load_audit_records(db_path: Path) -> list[dict[str, Any]]:
 
 
 def migrate_database(db_path: Path) -> MigrationReport:
-    """Backfill versioned identities and quarantine invalid legacy records."""
+    """Backfill versioned identities and classify invalid legacy records.
+
+    Both ``runs`` and ``solutions`` are processed in one write transaction.
+    Invalid rows remain in place with ``valid = 0`` and their validation error;
+    no experimental history is deleted.
+
+    Args:
+        db_path: SQLite database to create, extend, or migrate.
+
+    Returns:
+        Counts of checked, valid, and quarantined rows.
+
+    Raises:
+        sqlite3.Error: If schema setup or the migration transaction fails.
+    """
     from .verify import validate_database_record
 
     con = _connect(db_path, initialize=True)
@@ -373,6 +435,16 @@ def migrate_database(db_path: Path) -> MigrationReport:
 
 
 def load_valid_solutions(db_path: Path) -> list[dict[str, Any]]:
+    """Load solution rows currently marked valid.
+
+    Args:
+        db_path: Existing SQLite database.
+
+    Returns:
+        Solution dictionaries ordered by length and insertion ID. Each includes
+        a writable copy of the decoded ``(4, n)`` ``int8`` array under
+        ``sequences``. A missing database yields an empty list.
+    """
     if not db_path.exists():
         return []
     con = _connect(db_path, initialize=False)
@@ -397,6 +469,17 @@ def load_valid_solutions(db_path: Path) -> list[dict[str, Any]]:
 def store_solution_features(
     db_path: Path, feature_version: str, features: list[tuple[int, dict[str, Any]]]
 ) -> None:
+    """Upsert versioned structural features for persisted solutions.
+
+    Args:
+        db_path: SQLite database to create or update.
+        feature_version: Stable identifier for the feature schema.
+        features: Pairs of solution IDs and JSON-compatible feature mappings.
+
+    Raises:
+        sqlite3.Error: If the transactional upsert cannot be completed.
+        TypeError: If a feature mapping is not JSON serializable.
+    """
     con = _connect(db_path, initialize=True)
     try:
         con.execute("BEGIN IMMEDIATE")

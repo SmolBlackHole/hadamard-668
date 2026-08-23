@@ -34,12 +34,27 @@ def _prime_factors(value: int) -> list[int]:
 
 
 def supports_paley_ng(n: int) -> bool:
-    """Return whether the implemented prime-field Paley/Ito case applies."""
+    """Return whether the implemented prime-field Paley/Ito case applies.
+
+    The supported case requires positive even ``n`` and prime ``p = 2n - 1``.
+    General prime-power cases are not implemented.
+    """
     return n > 0 and n % 2 == 0 and _is_prime(2 * n - 1)
 
 
 def paley_ng_sequences(n: int) -> Int8Array:
-    """Construct the second Paley/Ito NG-pair, duplicated as a GS4 tuple."""
+    """Construct the second Paley/Ito NG-pair as an exact GS4 tuple.
+
+    Args:
+        n: Positive even sequence length with prime ``p = 2n - 1``.
+
+    Returns:
+        A deterministic binary array ``(a, b, a, b)`` with shape ``(4, n)``.
+
+    Raises:
+        ValueError: If ``n`` is outside the implemented prime-field case.
+        RuntimeError: If a primitive generator of ``GF(p^2)`` cannot be found.
+    """
     if not supports_paley_ng(n):
         raise ValueError("Paley-NG requires even n with prime p=2n-1")
 
@@ -93,14 +108,33 @@ def paley_ng_sequences(n: int) -> Int8Array:
 
 
 def golay_pair_2() -> tuple[Int8Array, Int8Array]:
-    """Return the canonical binary Golay pair of length two."""
+    """Return new arrays for the canonical binary Golay pair of length two."""
     return np.asarray((1, -1), dtype=np.int8), np.asarray((1, 1), dtype=np.int8)
 
 
 def turyn_pair(
     golay_a: Int8Array, golay_b: Int8Array, c: Int8Array, d: Int8Array
 ) -> tuple[Int8Array, Int8Array]:
-    """Apply the Balonin-Djokovic Turyn product to one sequence pair."""
+    """Apply the Balonin-Djokovic Turyn product to one sequence pair.
+
+    Args:
+        golay_a: First row of the ordinary Golay factor.
+        golay_b: Equally sized second row of the ordinary Golay factor.
+        c: First row of the negaperiodic factor.
+        d: Equally sized second row of the negaperiodic factor.
+
+    Returns:
+        Two newly allocated binary rows whose length is the product of the
+        factor lengths.
+
+    Raises:
+        ValueError: If either pair is not equally sized and one-dimensional, or
+            if the product does not contain only ``-1`` and ``1``.
+
+    Note:
+        Shape and output are checked, but the function does not prove that the
+        inputs satisfy the mathematical Golay or negaperiodic preconditions.
+    """
     if golay_a.ndim != 1 or golay_b.shape != golay_a.shape or c.ndim != 1 or d.shape != c.shape:
         raise ValueError("Turyn inputs must be equally sized one-dimensional pairs")
 
@@ -118,7 +152,23 @@ def turyn_pair(
 
 
 def turyn_gs4(golay_a: Int8Array, golay_b: Int8Array, sequences: Int8Array) -> Int8Array:
-    """Lift a GS4 tuple by applying one Turyn factor to both sequence pairs."""
+    """Lift a GS4 tuple by applying one Turyn factor to both row pairs.
+
+    Args:
+        golay_a: First row of the ordinary Golay factor.
+        golay_b: Equally sized second row of the ordinary Golay factor.
+        sequences: Four rows with shape ``(4, n)`` grouped as two pairs.
+
+    Returns:
+        A new binary array with shape ``(4, len(golay_a) * n)``.
+
+    Raises:
+        ValueError: If the GS4 shape, factor shapes, or binary output is invalid.
+
+    Note:
+        The caller owns the mathematical preconditions. The execution pipeline
+        independently verifies constructed solutions before accepting them.
+    """
     if sequences.ndim != 2 or sequences.shape[0] != 4:
         raise ValueError("Turyn GS4 input must have shape (4, n)")
     first = turyn_pair(golay_a, golay_b, sequences[0], sequences[1])
@@ -127,5 +177,15 @@ def turyn_gs4(golay_a: Int8Array, golay_b: Int8Array, sequences: Int8Array) -> I
 
 
 def double_gs4(sequences: Int8Array) -> Int8Array:
-    """Lift a GS4 tuple from length n to 2n using the Golay-2 factor."""
+    """Lift a GS4 tuple from length ``n`` to ``2n`` using the Golay-2 factor.
+
+    Args:
+        sequences: Four input rows with shape ``(4, n)``.
+
+    Returns:
+        A newly allocated binary array with shape ``(4, 2n)``.
+
+    Raises:
+        ValueError: If the input shape or resulting binary values are invalid.
+    """
     return turyn_gs4(*golay_pair_2(), sequences)

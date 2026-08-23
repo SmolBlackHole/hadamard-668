@@ -25,6 +25,8 @@ Int8Array = npt.NDArray[np.int8]
 
 
 class PairDiagnosis(TypedDict):
+    """Exact two-flip repair metrics for one Q=1 endpoint."""
+
     best_pair_q: int
     best_pair: list[list[int]]
     n_solving_pairs: int
@@ -44,6 +46,11 @@ def _support_histogram(delta: npt.NDArray[np.int8]) -> dict[str, int]:
 
 
 def _pair_diagnosis(sequences: Int8Array) -> PairDiagnosis:
+    """Exhaustively score unordered two-flip repairs without changing state.
+
+    The tracker is mutated for each first flip and restored before the next
+    iteration. A fresh rebuild validates the best pair before returning.
+    """
     n = sequences.shape[1]
     scale = 64 * n
     work = sequences.copy()
@@ -103,6 +110,18 @@ def _pair_diagnosis(sequences: Int8Array) -> PairDiagnosis:
 
 
 def analyze_q1_state(sequences: npt.ArrayLike) -> dict[str, object]:
+    """Diagnose exact one- and two-flip repair structure at Q=1.
+
+    Args:
+        sequences: Four binary sequences with shape ``(4, n)``.
+
+    Returns:
+        JSON-serializable residual, flip-support, and repair-depth metrics.
+
+    Raises:
+        ValueError: If the input is not a binary GS4 state at Q=1.
+        RuntimeError: If tracker identities or repair scores disagree.
+    """
     array = np.asarray(sequences, dtype=np.int8)
     if array.ndim != 2 or array.shape[0] != 4 or np.any(np.abs(array) != 1):
         raise ValueError("expected a binary GS4 state with shape (4, n)")
@@ -167,6 +186,19 @@ def diagnose_database(
     strategy: str = "gs4",
     selected_n: set[int] | None = None,
 ) -> dict[str, object]:
+    """Diagnose unsolved Q=1 endpoints stored in a result database.
+
+    Args:
+        db_path: SQLite result database to read.
+        strategy: Strategy group selected from the persisted dataset.
+        selected_n: Optional sequence lengths to include.
+
+    Returns:
+        JSON-serializable per-length summaries and individual Q=1 analyses.
+
+    Raises:
+        ValueError: If a stored solver energy violates the GS4 scale.
+    """
     dataset = load_runs(db_path)
     groups = dataset.get(strategy, {})
     results: list[dict[str, object]] = []
@@ -234,6 +266,14 @@ def diagnose_database(
 
 
 def print_summary(report: dict[str, object]) -> None:
+    """Print one compact line for each sequence length in a diagnosis report.
+
+    Args:
+        report: Report returned by :func:`diagnose_database`.
+
+    Raises:
+        TypeError: If the report does not contain a mapping summary.
+    """
     summary_value = report["summary"]
     if not isinstance(summary_value, dict):
         raise TypeError("invalid diagnosis summary")
@@ -248,6 +288,14 @@ def print_summary(report: dict[str, object]) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run database diagnosis and write the JSON report.
+
+    Args:
+        argv: Optional argument vector. Uses process arguments when omitted.
+
+    Returns:
+        Zero after successfully writing the report.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=Path("data/hadamard.db"))
     parser.add_argument("--output", type=Path, default=Path("runs/q1_diagnosis.json"))

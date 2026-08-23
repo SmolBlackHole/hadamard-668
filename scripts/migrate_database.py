@@ -10,6 +10,11 @@ from src.verify import audit_database
 
 
 def main() -> int:
+    """Migrate one result database and audit the resulting records.
+
+    Returns:
+        Zero when the post-migration audit passes, otherwise one.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("database", type=Path, nargs="?", default=Path("data/hadamard.db"))
     args = parser.parse_args()

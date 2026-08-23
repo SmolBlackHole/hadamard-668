@@ -23,6 +23,32 @@ def execute(
     solver_config: SolverConfig,
     start: StartConstruction = RANDOM_START,
 ) -> RunResult:
+    """Execute one exact-construction or heuristic-search run.
+
+    Exact and solved heuristic candidates pass the independent GS4 residual
+    and full-matrix audit before the returned result is marked as verified.
+
+    Args:
+        strategy: One of ``gs4``, ``paley-ng``, or ``construct``.
+        n: Positive length of each of the four sequences.
+        candidate_budget: Maximum logical evaluations for each invoked search.
+        seed: Seed for the NumPy random generator used by heuristic search.
+        solver_config: Search-phase configuration persisted with the result.
+        start: Construction for the heuristic initial state.
+
+    Returns:
+        The final state, verification status, timing in seconds, and search
+        accounting for the requested run.
+
+    Raises:
+        ValueError: If an input or requested exact construction is unsupported.
+        InvalidMatrix: If an exact or zero-energy candidate fails verification.
+
+    Note:
+        A failed recursive ``construct`` base attempt receives its own full
+        budget. Its work is not included in the outer result's candidate count
+        before the fallback search starts.
+    """
     if n <= 0:
         raise ValueError("n must be positive")
     if candidate_budget < 1:

@@ -39,11 +39,18 @@ select = [
     "PIE",  # pie (unnecessary pass, etc.)
     "PERF", # performance
     "RET",  # return checks
+    "D",    # pydocstyle
 ]
-ignore = ["E501", "E741", "C901", "PERF401", "B905"]
+ignore = ["E501", "E741", "C901", "PERF401", "B905", "D105", "D107"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["src"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D"]
 
 [tool.ruff.format]
 quote-style = "double"

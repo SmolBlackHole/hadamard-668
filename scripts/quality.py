@@ -49,6 +49,7 @@ COMMANDS: dict[str, tuple[Command, ...]] = {
 
 
 def _run(commands: tuple[Command, ...]) -> int:
+    """Run commands sequentially and stop at the first failing exit status."""
     for command in commands:
         print(f"\n> {' '.join(command)}", flush=True)
         result = subprocess.run(command, cwd=ROOT, check=False)
@@ -58,6 +59,14 @@ def _run(commands: tuple[Command, ...]) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the selected repository quality workflow.
+
+    Args:
+        argv: Optional argument vector. Uses process arguments when omitted.
+
+    Returns:
+        The first failing command status, or zero when all checks pass.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action",

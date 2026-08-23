@@ -13,6 +13,8 @@ PROJ = Path(__file__).resolve().parent.parent
 
 
 class SweepEntry(TypedDict):
+    """Persisted outcome fields used by the start-state benchmark."""
+
     seed: int
     solved: bool
     energy: int
@@ -26,6 +28,23 @@ def run_sweep(
     extra_args: Sequence[str],
     label: str,
 ) -> list[SweepEntry]:
+    """Run one isolated start-state sweep and remove its temporary database.
+
+    Args:
+        n: GS4 sequence length.
+        seeds: Number of consecutive seeds to run.
+        candidate_budget: Candidate evaluations allowed per seed.
+        extra_args: Additional arguments forwarded to ``run.py``.
+        label: File-safe label for terminal output and temporary storage.
+
+    Returns:
+        Outcomes loaded from the temporary result database.
+
+    Note:
+        ``run_sweep()`` starts a full solver benchmark. Importing the module
+        does not execute it; invoke the script explicitly when the cost is
+        intended.
+    """
     out = PROJ / f"data/_bench_{n}_{label}.db"
     try:
         cmd: list[str] = [

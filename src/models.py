@@ -13,6 +13,12 @@ Int8Array = npt.NDArray[np.int8]
 
 @dataclass
 class CandidateBudget:
+    """Track the logical candidate evaluations available to one search.
+
+    The counter is mutable and shared by all phases of a solver invocation.
+    Candidate evaluations measure algorithmic work, not elapsed time.
+    """
+
     limit: int
     used: int = 0
 
@@ -22,15 +28,34 @@ class CandidateBudget:
 
     @property
     def remaining(self) -> int:
+        """Return the number of candidate evaluations not yet reserved."""
         return self.limit - self.used
 
     def take(self, requested: int) -> int:
+        """Reserve candidate evaluations without exceeding the limit.
+
+        Args:
+            requested: Maximum number of evaluations to reserve.
+
+        Returns:
+            The granted count, which may be smaller near exhaustion.
+
+        Raises:
+            ValueError: If ``requested`` is negative.
+
+        Note:
+            The granted count is added to :attr:`used` immediately.
+        """
+        if requested < 0:
+            raise ValueError("requested candidate evaluations must not be negative")
         granted = min(requested, self.remaining)
         self.used += granted
         return granted
 
 
 class SearchPhase(StrEnum):
+    """Top-level phases represented in optional search traces."""
+
     INITIALIZE = "initialize"
     GREEDY = "greedy"
     TABU = "tabu"
@@ -40,6 +65,13 @@ class SearchPhase(StrEnum):
 
 @dataclass(frozen=True)
 class PhaseEvent:
+    """Record the work and state transition of one completed search phase.
+
+    Energy fields use the reduced objective ``Q``. Candidate counts are logical
+    evaluations, move counts describe accepted transitions, and both hashes
+    identify the state after the phase.
+    """
+
     phase: SearchPhase
     q_before: int
     q_after: int
@@ -56,6 +88,7 @@ class PhaseEvent:
     outcome: str
 
     def to_dict(self) -> dict[str, object]:
+        """Return the stable JSON-compatible phase representation."""
         return {
             "phase": self.phase.value,
             "q_before": self.q_before,
@@ -76,6 +109,13 @@ class PhaseEvent:
 
 @dataclass
 class SearchStats:
+    """Accumulate mutable counters and timings for one solver invocation.
+
+    Durations are measured in seconds. Candidate-evaluation counters partition
+    the logical budget, while move counters include accepted transitions even
+    when a surrounding walk is later discarded.
+    """
+
     greedy_moves: int = 0
     tabu_moves: int = 0
     random_kicks: int = 0
@@ -112,6 +152,7 @@ class SearchStats:
 
     @property
     def total_candidate_evals(self) -> int:
+        """Return candidate evaluations consumed across all search phases."""
         return (
             self.greedy_candidate_evals
             + self.tabu_candidate_evals
@@ -121,7 +162,7 @@ class SearchStats:
 
     @property
     def total_accepted_moves(self) -> int:
-        """Accepted transitions across the top-level search and its quenches."""
+        """Return accepted transitions across the search and its quenches."""
         return (
             self.greedy_moves
             + self.tabu_moves
@@ -131,25 +172,41 @@ class SearchStats:
         )
 
     def record_solve(self, phase: str, q_before: int) -> None:
+        """Record the first phase that reached ``Q = 0``.
+
+        Later calls do not replace the original solve provenance.
+
+        Args:
+            phase: Name of the phase that produced the solution.
+            q_before: Reduced objective immediately before the solving move.
+        """
         if self.solve_phase is None:
             self.solve_phase = phase
             self.solve_q_before = q_before
 
     def hit_greedy(self) -> None:
+        """Count one accepted greedy move and extend the current streak."""
         self.greedy_moves += 1
         self._streak += 1
 
     def hit_other(self) -> None:
+        """Close the current greedy streak before a non-greedy transition."""
         if self._streak:
             self.greedy_streaks.append(self._streak)
             self._streak = 0
 
     def flush(self) -> None:
+        """Persist an unfinished greedy streak into the public statistics."""
         if self._streak:
             self.greedy_streaks.append(self._streak)
             self._streak = 0
 
     def to_dict(self) -> dict[str, object]:
+        """Return the versioned JSON-compatible statistics representation.
+
+        Note:
+            Serializing flushes the current greedy streak.
+        """
         self.flush()
         return {
             "stats_schema_version": 2,
@@ -189,6 +246,11 @@ class SearchStats:
         }
 
     def display(self) -> str:
+        """Return a compact single-line summary for terminal output.
+
+        Note:
+            Formatting flushes the current greedy streak.
+        """
         self.flush()
         parts = [
             f"moves={self.total_accepted_moves}"
@@ -212,6 +274,12 @@ class SearchStats:
 
 @dataclass(frozen=True)
 class SolverResult:
+    """Return the best state and accounting from a solver invocation.
+
+    ``energy`` is the exact matrix energy ``E = 64 n Q``. The sequence array
+    has shape ``(4, n)`` and is owned by the result.
+    """
+
     sequences: Int8Array
     energy: int
     candidate_evals: int
@@ -219,11 +287,20 @@ class SolverResult:
 
     @property
     def solved(self) -> bool:
+        """Return whether the solver reached exact zero energy."""
         return self.energy == 0
 
 
 @dataclass(frozen=True)
 class RunResult:
+    """Describe one end-to-end construction or search run.
+
+    The sequence array has shape ``(4, n)``. ``elapsed_seconds`` covers the
+    pipeline invocation, and candidate fields record logical solver work.
+    A run is accepted as solved only when it has zero energy and passed
+    independent verification.
+    """
+
     strategy: str
     n: int
     seed: int
@@ -239,10 +316,12 @@ class RunResult:
 
     @property
     def solved(self) -> bool:
+        """Return whether the run is both zero-energy and verified."""
         return self.energy == 0 and self.verified
 
     @property
     def order(self) -> int:
+        """Return the order ``4n`` of the corresponding GS4 matrix."""
         return 4 * self.n
 
     def __str__(self) -> str:
@@ -252,6 +331,12 @@ class RunResult:
 
 @dataclass(frozen=True)
 class AuditReport:
+    """Summarize a read-only database audit.
+
+    Quarantined rows are known invalid legacy records whose stored status
+    matches the newly computed result. Failures are unexpected mismatches.
+    """
+
     checked: int
     valid: int
     quarantined: int = 0
@@ -259,6 +344,7 @@ class AuditReport:
 
     @property
     def ok(self) -> bool:
+        """Return whether every nonempty input row has an expected status."""
         return (
             self.checked > 0 and self.valid + self.quarantined == self.checked and not self.failures
         )
@@ -266,6 +352,8 @@ class AuditReport:
 
 @dataclass(frozen=True)
 class MigrationReport:
+    """Count rows classified by an identity-backfill migration."""
+
     checked: int
     valid: int
     quarantined: int

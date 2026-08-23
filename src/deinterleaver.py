@@ -1,26 +1,26 @@
-"""Deinterleave: negacyclic Golay pair at 2m -> GS4(m).
+"""Explore deinterleaving a negacyclic Golay pair into GS4 sequences.
 
 For any NG pair (a,b) at even length 2m, the even-lag NAF decomposition
 NAF(2s) = NAF_even(s) + NAF_odd(s) implies that (a_even, a_odd, b_even, b_odd)
 is GS4(m).  This includes Paley as a special case.
 
-Self-contained. No repo imports.
+This is a standalone experimental research CLI with no repository imports. It
+does not participate in the canonical construction, search, or verification
+pipeline.
 
 Usage::
 
-    python deinterleave.py --paley 83      # Paley(166) -> GS4(83) -> H332
-    python deinterleave.py --turyn 4       # Turyn round-trip test
-    python deinterleave.py --sweep         # all constructable n
-    python deinterleave.py --verify        # round-trip: deint(lift(x)) == x
+    python -m src.deinterleaver --paley 83  # Paley(166) -> GS4(83) -> H332
+    python -m src.deinterleaver --turyn 4   # Turyn round-trip test
+    python -m src.deinterleaver --sweep     # all constructable n
+    python -m src.deinterleaver --verify    # deint(lift(x)) round-trip
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-# ============================================================
-# Paley/Ito (same as alt-double.py, src/constructions.py)
-# ============================================================
+# --- Paley/Ito (same as alt-double.py, src/constructions.py) ------------------
 
 
 def _is_prime(n: int) -> bool:
@@ -51,6 +51,7 @@ def _prime_factors(n: int) -> list[int]:
 
 
 def supports_paley(n: int) -> bool:
+    """Return whether ``n`` satisfies the local Ito-Paley preconditions."""
     return n > 0 and n % 2 == 0 and _is_prime(2 * n - 1)
 
 
@@ -92,7 +93,18 @@ def _gf_primitive(prime: int, factors: list[int]) -> tuple[GF2, int]:
 
 
 def paley_gs4(n: int) -> np.ndarray:
-    """Build GS4(n) via Ito-Paley."""
+    """Build a GS4 quadruple using the local Ito-Paley implementation.
+
+    Args:
+        n: Even sequence length such that ``2 * n - 1`` is prime.
+
+    Returns:
+        Four binary sequences with shape ``(4, n)``.
+
+    Note:
+        Call :func:`supports_paley` first. This experimental implementation
+        does not validate the precondition itself.
+    """
     prime = 2 * n - 1
     factors = _prime_factors(prime * prime - 1)
 
@@ -111,13 +123,18 @@ def paley_gs4(n: int) -> np.ndarray:
     return np.stack((a, b, a, b))
 
 
-# ============================================================
-# Turyn doubling
-# ============================================================
+# --- Turyn doubling -----------------------------------------------------------
 
 
 def turyn_double(sequences: np.ndarray) -> np.ndarray:
-    """Turyn x2: GS4(m) -> GS4(2m) via Golay-2 factor."""
+    """Double a GS4 quadruple with the length-two Golay factor.
+
+    Args:
+        sequences: Four binary sequences with shape ``(4, m)``.
+
+    Returns:
+        Four binary sequences with shape ``(4, 2m)``.
+    """
     p = np.asarray((1, -1), dtype=np.int8)  # Golay pair
     q = np.asarray((1, 1), dtype=np.int8)
     plus = (p + q) // 2  # [1, 0]
@@ -143,7 +160,14 @@ def _alt_seq(seq: np.ndarray) -> np.ndarray:
 
 
 def alt_double(sequences: np.ndarray) -> np.ndarray:
-    """Alt doubling: GS4(m) -> GS4(2m)."""
+    """Double a GS4 quadruple by interleaving and alternating signs.
+
+    Args:
+        sequences: Four binary sequences with shape ``(4, m)``.
+
+    Returns:
+        Four binary sequences with shape ``(4, 2m)``.
+    """
     m = sequences.shape[1]
     a_out = np.zeros(2 * m, dtype=np.int8)
     b_out = np.zeros(2 * m, dtype=np.int8)
@@ -154,19 +178,21 @@ def alt_double(sequences: np.ndarray) -> np.ndarray:
     return np.stack((a_out, _alt_seq(a_out), b_out, _alt_seq(b_out)))
 
 
-# ============================================================
-# Deinterleaving
-# ============================================================
+# --- Deinterleaving -----------------------------------------------------------
 
 
 def deinterleave_paley(gs4_2m: np.ndarray) -> np.ndarray:
-    """NG(2m) -> GS4(m): (a_even, a_odd, b_even, b_odd).
+    """Split a length-``2m`` Golay pair into a GS4 quadruple.
 
-    For any negaperiodic Golay pair (a,b) at length 2m, the even-lag
-    NAF decomposition NAF(2s) = NAF_even(s) + NAF_odd(s) implies that
-    the subsampled quadruple is GS4(m).
+    Args:
+        gs4_2m: Input whose first two rows form a negaperiodic Golay pair.
 
-    In particular, when the input is Paley(2m) the output is GS4(m).
+    Returns:
+        ``(a_even, a_odd, b_even, b_odd)`` with shape ``(4, m)``.
+
+    Note:
+        The even-lag NAF decomposition proves the result for any such pair;
+        Paley input is only one source.
     """
     return np.stack(
         [
@@ -179,20 +205,26 @@ def deinterleave_paley(gs4_2m: np.ndarray) -> np.ndarray:
 
 
 def deinterleave_turyn(gs4_2m: np.ndarray) -> np.ndarray:
-    """Turyn(GS4(m)) -> GS4(m): even columns of all 4 sequences.
+    """Recover the source quadruple from a Turyn-doubled quadruple.
 
-    Turyn formula: e[2j]=a[j], f[2j]=b[j]. Even positions = original.
+    Args:
+        gs4_2m: Four Turyn-doubled sequences with shape ``(4, 2m)``.
+
+    Returns:
+        The even columns of all four rows, with shape ``(4, m)``.
     """
     return np.stack([gs4_2m[s, 0::2] for s in range(4)])
 
 
 def deinterleave_alt(gs4_2m: np.ndarray) -> np.ndarray:
-    """Alt(GS4(m)) -> GS4(m): subsample even positions.
+    """Recover source rows from an alternation-doubled quadruple.
 
-    Alt formula: a=c0|c1, alt(a)=c0|(-c1). Both have c0 at even j.
-    So even positions of ALL 4 sequences recover (c0, c0, d0, d0).
-    Actually: even seqs[0][::2] = a0, seqs[1][::2] = a0, etc.
-    The correct recovery is (seqs[0][::2], seqs[0][1::2], seqs[2][::2], seqs[2][1::2]).
+    Args:
+        gs4_2m: Four alternation-doubled sequences with shape ``(4, 2m)``.
+
+    Returns:
+        Rows reconstructed from the even and odd columns of the two
+        interleaved source rows.
     """
     return np.stack(
         [
@@ -205,7 +237,18 @@ def deinterleave_alt(gs4_2m: np.ndarray) -> np.ndarray:
 
 
 def deinterleave(gs4_2m: np.ndarray, source: str = "paley") -> np.ndarray:
-    """Deinterleave GS4(2m) -> GS4(m) based on the source construction."""
+    """Dispatch deinterleaving according to the source construction.
+
+    Args:
+        gs4_2m: Four source-specific sequences with shape ``(4, 2m)``.
+        source: One of ``"paley"``, ``"turyn"``, or ``"alt"``.
+
+    Returns:
+        Four deinterleaved sequences with shape ``(4, m)``.
+
+    Raises:
+        ValueError: If ``source`` is unknown.
+    """
     if source == "paley":
         return deinterleave_paley(gs4_2m)
     if source == "turyn":
@@ -215,12 +258,18 @@ def deinterleave(gs4_2m: np.ndarray, source: str = "paley") -> np.ndarray:
     raise ValueError(f"unknown source: {source}")
 
 
-# ============================================================
-# NAF energy
-# ============================================================
+# --- NAF energy ---------------------------------------------------------------
 
 
 def gs4_energy(seqs: np.ndarray) -> int:
+    """Compute exact GS4 matrix energy from independent NAF residuals.
+
+    Args:
+        seqs: Four binary sequences with shape ``(4, n)``.
+
+    Returns:
+        Energy ``64 * n * Q``. Zero identifies a GS4 solution.
+    """
     n = seqs.shape[1]
     j = np.arange(n, dtype=np.intp)[:, None]
     t = np.arange(n, dtype=np.intp)[None, :]
@@ -233,9 +282,7 @@ def gs4_energy(seqs: np.ndarray) -> int:
     return int(64 * n * np.dot(u, u))
 
 
-# ============================================================
-# Hadamard builder
-# ============================================================
+# --- Hadamard builder ---------------------------------------------------------
 
 
 def _negacirc(values: np.ndarray) -> np.ndarray:
@@ -246,6 +293,14 @@ def _negacirc(values: np.ndarray) -> np.ndarray:
 
 
 def build_hadamard(seqs: np.ndarray) -> np.ndarray:
+    """Build a Goethals-Seidel matrix from four negacyclic sequences.
+
+    Args:
+        seqs: Four length-``n`` sequences satisfying the GS4 condition.
+
+    Returns:
+        Binary matrix with shape ``(4n, 4n)``.
+    """
     A = _negacirc(seqs[0])
     B = _negacirc(seqs[1])
     C = _negacirc(seqs[2])
@@ -261,21 +316,28 @@ def build_hadamard(seqs: np.ndarray) -> np.ndarray:
 
 
 def verify(mat: np.ndarray) -> bool:
+    """Check the exact Hadamard Gram identity.
+
+    Args:
+        mat: Candidate square matrix.
+
+    Returns:
+        Whether ``mat @ mat.T`` equals its order times the identity matrix.
+    """
     N = mat.shape[0]
     HHt = mat.astype(np.int64) @ mat.astype(np.int64).T
     return bool(np.array_equal(HHt, np.eye(N, dtype=np.int64) * N))
 
 
-# ============================================================
-# Main
-# ============================================================
+# --- Main ---------------------------------------------------------------------
 
 
 def main() -> None:
+    """Run the standalone deinterleaving and round-trip experiments."""
     import argparse
 
     p = argparse.ArgumentParser(
-        description="Deinterleave: Paley(2m) -> GS4(m), Turyn/Alt round-trips"
+        description="Standalone experimental Paley/Turyn/Alt deinterleaving"
     )
     p.add_argument(
         "--paley", type=int, metavar="M", help="Construct GS4(m) via Paley(2m) + deinterleave"

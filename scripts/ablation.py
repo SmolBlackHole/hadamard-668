@@ -31,6 +31,13 @@ from src.solver import SolverConfig
 
 @dataclass(frozen=True)
 class AblationConfig:
+    """Named solver configuration used as one ablation arm.
+
+    Attributes:
+        name: Stable label written to reports and terminal tables.
+        config: Complete solver configuration for this arm.
+    """
+
     name: str
     config: SolverConfig
 
@@ -49,7 +56,7 @@ _worker_warmed = False
 
 
 def _warm_worker() -> None:
-    """Compile the common Numba path before measuring this worker's runs."""
+    """Compile the common Numba path once before measuring a worker's runs."""
     global _worker_warmed
     if _worker_warmed:
         return
@@ -65,7 +72,7 @@ def _warm_worker() -> None:
 
 
 def _run_one(args: tuple[str, int, int, int, str, SolverConfig]) -> dict[str, Any]:
-    """Run a single search.  Pickle-friendly for ProcessPoolExecutor."""
+    """Run one measured search through a process-pickleable boundary."""
     name, n, seed, candidate_budget, start_kind, config = args
     _warm_worker()
     started = time.perf_counter()
@@ -96,6 +103,11 @@ def _nearest_rank(values: list[float] | list[int], percentile: float) -> float |
 
 
 def _aggregate(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate one configuration and length without discarding raw runs.
+
+    Raises:
+        ValueError: If no runs were supplied.
+    """
     if not runs:
         raise ValueError("runs cannot be empty")
     solved_runs = [r for r in runs if r["solved"]]
@@ -161,6 +173,7 @@ def _aggregate(runs: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _write_output(path: Path, payload: dict[str, Any]) -> None:
+    """Atomically replace a JSON report after writing a sibling temporary file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -168,6 +181,7 @@ def _write_output(path: Path, payload: dict[str, Any]) -> None:
 
 
 def main() -> None:
+    """Run paired solver ablations and persist raw and aggregate metrics."""
     parser = argparse.ArgumentParser(
         description="Measure solver component and targeted-escape ablations."
     )

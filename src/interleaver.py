@@ -1,6 +1,9 @@
-"""Turyn-x2 doubling in transparent interleave/alternation normal form.
+"""Explore Turyn-x2 doubling in interleave/alternation normal form.
 
-Self-contained Hadamard construction: Paley base + repeated doubling.
+This standalone research CLI is not part of the canonical construction or
+search pipeline. It provides a self-contained Paley base plus repeated
+doubling for inspecting the embedded landscape.
+
 The doubling step is the Turyn-x2 lift expressed in coordinates that make
 the embedded landscape visible: a = interleave(a0,a1), then (a, alt(a)).
 
@@ -10,10 +13,10 @@ NAF(a, 2s) = NAF(a0, s) + NAF(a1, s), Q_2m = 4*Q_m, isomorphic move graphs.
 
 Usage::
 
-    python alt-double.py 16          # order 64
-    python alt-double.py 32 64 128   # multiple orders
-    python alt-double.py --check     # verify NAF(alt(a))(t) = (-1)^t * NAF(a)(t)
-    python alt-double.py --sweep     # Paley -> doubling chain
+    python -m src.interleaver 16          # order 16
+    python -m src.interleaver 32 64 128   # multiple orders
+    python -m src.interleaver --check     # verify the alternation identity
+    python -m src.interleaver --sweep     # Paley -> doubling chain
 """
 
 from __future__ import annotations
@@ -24,13 +27,18 @@ import numpy.typing as npt
 Int8 = npt.NDArray[np.int8]
 Int32 = npt.NDArray[np.int32]
 
-# ============================================================
-# 1. NAF computation (negaperiodic autocorrelation)
-# ============================================================
+# --- 1. NAF computation (negaperiodic autocorrelation) ------------------------
 
 
 def naf_of(seqs: Int8) -> Int32:
-    """NAF of k sequences of length n: shape (k, n) -> (n,)."""
+    """Compute the summed negaperiodic autocorrelation vector.
+
+    Args:
+        seqs: Binary sequences with shape ``(k, n)``.
+
+    Returns:
+        Summed NAF values for lags ``0`` through ``n - 1``.
+    """
     n = seqs.shape[1]
     j = np.arange(n, dtype=np.intp)[:, None]
     t = np.arange(n, dtype=np.intp)[None, :]
@@ -41,7 +49,14 @@ def naf_of(seqs: Int8) -> Int32:
 
 
 def gs4_energy(seqs: Int8) -> int:
-    """GS4 residual energy: 0 means Hadamard solution."""
+    """Compute exact GS4 matrix energy from independent NAF residuals.
+
+    Args:
+        seqs: Four binary sequences with shape ``(4, n)``.
+
+    Returns:
+        Energy ``64 * n * Q``. Zero identifies a GS4 solution.
+    """
     n = seqs.shape[1]
     r = naf_of(seqs)
     m = (n - 1) // 2  # independent lags
@@ -49,13 +64,18 @@ def gs4_energy(seqs: Int8) -> int:
     return int(64 * n * np.dot(u, u))
 
 
-# ============================================================
-# 2. Alt-Operator and doubling lift
-# ============================================================
+# --- 2. Alt-Operator and doubling lift ----------------------------------------
 
 
 def alt(a: Int8) -> Int8:
-    """Alt-Operator: alt(a)[j] = a[j] * (-1)^j."""
+    """Apply alternating signs to a sequence.
+
+    Args:
+        a: One sequence of length ``n``.
+
+    Returns:
+        A new sequence whose entry ``j`` is ``a[j] * (-1)**j``.
+    """
     factor = np.where(np.arange(len(a)) % 2 == 0, 1, -1).astype(np.int8)
     return (a * factor).astype(np.int8)
 
@@ -63,15 +83,18 @@ def alt(a: Int8) -> Int8:
 def alt_double(sequences: Int8) -> Int8:
     """Turyn x2 doubling in interleave/alternation normal form.
 
-    Input:  4 x m array of +-1, with gs4_energy() == 0.
-    Output: 4 x 2m array of +-1, with gs4_energy() == 0.
+    Args:
+        sequences: Four length-``m`` binary sequences with zero GS4 energy.
 
-    Construction:
-        a = interleave(seqs[0], seqs[1])
-        b = interleave(seqs[2], seqs[3])
-        result = (a, alt(a), b, alt(b))
+    Returns:
+        Four length-``2m`` binary sequences with zero GS4 energy.
 
-    Equivalent to double_gs4 up to reversal/sign on two sequences.
+    Raises:
+        ValueError: If ``sequences`` does not have four rows.
+
+    Note:
+        The construction is equivalent to ``double_gs4`` up to reversal and
+        sign changes on two sequences.
     """
     if sequences.ndim != 2 or sequences.shape[0] != 4:
         raise ValueError("alt_double expects shape (4, m)")
@@ -85,9 +108,7 @@ def alt_double(sequences: Int8) -> Int8:
     return np.stack((a_out, alt(a_out), b_out, alt(b_out)))
 
 
-# ============================================================
-# 3. Ito-Paley construction (quadratic character over GF(p^2))
-# ============================================================
+# --- 3. Ito-Paley construction (quadratic character over GF(p^2)) -------------
 
 
 def _is_prime(value: int) -> bool:
@@ -118,7 +139,7 @@ def _prime_factors(value: int) -> list[int]:
 
 
 def supports_paley_ng(n: int) -> bool:
-    """True when the Paley/Ito construction works (2n-1 prime, n even)."""
+    """Return whether ``n`` satisfies the Ito-Paley preconditions."""
     return n > 0 and n % 2 == 0 and _is_prime(2 * n - 1)
 
 
@@ -141,9 +162,17 @@ def _gf_pow(base: tuple[int, int], exp: int, c: int, prime: int) -> tuple[int, i
 
 
 def paley_ng(n: int) -> Int8:
-    """Construct GS4(n) via Ito-Paley.  Requires supports_paley_ng(n).
+    """Construct a GS4 quadruple using the Ito-Paley construction.
 
-    Returns 4 x n array of +/-1.
+    Args:
+        n: Even sequence length such that ``2 * n - 1`` is prime.
+
+    Returns:
+        Four binary sequences with shape ``(4, n)``.
+
+    Raises:
+        ValueError: If ``n`` does not satisfy the construction conditions.
+        RuntimeError: If no primitive field generator can be found.
     """
     if not supports_paley_ng(n):
         raise ValueError(f"paley_ng: n={n} needs 2n-1 prime and n even")
@@ -181,9 +210,7 @@ def paley_ng(n: int) -> Int8:
     return np.stack((a, b, a, b))
 
 
-# ============================================================
-# 4. Hadamard matrix construction (Goethals-Seidel array)
-# ============================================================
+# --- 4. Hadamard matrix construction (Goethals-Seidel array) ------------------
 
 
 def _negacirculant(values: Int8) -> Int8:
@@ -199,10 +226,13 @@ def _negacirculant(values: Int8) -> Int8:
 
 
 def build_hadamard(sequences: Int8) -> Int8:
-    """Build the full 4n x 4n Hadamard matrix via Goethals-Seidel.
+    """Build a Goethals-Seidel matrix from four negacyclic sequences.
 
-    Input:  four sequences of length n (GS4 condition satisfied).
-    Output: 4n x 4n Hadamard matrix (entries +/-1, HH^T = 4nI).
+    Args:
+        sequences: Four length-``n`` sequences satisfying the GS4 condition.
+
+    Returns:
+        Binary matrix with shape ``(4n, 4n)``.
     """
     A = _negacirculant(sequences[0])
     B = _negacirculant(sequences[1])
@@ -226,26 +256,37 @@ def build_hadamard(sequences: Int8) -> Int8:
     )
 
 
-# ============================================================
-# 5. Verification
-# ============================================================
+# --- 5. Verification ----------------------------------------------------------
 
 
 def verify_hadamard(H: Int8) -> bool:
-    """Check H * H^T == N * I."""
+    """Check the exact Hadamard Gram identity.
+
+    Args:
+        H: Candidate square matrix.
+
+    Returns:
+        Whether ``H @ H.T`` equals its order times the identity matrix.
+    """
     N = H.shape[0]
     HHt = H.astype(np.int64) @ H.astype(np.int64).T
     expected = np.eye(N, dtype=np.int64) * N
     return bool(np.array_equal(HHt, expected))
 
 
-# ============================================================
-# 6. Theorem verification (for correctness checks)
-# ============================================================
+# --- 6. Theorem verification (for correctness checks) -------------------------
 
 
 def verify_theorem(n: int) -> bool:
-    """Check: NAF(alt(a))(t) == (-1)^t * NAF(a)(t) for all sequences."""
+    """Numerically check the NAF alternation identity on random sequences.
+
+    Args:
+        n: Even sequence length to sample.
+
+    Returns:
+        Whether all sampled lags satisfy the identity. Odd lengths return
+        ``False`` because the tested identity does not apply.
+    """
     if n % 2:
         print(f"  n={n}: odd -> theorem does NOT hold (expected)")
         return False
@@ -261,15 +302,18 @@ def verify_theorem(n: int) -> bool:
     return True
 
 
-# ============================================================
-# 7. Main
-# ============================================================
+# --- 7. Main ------------------------------------------------------------------
 
 
 def construct(order: int) -> Int8 | None:
-    """Build a Hadamard matrix of given order via Paley + Alt-chain.
+    """Construct a Hadamard matrix through a Paley base and doubling chain.
 
-    Returns None if the order can't be constructed this way.
+    Args:
+        order: Requested matrix order, divisible by four.
+
+    Returns:
+        The constructed matrix, or ``None`` when this experimental chain does
+        not support the order.
     """
     if order <= 0 or order % 4 != 0:
         return None
@@ -297,9 +341,12 @@ def construct(order: int) -> Int8 | None:
 
 
 def main() -> None:
+    """Run the standalone construction and identity-check experiments."""
     import argparse
 
-    p = argparse.ArgumentParser(description="Alt-doubling Hadamard construction (self-contained)")
+    p = argparse.ArgumentParser(
+        description="Standalone experimental alt-doubling Hadamard construction"
+    )
     p.add_argument("orders", nargs="*", type=int, help="Hadamard orders to construct")
     p.add_argument("--check", action="store_true", help="Verify alt-theorem numerically")
     p.add_argument("--sweep", action="store_true", help="Sweep Paley -> alt-chain")

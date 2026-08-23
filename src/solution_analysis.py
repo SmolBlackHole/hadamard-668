@@ -22,6 +22,7 @@ PAIRINGS = (((0, 1), (2, 3)), ((0, 2), (1, 3)), ((0, 3), (1, 2)))
 
 
 def _naf(sequence: Int8Array) -> list[int]:
+    """Compute all nonzero-lag negaperiodic autocorrelations of one row."""
     values = sequence.astype(np.int64)
     return [
         int(values[:-lag] @ values[lag:]) - int(values[-lag:] @ values[:lag])
@@ -31,10 +32,29 @@ def _naf(sequence: Int8Array) -> list[int]:
 
 @cache
 def _paley_orbit(n: int) -> str | None:
+    """Return the direct Paley construction's quick-orbit hash when supported."""
     return orbit_hash(paley_ng_sequences(n)) if supports_paley_ng(n) else None
 
 
 def solution_features(sequences: Int8Array) -> dict[str, Any]:
+    """Compute the versioned structural features of one verified GS4 solution.
+
+    Args:
+        sequences: Four verified binary sequences with shape ``(4, n)``.
+
+    Returns:
+        A JSON-compatible mapping containing sequence sums, NAF signatures,
+        pair separators, dual and basis measures, the complete single-flip
+        neighbor-Q histogram, quick-orbit data, and Paley-orbit membership.
+
+    Raises:
+        ValueError: If the state fails the tracker's or canonicalizer's input
+            contract.
+
+    Note:
+        The input is not mutated. Feature computation does not independently
+        establish that the state is a GS4 solution.
+    """
     n = sequences.shape[1]
     nafs = [_naf(row) for row in sequences]
     pair_norms = [
@@ -76,6 +96,24 @@ def solution_features(sequences: Int8Array) -> dict[str, Any]:
 
 
 def analyze_solution_database(db_path: Path, output: Path) -> dict[str, Any]:
+    """Persist features for valid solutions and rebuild the public catalog.
+
+    Args:
+        db_path: SQLite database whose ``valid = 1`` solution rows are analyzed.
+        output: JSON catalog path to replace with the regenerated snapshot.
+
+    Returns:
+        The same versioned catalog mapping written to ``output``.
+
+    Raises:
+        ValueError: If a stored solution fails feature input validation.
+        OSError: If the catalog cannot be written or atomically replaced.
+
+    Note:
+        Feature rows are upserted in SQLite before the catalog is written. The
+        JSON file itself is written through a sibling temporary file and then
+        atomically replaced; the database and file are not one transaction.
+    """
     records = load_valid_solutions(db_path)
     catalog: list[dict[str, Any]] = []
     stored: list[tuple[int, dict[str, Any]]] = []

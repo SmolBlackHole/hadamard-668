@@ -10,6 +10,15 @@ from src.solution_analysis import analyze_solution_database
 
 
 def main(argv: Sequence[str] | None = None) -> None:
+    """Build a canonical solution catalog from an existing database.
+
+    Args:
+        argv: Optional argument vector. Uses process arguments when omitted.
+
+    Note:
+        The command fails before analysis when the input database is missing,
+        so it cannot replace a catalog with an accidental empty result.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database", type=Path, default=Path("data/hadamard.db"))
     parser.add_argument("--output", type=Path, default=Path("data/gs4_solution_catalog_v1.json"))

@@ -1,7 +1,8 @@
-"""Iterated local search — greedy singles, Tabu walk, targeted/random kick.
+"""Iterated local search: greedy singles, Tabu walk, targeted/random kick.
 
 The solver owns no CLI, construction, persistence, seed, or verification logic.
-Its phases are greedy singles, a Tabu walk, and targeted or random kicks."""
+Its phases are greedy singles, a Tabu walk, and targeted or random kicks.
+"""
 
 from __future__ import annotations
 
@@ -58,7 +59,31 @@ def tabu_walk_kernel(
     int,
     int,
 ]:
-    """Run exact Tabu steps and return the best visited tracker state."""
+    """Run exact Tabu steps over mutable tracker buffers.
+
+    Args:
+        seqs: Working sequence state with shape ``(4, n)``.
+        delta: Reduced singleton-delta cache with shape ``(4n, m)``.
+        norm2: Squared norm of each singleton delta.
+        u: Current reduced residual with ``m = floor((n - 1) / 2)`` entries.
+        q: Current reduced objective ``Q = ||u||^2``.
+        update_cols: Columns affected by flipping each source column.
+        update_lags: Reduced lag indices paired with ``update_cols``.
+        update_signs: Negaperiodic signs paired with ``update_cols``.
+        noise: Per-step multiplicative score noise; its first dimension limits
+            the number of walk steps.
+        tenure: Soft Tabu penalty assigned to the accepted flip.
+        decay: Multiplicative Tabu-penalty decay per step.
+
+    Returns:
+        Best sequence, delta, norm, and residual snapshots; best ``Q``; steps
+        executed; pre-solve ``Q`` or ``-1``; and downhill, lateral, and uphill
+        move counts.
+
+    Note:
+        The input state buffers are mutated in place. Best-state buffers are
+        meaningful only when the walk visits a state below its initial ``Q``.
+    """
     n_seqs, n_cols = seqs.shape
     n_lags = u.size
     tabu = np.zeros((n_seqs, n_cols), dtype=np.float64)
@@ -152,6 +177,23 @@ def tabu_walk_kernel(
 
 @dataclass(frozen=True)
 class SolverConfig:
+    """Configure the iterated local search and its escape phases.
+
+    Attributes:
+        kick: Enable targeted and random escape phases after a stalled descent.
+        tabu: Enable a Tabu walk after a stalled or low-``Q`` descent.
+        tabu_steps: Maximum transitions in one Tabu walk.
+        tabu_tenure: Initial soft penalty assigned to the accepted flip.
+        tabu_decay: Multiplicative penalty decay applied after every step.
+        tabu_noise: Scale of random multiplicative score noise.
+        geo_weight: Optional weight for singleton-delta norm during greedy scans.
+        targeted_escape: Allow one targeted escape per outer search.
+        escape_quench_budget: Candidate limit for each nested targeted quench.
+        qwindow_high: Empirical ``Q`` threshold for handing a greedy improvement
+            directly to Tabu or escape handling. Zero disables the handoff.
+        trace_phases: Record detailed state and cost events for every phase.
+    """
+
     kick: bool = True
     tabu: bool = True
     tabu_steps: int = 400
@@ -179,6 +221,22 @@ class SolverConfig:
 
 @dataclass(frozen=True)
 class TabuWalkResult:
+    """Summarize a Tabu walk and its best strictly improving state.
+
+    ``energy`` is ``None`` when the walk found no strict improvement. ``steps``
+    counts executed walk transitions, not candidate evaluations; each step
+    evaluates all ``4n`` single flips.
+
+    Attributes:
+        energy: Best strict-improvement energy, or ``None``.
+        steps: Number of executed walk transitions.
+        solve_q_before: ``Q`` immediately before a solving transition.
+        lowest_q: Lowest ``Q`` visited by the walk.
+        downhill_moves: Transitions that decreased ``Q``.
+        lateral_moves: Transitions that preserved ``Q``.
+        uphill_moves: Transitions that increased ``Q``.
+    """
+
     energy: int | None
     steps: int
     solve_q_before: int | None = None
@@ -190,6 +248,17 @@ class TabuWalkResult:
 
 @dataclass(frozen=True)
 class TargetedKickResult:
+    """Summarize targeted quenches and the updated outer best state.
+
+    Attributes:
+        solved: Whether a nested quench reached zero energy.
+        sequences: Solving state, or the unchanged outer current state.
+        energy: Energy of ``sequences``.
+        best_sequences: Best state known after all attempted quenches.
+        best_energy: Energy of ``best_sequences``.
+        accepted_moves: Targeted starts plus accepted nested-search moves.
+    """
+
     solved: bool
     sequences: Int8Array
     energy: int
@@ -234,6 +303,7 @@ def _record_phase(
     uphill_moves: int,
     outcome: str,
 ) -> None:
+    """Append a complete phase event when tracing is enabled."""
     if not config.trace_phases:
         return
     stats.phase_events.append(
@@ -259,7 +329,7 @@ def _record_phase(
 def _targeted_candidates(
     delta: Int8Array, u: npt.NDArray[np.int32], n: int
 ) -> list[tuple[int, int, int, int]]:
-    """Spread at most 625 targeted candidates over all feasible residual lags."""
+    """Spread at most 625 four-sequence starts over feasible residual lags."""
     per_lag: list[list[tuple[int, int, int, int]]] = []
     for k in np.flatnonzero(u):
         target = -u[k]
@@ -320,7 +390,16 @@ def _greedy_descent(
     cfg: SolverConfig,
     stats: SearchStats,
 ) -> tuple[bool, int, int]:
-    """Single-flip scan. Returns (improved, new_cur_e, candidates_evaluated)."""
+    """Run one first-improvement single-flip scan.
+
+    Returns:
+        Whether a flip was accepted, its resulting energy, and the number of
+        single-flip scores charged to the candidate budget.
+
+    Note:
+        Scores are computed in batches of at most 64. A whole computed batch is
+        charged even when its first improving flip is accepted.
+    """
     B = len(positions)
     improved = False
     used = 0
@@ -374,7 +453,13 @@ def _tabu_phase(
     cfg: SolverConfig,
     stats: SearchStats,
 ) -> tuple[bool, int, int]:
-    """Tabu walk. Tracks success per Q-level. Returns (improved, new_e, evals)."""
+    """Run one Tabu walk and update its phase statistics.
+
+    Returns:
+        Whether the walk strictly improved its start, the resulting energy,
+        and the number of executed walk steps. The third value is not a count
+        of candidate evaluations; each step costs ``4n`` evaluations.
+    """
     n_cols = cur_seq.shape[1]
     t0 = time.perf_counter()
     q_start = cur_e // (64 * n_cols)
@@ -459,7 +544,13 @@ def _targeted_kick(
     cfg: SolverConfig,
     stats: SearchStats,
 ) -> TargetedKickResult:
-    """Quench candidates spread across all feasible residual lags."""
+    """Run nested quenches from targeted four-bit starts.
+
+    Each start flips one bit in every sequence. Its nested search has a fresh
+    local budget capped by ``escape_quench_budget``; all consumed work is then
+    charged to the outer budget. Unsolved quenches do not replace the current
+    outer state, but they may improve the global best state.
+    """
     n = cur_seq.shape[1]
     assert tracker._delta is not None and tracker._u is not None
     _d = tracker._delta
@@ -514,7 +605,11 @@ def _random_kick(
     tracker: Tracker,
     rng: np.random.Generator,
 ) -> int:
-    """Random kick: flip two randomly selected sequences."""
+    """Mutate the current state with one flip in two random sequences.
+
+    Returns:
+        The exact energy after both accepted flips.
+    """
     n_seqs, n_cols = cur_seq.shape
     n_flips = 2
     cols = np.asarray(rng.integers(0, n_cols, size=n_seqs), dtype=np.intp)
@@ -535,7 +630,25 @@ def search(
     candidate_budget: int,
     config: SolverConfig | None = None,
 ) -> SolverResult:
-    """Run iterated local search and return the best state found."""
+    """Search for a zero-residual GS4 state within a candidate budget.
+
+    Args:
+        seqs: Start state with shape ``(4, n)``. It is copied before search.
+        tracker: Mutable tracker instance owned by this search.
+        rng: Random source for Tabu noise and escape moves.
+        candidate_budget: Maximum logical candidate evaluations.
+        config: Search settings, or defaults when omitted.
+
+    Returns:
+        Best state seen, its exact matrix energy, consumed candidate work, and
+        phase statistics.
+
+    Note:
+        A zero energy means the residual equations hold; final matrix
+        acceptance remains the pipeline's responsibility. The supplied tracker
+        follows the current working state and need not match the returned best
+        state when the search exits.
+    """
     return _search(seqs, tracker, rng, CandidateBudget(candidate_budget), config)
 
 
@@ -546,6 +659,7 @@ def _search(
     budget: CandidateBudget,
     config: SolverConfig | None = None,
 ) -> SolverResult:
+    """Run the shared search loop against a caller-owned budget."""
     cfg = config if config is not None else SolverConfig()
     n_seqs, n_cols = seqs.shape
     positions = _positions(n_seqs, n_cols)
@@ -723,7 +837,13 @@ def _tabu_walk(
     *,
     max_steps: int | None = None,
 ) -> TabuWalkResult:
-    """Explore uphill single flips and retain only the best visited state."""
+    """Explore unrestricted single flips and adopt only a strict improvement.
+
+    The compiled walk may move downhill, laterally, or uphill. If its best
+    visited state beats the starting energy, ``cur_seq`` and ``tracker`` adopt
+    the exact cached snapshot. Otherwise both main-search objects remain
+    unchanged.
+    """
     steps = config.tabu_steps if max_steps is None else min(config.tabu_steps, max_steps)
     if steps <= 0:
         return TabuWalkResult(None, 0)

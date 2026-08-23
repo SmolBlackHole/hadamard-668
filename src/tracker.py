@@ -20,7 +20,12 @@ import numpy.typing as npt
 
 
 class Tracker:
-    """Tracks GS4 orthogonality energy with reduced NAF residuals."""
+    """Track exact GS4 energy and single-flip deltas for one mutable state.
+
+    The tracker owns a copy of the current ``(4, n)`` sequence state. Calls to
+    :meth:`accept` keep that copy, the caller's state, and all residual caches
+    synchronized.
+    """
 
     def __init__(self) -> None:
         self._n = 0
@@ -35,6 +40,19 @@ class Tracker:
         self._update_signs: npt.NDArray[np.int8] | None = None
 
     def build(self, seqs: npt.NDArray[np.int8]) -> None:
+        """Initialize all exact caches from four binary sequences.
+
+        Args:
+            seqs: Current state with shape ``(4, n)`` and entries ``+1`` or
+                ``-1``. The tracker copies this array.
+
+        Note:
+            The reduced objective is ``Q = ||u||^2``; :meth:`energy` exposes
+            the equivalent matrix energy ``E = 64nQ``. Building the tracker is
+            not charged to the solver's candidate budget. Inputs must satisfy
+            the documented shape and alphabet; verification happens at the
+            pipeline acceptance boundary.
+        """
         self._n = seqs.shape[1]
         self._seqs = seqs.copy()
         m = (self._n - 1) // 2
@@ -56,7 +74,12 @@ class Tracker:
         delta: npt.NDArray[np.int8],
         norm2: npt.NDArray[np.int32],
     ) -> None:
-        """Replace the mutable state with an exact cache snapshot."""
+        """Adopt an exact cache snapshot without copying its arrays.
+
+        Note:
+            Ownership of all array arguments transfers to this tracker. The
+            caller must not mutate them after adoption.
+        """
         self._seqs = seqs
         self._u = u
         self._q = q
@@ -65,18 +88,42 @@ class Tracker:
         self._norm2 = norm2
 
     def energy(self) -> int:
+        """Return the exact matrix energy ``E = 64nQ`` of the current state."""
         return self._e
 
     def flip(self, s: int, c: int) -> int:
-        """Return the energy after one flip without changing the tracker."""
+        """Return the exact energy after one hypothetical bit flip.
+
+        Args:
+            s: Sequence index in ``0..3``.
+            c: Column index in ``0..n-1``.
+
+        Returns:
+            The matrix energy ``E = 64nQ`` after the flip.
+
+        Note:
+            Neither the tracker nor its source state is modified.
+        """
         return int(self.flip_batch(s * self._n + c, s * self._n + c + 1)[0])
 
     def flip_batch(self, start: int, stop: int) -> npt.NDArray[np.int64]:
-        """Return energies for a contiguous range of single flips."""
+        """Evaluate a contiguous range of hypothetical single flips.
+
+        Args:
+            start: Inclusive flat index in sequence-major order.
+            stop: Exclusive flat index, at most ``4n``.
+
+        Returns:
+            Exact matrix energies for ``stop - start`` flips.
+
+        Note:
+            The tracker remains unchanged. The solver charges one candidate
+            evaluation for each returned entry.
+        """
         return 64 * self._n * self._flip_q_batch(start, stop)
 
     def flip_qs(self) -> npt.NDArray[np.int64]:
-        """Return reduced Q values after every single flip."""
+        """Return exact reduced ``Q`` values after all ``4n`` single flips."""
         return self._flip_q_batch(0, 4 * self._n)
 
     def _flip_q_batch(self, start: int, stop: int) -> npt.NDArray[np.int64]:
@@ -86,11 +133,26 @@ class Tracker:
         return self._q + delta_q.astype(np.int64)
 
     def flip_energies(self) -> npt.NDArray[np.int64]:
-        """Return energies for all 4n single flips in solver scan order."""
+        """Return exact energies for all ``4n`` flips in sequence-major order."""
         return self.flip_batch(0, 4 * self._n)
 
     def accept(self, seqs: npt.NDArray[np.int8], s: int, c: int) -> int:
-        """Apply one flip and update the exact delta cache in O(n)."""
+        """Accept one bit flip and update every exact cache in ``O(n)``.
+
+        Args:
+            seqs: Caller-owned current state with shape ``(4, n)``. It must
+                equal the state used by the preceding :meth:`build` and is
+                mutated in place.
+            s: Sequence index in ``0..3``.
+            c: Column index in ``0..n-1``.
+
+        Returns:
+            The exact matrix energy after the accepted flip.
+
+        Note:
+            Both ``seqs`` and the tracker's private state change. Passing a
+            stale or different array breaks the synchronization contract.
+        """
         assert (
             self._seqs is not None
             and self._u is not None
@@ -127,9 +189,16 @@ class Tracker:
     def combo_energy(self, flips: list[tuple[int, int]]) -> int:
         """Return the exact energy after any set of bit flips.
 
-        NAF is quadratic in one sequence: singleton deltas plus one pair
-        correction for every same-sequence pair are complete, even for three
-        or more flips.
+        Args:
+            flips: Sequence and column pairs. Repeated pairs cancel modulo two.
+
+        Returns:
+            The matrix energy after applying the normalized flip set.
+
+        Note:
+            The tracker is not modified. NAF is quadratic in one sequence, so
+            singleton deltas plus one correction for every same-sequence pair
+            are exact even for three or more flips.
         """
         assert self._seqs is not None and self._delta is not None
         if not flips:
@@ -168,6 +237,7 @@ class Tracker:
 
     @classmethod
     def _compute_residual(cls, seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int32]:
+        """Compute all combined negaperiodic autocorrelation residuals."""
         n = seqs.shape[1]
         j: npt.NDArray[np.intp] = np.arange(n, dtype=np.intp)[:, None]
         t: npt.NDArray[np.intp] = np.arange(n, dtype=np.intp)[None, :]
@@ -178,7 +248,7 @@ class Tracker:
 
 
 def _build_delta_cache(seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
-    """Build every reduced singleton delta without Python loops."""
+    """Build all ``4n`` reduced singleton deltas without Python loops."""
     n = seqs.shape[1]
     m = (n - 1) // 2
     c: npt.NDArray[np.intp] = np.arange(n, dtype=np.intp)[:, None]
@@ -200,7 +270,7 @@ def _build_delta_cache(seqs: npt.NDArray[np.int8]) -> npt.NDArray[np.int8]:
 def _update_geometry(
     n: int,
 ) -> tuple[npt.NDArray[np.intp], npt.NDArray[np.intp], npt.NDArray[np.int8]]:
-    """Return the affected cache coordinates for each flipped column."""
+    """Return cached delta coordinates and signs affected by each column."""
     centers = np.arange(n)[:, None]
     columns = np.broadcast_to(np.arange(n), (n, n))
     distance = np.abs(columns - centers)
@@ -226,7 +296,7 @@ def _update_delta_slice(
     lags: npt.NDArray[np.intp],
     signs: npt.NDArray[np.int8],
 ) -> None:
-    """Update one sequence's delta rows after flipping column ``c``."""
+    """Update one sequence's delta rows before flipping column ``c``."""
     offset = s * len(a)
     rows = offset + columns
     old = cache[rows, lags]
