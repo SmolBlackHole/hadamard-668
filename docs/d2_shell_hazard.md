@@ -4,6 +4,10 @@ Stand: 2026-08-09. Alle Experimente in `experiments/learning/`, Solver-Snapshot
 `dcfacc5` unverändert. Fortsetzung von `d_eq_minus_u_experiment.md` (d = -u,
 136/136 validiert) und `mirror_point_lemma.md`.
 
+> Historische Metrik: `Steps` und die damalige Budget-Konvention gehören zum
+> genannten Snapshot. Sie sind nicht mit Stats-Schema v2 oder fremden
+> Implementierungen gleichzusetzen.
+
 ## Ausgangspunkt: die Identität Q_pre = ||d_solve||²
 
 Aus `d_solve = -u_pre` (136/136 bestätigt, siehe q13 identity_check: auch

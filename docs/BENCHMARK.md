@@ -1,6 +1,12 @@
 # Benchmark
 
-Stand: 2026-08-09
+Stand: 2026-08-23
+
+> Diese Tabellen sind historische Ergebnisse der damaligen Solver-Version und
+> wurden nicht neu gemessen. Das damalige Wort `Steps` bezeichnete ein
+> gemischtes Suchbudget, keine homogenen Zustandsübergänge. Die Werte sind daher
+> nicht direkt mit `candidate_evals` aus Stats-Schema v2 oder mit einer anderen
+> CPU/GPU-Pipeline vergleichbar.
 
 **Solver:** Singles + Tabu-200 + Kick, `tenure=5`, `decay=0.7`, `noise=0.0`
 
@@ -10,7 +16,7 @@ Stand: 2026-08-09
 
 ## Referenz-Sweep
 
-100 Seeds, 200.000 Steps:
+100 Seeds, historisches Budget 200.000:
 
 | n | Ordnung | Gelöst | 95-%-Intervall | Zeit/Run |
 | ---: | ---: | ---: | :---: | ---: |
@@ -25,7 +31,7 @@ Stand: 2026-08-09
 
 ## Ungerade Größen
 
-100 Seeds, 200.000 Steps:
+100 Seeds, historisches Budget 200.000:
 
 | n | Ordnung | Gelöst | Zeit/Run |
 | ---: | ---: | ---: | ---: |
@@ -37,7 +43,7 @@ Stand: 2026-08-09
 
 ## Große gerade und ungerade Größen
 
-50 Seeds, 6,4 Millionen Steps, vier Worker:
+50 Seeds, historisches Budget 6,4 Millionen, vier Worker:
 
 | n | Gelöst | Bestes E | Bestes Q | Zeit/Run |
 | ---: | ---: | ---: | ---: | ---: |
@@ -69,7 +75,8 @@ Wand nicht strikt mit `n` wächst.
 | 42 | 0 % | 0 % | 3 % | **6 %** |
 | 44 | 0 % | 0 % | 1 % | **2 %** |
 
-Der Solver hat mit 12 Millionen Steps auch Lösungen bei `n=52` gefunden. Die
+Der Solver hat mit einem historischen Budget von 12 Millionen auch Lösungen
+bei `n=52` gefunden. Die
 kleine Zahl gefundener Lösungen reicht dort noch nicht für eine stabile
 Solve-Rate-Schätzung.
 
@@ -86,6 +93,7 @@ Die Einordnung steht in [`SEARCH_FINDINGS.md`](SEARCH_FINDINGS.md).
 
 ## Interpretationsregel
 
-Für neue Suchphasen zählen gepaarte Solve-Rate und CPU-Zeit pro Lösung. Eine
+Für neue Suchphasen zählen gepaarte Solve-Rate, CPU-Zeit pro Lösung und
+eindeutige Quick-Orbits pro Worker-Stunde. Eine
 niedrigere mittlere Energie oder mehr akzeptierte Verbesserungen genügen nicht:
 Online-Gray senkte `Q` häufig und reduzierte dennoch die Solve-Rate.

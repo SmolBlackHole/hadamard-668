@@ -195,6 +195,7 @@ class TargetedKickResult:
     energy: int
     best_sequences: Int8Array
     best_energy: int
+    accepted_moves: int
 
 
 @lru_cache(maxsize=16)
@@ -353,14 +354,14 @@ def _greedy_descent(
         s, c = positions[idx]
         prev_e = cur_e
         cur_e = tracker.accept(cur_seq, s, c)
-        stats.energy_saved_singles += prev_e - cur_e
-        stats.hit_single()
+        stats.greedy_energy_improvement += prev_e - cur_e
+        stats.hit_greedy()
         if cur_e == 0:
             stats.record_solve("greedy", prev_e // q_scale)
         improved = True
         break
 
-    stats.single_evals += used
+    stats.greedy_candidate_evals += used
     return improved, cur_e, used
 
 
@@ -384,7 +385,7 @@ def _tabu_phase(
     budget.take(result.steps * cur_seq.size)
     stats.tabu_time_s += time.perf_counter() - t0
     stats.tabu_walks += 1
-    stats.tabu_evals += result.steps
+    stats.tabu_moves += result.steps
     stats.tabu_candidate_evals += result.steps * cur_seq.size
     if q_start == 1:
         stats.tabu_walks_q1 += 1
@@ -393,14 +394,14 @@ def _tabu_phase(
     else:
         stats.tabu_walks_q3plus += 1
     if result.energy is not None:
-        stats.energy_saved_tabu += prev_e - result.energy
-        stats.tabu_hits += 1
+        stats.tabu_energy_improvement += prev_e - result.energy
+        stats.tabu_improvements += 1
         if q_start == 1:
-            stats.tabu_hits_q1 += 1
+            stats.tabu_improvements_q1 += 1
         elif q_start == 2:
-            stats.tabu_hits_q2 += 1
+            stats.tabu_improvements_q2 += 1
         else:
-            stats.tabu_hits_q3plus += 1
+            stats.tabu_improvements_q3plus += 1
         if result.energy == 0:
             stats.tabu_solves += 1
             if q_start == 1:
@@ -464,9 +465,10 @@ def _targeted_kick(
     _d = tracker._delta
     _u = tracker._u
     candidates = _targeted_candidates(_d, _u, n)
+    accepted_moves = 0
 
     if not candidates:
-        return TargetedKickResult(False, cur_seq, tracker.energy(), best_seq, best_e)
+        return TargetedKickResult(False, cur_seq, tracker.energy(), best_seq, best_e, 0)
     quench_cfg = SolverConfig(targeted_escape=False)
 
     for c0, c1, c2, c3 in candidates:
@@ -491,19 +493,20 @@ def _targeted_kick(
             config=quench_cfg,
         )
         budget.take(quench.candidate_evals)
-        stats.target_quenches += 1
+        stats.targeted_quenches += 1
+        stats.quench_moves += quench.stats.total_accepted_moves
         stats.quench_candidate_evals += quench.stats.total_candidate_evals
-        stats.kicks += 1
-        stats.kick_evals += 1
+        stats.escape_candidate_evals += 1
+        accepted_moves += 1 + quench.stats.total_accepted_moves
         if quench.energy < best_e:
             best_seq, best_e = quench.sequences.copy(), quench.energy
         if quench.solved:
             phase = quench.stats.solve_phase or "unknown"
             q_before = quench.stats.solve_q_before if quench.stats.solve_q_before is not None else 0
             stats.record_solve(f"targeted:{phase}", q_before)
-            return TargetedKickResult(True, quench.sequences, 0, best_seq, best_e)
+            return TargetedKickResult(True, quench.sequences, 0, best_seq, best_e, accepted_moves)
 
-    return TargetedKickResult(False, cur_seq, tracker.energy(), best_seq, best_e)
+    return TargetedKickResult(False, cur_seq, tracker.energy(), best_seq, best_e, accepted_moves)
 
 
 def _random_kick(
@@ -585,7 +588,7 @@ def _search(
         improved, cur_e, greedy_evals = _greedy_descent(
             cur_seq, tracker, positions, cur_e, budget, q_scale, cfg, stats
         )
-        stats.single_time_s += time.perf_counter() - t_phase
+        stats.greedy_time_s += time.perf_counter() - t_phase
         _record_phase(
             stats,
             cfg,
@@ -659,7 +662,7 @@ def _search(
                     cur_e // q_scale,
                     best_e // q_scale,
                     budget.used - evals_before,
-                    0,
+                    targeted.accepted_moves,
                     0,
                     0,
                     0,
@@ -671,7 +674,8 @@ def _search(
                 budget.take(1)
                 cur_e = _random_kick(cur_seq, tracker, rng)
                 improved = True
-                stats.kick_evals += 1
+                stats.escape_candidate_evals += 1
+                stats.random_kicks += 1
                 if cur_e == 0:
                     stats.record_solve("random_kick", prev_e // q_scale)
                 q_after = cur_e // q_scale
@@ -692,9 +696,8 @@ def _search(
                     "solved" if cur_e == 0 else "accepted",
                 )
 
-            stats.kicks += 1
-            stats.energy_saved_kicks += prev_e - cur_e
-            stats.kick_time_s += time.perf_counter() - t_kick
+            stats.escape_energy_improvement += prev_e - cur_e
+            stats.escape_time_s += time.perf_counter() - t_kick
             if not improved:
                 stats.hit_other()
 

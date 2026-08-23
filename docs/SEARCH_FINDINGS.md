@@ -299,7 +299,8 @@ interessant, nicht als dauerhafte vollständige Nachbarschaft.
 
 Die mittlere Energie der rückwärts von freien Lösungen erzeugten
 Single-Flip-Grenze ist `(n-2)/4`. Daraus folgt aber kein guter globaler
-Schaltpunkt für den Solver. Eine gepaarte Ablation mit 200k Steps ergab:
+Schaltpunkt für den Solver. Eine gepaarte Ablation mit 200k
+Candidate-Evaluations pro Run ergab:
 
 | n | fest 9 | `ceil((n-2)/4)` | natürlich +2 |
 | ---: | ---: | ---: | ---: |

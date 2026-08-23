@@ -94,7 +94,7 @@ def test_solver_kicks_after_failed_single_scan() -> None:
         config=SolverConfig(tabu=False),
     )
 
-    assert result.stats.kicks == 1
+    assert result.stats.random_kicks == 1
     assert len(tracker.accepted) == 2
 
 
@@ -242,7 +242,12 @@ def test_targeted_escape_records_nested_solve_and_candidate_work(
     def fake_search(
         cand: np.ndarray, _tracker: Tracker, *_args: object, **_kwargs: object
     ) -> SolverResult:
-        nested = SearchStats(single_evals=7)
+        nested = SearchStats(
+            greedy_moves=2,
+            tabu_moves=3,
+            random_kicks=1,
+            greedy_candidate_evals=7,
+        )
         nested.record_solve("greedy", 1)
         return SolverResult(cand, 0, 7, nested)
 
@@ -262,7 +267,10 @@ def test_targeted_escape_records_nested_solve_and_candidate_work(
 
     assert result.solved
     assert budget.used == 8
-    assert stats.target_quenches == 1
+    assert stats.targeted_quenches == 1
+    assert stats.random_kicks == 0
+    assert stats.quench_moves == 6
+    assert stats.total_accepted_moves == 7
     assert stats.quench_candidate_evals == 7
     assert stats.total_candidate_evals == 8
     assert stats.solve_phase == "targeted:greedy"
@@ -281,17 +289,18 @@ def test_solver_stops_when_single_scan_exhausts_budget() -> None:
     result = ils_search(seqs, cast(Tracker, tracker), np.random.default_rng(1), candidate_budget=8)
 
     assert result.candidate_evals == 8
-    assert result.stats.kicks == 0
+    assert result.stats.random_kicks == 0
     assert tracker.accepted == []
 
 
 def test_search_stats_display_flushes_streak() -> None:
     stats = SearchStats()
-    stats.hit_single()
-    stats.hit_single()
-    stats.energy_saved_singles = 2_000
+    stats.hit_greedy()
+    stats.hit_greedy()
+    stats.record_solve("greedy", 2)
 
-    assert "S=2(2k)" in stats.display()
+    assert "moves=2(2/0/0/0/0)" in stats.display()
+    assert "solve=greedy@Q2" in stats.display()
     assert "strk=2.0/2" in stats.display()
 
 
@@ -416,9 +425,9 @@ def test_solver_kicks_after_an_unsuccessful_tabu_walk(monkeypatch: pytest.Monkey
 
     assert calls == [1]
     assert result.stats.tabu_walks == 1
-    assert result.stats.tabu_hits == 0
-    assert result.stats.tabu_evals == 3
-    assert result.stats.kicks == 1
+    assert result.stats.tabu_improvements == 0
+    assert result.stats.tabu_moves == 3
+    assert result.stats.random_kicks == 1
 
 
 def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -440,9 +449,9 @@ def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch)
     stats = result.stats
     assert result.solved
     assert stats.tabu_walks_q2 == 1
-    assert stats.tabu_hits_q2 == 1
+    assert stats.tabu_improvements_q2 == 1
     assert stats.tabu_walks_q1 == 0
-    assert stats.tabu_hits_q1 == 0
+    assert stats.tabu_improvements_q1 == 0
     assert stats.tabu_solves == 1
     assert stats.tabu_solves_q2 == 1
     assert stats.solve_phase == "tabu"
@@ -468,6 +477,7 @@ def test_phase_trace_is_cost_complete() -> None:
     events = result.stats.phase_events
     assert events[0].phase == SearchPhase.INITIALIZE
     assert sum(event.candidate_evals for event in events) == result.candidate_evals
+    assert sum(event.accepted_moves for event in events) == result.stats.total_accepted_moves
     assert all(event.state_hash_after and event.orbit_hash_after for event in events)
     for event in events:
         if event.phase == SearchPhase.TABU:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import numpy as np
@@ -34,8 +35,8 @@ def _make_result(
 
 def test_save_and_load_solution(tmp_path: Path) -> None:
     stats = SearchStats()
-    stats.singles = 3
-    stats.singles_streaks = [3]
+    stats.greedy_moves = 3
+    stats.greedy_streaks = [3]
 
     path = tmp_path / "runs.db"
     save_run(path, _make_result(42, energy=0, stats=stats))
@@ -49,13 +50,16 @@ def test_save_and_load_solution(tmp_path: Path) -> None:
     assert r["energy"] == 0
     assert r["elapsed_s"] == 1.0
     assert r["candidate_evals"] == 100
-    assert r["stats"]["singles"] == 3
+    assert r["stats"]["stats_schema_version"] == 2
+    assert r["stats"]["greedy_moves"] == 3
     assert len(r["sha256"]) == 64
     assert r["sha256"] == r["validation_hash"]
     assert r["class"] == r["orbit_hash"]
     assert r["canonicalizer"] == "gs4-quick-orbit-v1"
     assert r["valid"]
     assert len(r["seqs_b64"]) > 0
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT iterations FROM runs").fetchone() == (0,)
 
 
 def test_save_and_load_failure(tmp_path: Path) -> None:

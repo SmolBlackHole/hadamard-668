@@ -11,14 +11,6 @@ import numpy.typing as npt
 Int8Array = npt.NDArray[np.int8]
 
 
-def _format_energy(energy: int) -> str:
-    if energy >= 1_000_000:
-        return f"{energy / 1_000_000:.1f}M"
-    if energy >= 1_000:
-        return f"{energy / 1_000:.0f}k"
-    return str(energy)
-
-
 @dataclass
 class CandidateBudget:
     limit: int
@@ -84,18 +76,19 @@ class PhaseEvent:
 
 @dataclass
 class SearchStats:
-    singles: int = 0
-    kicks: int = 0
-    single_evals: int = 0
-    kick_evals: int = 0
-    tabu_evals: int = 0
+    greedy_moves: int = 0
+    tabu_moves: int = 0
+    random_kicks: int = 0
+    targeted_quenches: int = 0
+    quench_moves: int = 0
+    greedy_candidate_evals: int = 0
     tabu_candidate_evals: int = 0
+    escape_candidate_evals: int = 0
     quench_candidate_evals: int = 0
-    target_quenches: int = 0
-    tabu_hits: int = 0
-    tabu_hits_q1: int = 0
-    tabu_hits_q2: int = 0
-    tabu_hits_q3plus: int = 0
+    tabu_improvements: int = 0
+    tabu_improvements_q1: int = 0
+    tabu_improvements_q2: int = 0
+    tabu_improvements_q3plus: int = 0
     tabu_solves: int = 0
     tabu_solves_q1: int = 0
     tabu_solves_q2: int = 0
@@ -104,12 +97,12 @@ class SearchStats:
     tabu_walks_q1: int = 0
     tabu_walks_q2: int = 0
     tabu_walks_q3plus: int = 0
-    singles_streaks: list[int] = field(default_factory=list[int])
-    energy_saved_singles: int = 0
-    energy_saved_kicks: int = 0
-    energy_saved_tabu: int = 0
-    single_time_s: float = 0.0
-    kick_time_s: float = 0.0
+    greedy_streaks: list[int] = field(default_factory=list[int])
+    greedy_energy_improvement: int = 0
+    tabu_energy_improvement: int = 0
+    escape_energy_improvement: int = 0
+    greedy_time_s: float = 0.0
+    escape_time_s: float = 0.0
     rebuild_time_s: float = 0.0
     tabu_time_s: float = 0.0
     solve_phase: str | None = None
@@ -120,10 +113,21 @@ class SearchStats:
     @property
     def total_candidate_evals(self) -> int:
         return (
-            self.single_evals
+            self.greedy_candidate_evals
             + self.tabu_candidate_evals
-            + self.kick_evals
+            + self.escape_candidate_evals
             + self.quench_candidate_evals
+        )
+
+    @property
+    def total_accepted_moves(self) -> int:
+        """Accepted transitions across the top-level search and its quenches."""
+        return (
+            self.greedy_moves
+            + self.tabu_moves
+            + self.random_kicks
+            + self.targeted_quenches
+            + self.quench_moves
         )
 
     def record_solve(self, phase: str, q_before: int) -> None:
@@ -131,40 +135,43 @@ class SearchStats:
             self.solve_phase = phase
             self.solve_q_before = q_before
 
-    def hit_single(self) -> None:
-        self.singles += 1
+    def hit_greedy(self) -> None:
+        self.greedy_moves += 1
         self._streak += 1
 
     def hit_other(self) -> None:
         if self._streak:
-            self.singles_streaks.append(self._streak)
+            self.greedy_streaks.append(self._streak)
             self._streak = 0
 
     def flush(self) -> None:
         if self._streak:
-            self.singles_streaks.append(self._streak)
+            self.greedy_streaks.append(self._streak)
             self._streak = 0
 
     def to_dict(self) -> dict[str, object]:
         self.flush()
         return {
-            "singles": self.singles,
-            "kicks": self.kicks,
-            "e_singles": self.energy_saved_singles,
-            "e_kicks": self.energy_saved_kicks,
-            "e_tabu": self.energy_saved_tabu,
-            "single_evals": self.single_evals,
-            "kick_evals": self.kick_evals,
-            "tabu_evals": self.tabu_evals,
+            "stats_schema_version": 2,
+            "greedy_moves": self.greedy_moves,
+            "tabu_moves": self.tabu_moves,
+            "random_kicks": self.random_kicks,
+            "targeted_quenches": self.targeted_quenches,
+            "quench_moves": self.quench_moves,
+            "total_accepted_moves": self.total_accepted_moves,
+            "greedy_energy_improvement": self.greedy_energy_improvement,
+            "tabu_energy_improvement": self.tabu_energy_improvement,
+            "escape_energy_improvement": self.escape_energy_improvement,
+            "greedy_candidate_evals": self.greedy_candidate_evals,
             "tabu_candidate_evals": self.tabu_candidate_evals,
+            "escape_candidate_evals": self.escape_candidate_evals,
             "quench_candidate_evals": self.quench_candidate_evals,
             "total_candidate_evals": self.total_candidate_evals,
-            "target_quenches": self.target_quenches,
-            "tabu_hits": self.tabu_hits,
+            "tabu_improvements": self.tabu_improvements,
             "tabu_walks": self.tabu_walks,
-            "tabu_hits_q1": self.tabu_hits_q1,
-            "tabu_hits_q2": self.tabu_hits_q2,
-            "tabu_hits_q3plus": self.tabu_hits_q3plus,
+            "tabu_improvements_q1": self.tabu_improvements_q1,
+            "tabu_improvements_q2": self.tabu_improvements_q2,
+            "tabu_improvements_q3plus": self.tabu_improvements_q3plus,
             "tabu_walks_q1": self.tabu_walks_q1,
             "tabu_walks_q2": self.tabu_walks_q2,
             "tabu_walks_q3plus": self.tabu_walks_q3plus,
@@ -174,8 +181,8 @@ class SearchStats:
             "tabu_solves_q3plus": self.tabu_solves_q3plus,
             "solve_phase": self.solve_phase,
             "solve_q_before": self.solve_q_before,
-            "single_time_s": self.single_time_s,
-            "kick_time_s": self.kick_time_s,
+            "greedy_time_s": self.greedy_time_s,
+            "escape_time_s": self.escape_time_s,
             "rebuild_time_s": self.rebuild_time_s,
             "tabu_time_s": self.tabu_time_s,
             "phase_events": [event.to_dict() for event in self.phase_events],
@@ -184,16 +191,19 @@ class SearchStats:
     def display(self) -> str:
         self.flush()
         parts = [
-            f"S={self.singles}({_format_energy(self.energy_saved_singles)})",
-            f"TB={self.tabu_hits}/{self.tabu_walks}({_format_energy(self.energy_saved_tabu)})",
-            f"K={self.kicks}({_format_energy(self.energy_saved_kicks)})",
+            f"moves={self.total_accepted_moves}"
+            f"({self.greedy_moves}/{self.tabu_moves}/{self.random_kicks}/"
+            f"{self.targeted_quenches}/{self.quench_moves})",
+            f"tabu={self.tabu_improvements}/{self.tabu_walks}",
             f"evals={self.total_candidate_evals}"
-            f"({self.single_evals}/{self.tabu_candidate_evals}/"
-            f"{self.kick_evals}/{self.quench_candidate_evals})",
-            f"t={self.single_time_s:.1f}s/{self.tabu_time_s:.1f}s/{self.kick_time_s:.1f}s",
+            f"({self.greedy_candidate_evals}/{self.tabu_candidate_evals}/"
+            f"{self.escape_candidate_evals}/{self.quench_candidate_evals})",
+            f"t={self.greedy_time_s:.1f}s/{self.tabu_time_s:.1f}s/{self.escape_time_s:.1f}s",
         ]
-        if self.singles_streaks:
-            streaks = self.singles_streaks
+        if self.solve_phase is not None:
+            parts.append(f"solve={self.solve_phase}@Q{self.solve_q_before}")
+        if self.greedy_streaks:
+            streaks = self.greedy_streaks
             parts.append(f"strk={sum(streaks) / len(streaks):.1f}/{max(streaks)}")
         else:
             parts.append("strk=-")
