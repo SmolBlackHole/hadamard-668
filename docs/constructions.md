@@ -35,20 +35,20 @@ sequence length `n`.
 
 The implemented prime-field case applies exactly when
 
-$$
+```math
 n>0,
 \qquad
 n \text{ is even},
 \qquad
 p=2n-1 \text{ is prime}.
-$$
+```
 
 `paley_ng_sequences(n)` deterministically constructs a negaperiodic Golay
 pair `(a, b)` and returns the GS4 tuple
 
-$$
+```math
 (a,b,a,b).
-$$
+```
 
 The seed, initial state, and candidate budget have no effect on this path.
 The regression tests cover `n = 52`, `p = 103`, yielding a Hadamard matrix
@@ -66,21 +66,21 @@ powers are not implemented.
 Let `(g, h)` be an ordinary Golay pair and `(c, d)` a suitable negaperiodic
 pair. With
 
-$$
+```math
 g_+ = \frac{g+h}{2},
 \qquad
 g_- = \frac{g-h}{2}
-$$
+```
 
 `turyn_pair()` computes
 
-$$
+```math
 e = c\otimes g_+ + d^R\otimes g_-,
-$$
+```
 
-$$
+```math
 f = d\otimes g_+ - c^R\otimes g_-.
-$$
+```
 
 `turyn_gs4()` applies the same factor separately to the pairs `(a, b)` and
 `(c, d)` of a GS4 tuple.
@@ -94,11 +94,11 @@ The pipeline fully verifies the resulting tuple afterward.
 
 `double_gs4()` uses the fixed Golay pair
 
-$$
+```math
 g=(1,-1),
 \qquad
 h=(1,1).
-$$
+```
 
 This turns a GS4 solution of length `n` into a GS4 solution of length `2n`.
 The tests specifically check the lift from `n = 52` to `n = 104`.

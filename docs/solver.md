@@ -123,9 +123,9 @@ solution. Changing it requires a new paired ablation under the current
 Each tabu step evaluates all `4n` single flips. For candidate `i`, the Numba
 kernel uses the score
 
-$$
-Q_i'\left(1+\operatorname{tabu}_i+\operatorname{noise}_i\right).
-$$
+```math
+Q_i'\left(1+\mathrm{tabu}_i+\mathrm{noise}_i\right).
+```
 
 Tabu is a soft multiplicative penalty, not a hard prohibition. The walk can
 move downhill, sideways, or uphill. It tracks the best exact state visited,
@@ -143,9 +143,9 @@ its lowest `Q` so far for a second time without further progress.
 For each violated lag `k`, the solver finds at most five flips per sequence
 satisfying
 
-$$
+```math
 d_{s,c,k}=-u_k.
-$$
+```
 
 It combines one flip from each of the four sequences and distributes at most
 625 four-bit candidates across the available lags. Each candidate starts its
@@ -154,9 +154,9 @@ own nested search.
 This is not a local repair. Because the four flips affect different sequences,
 the selected lag initially becomes
 
-$$
+```math
 u'_k=u_k-4u_k=-3u_k.
-$$
+```
 
 The proposal deliberately worsens this residual component. The subsequent
 quench is intended to reach a different basin of attraction.
