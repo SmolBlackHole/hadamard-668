@@ -33,6 +33,20 @@ an installation failure.
 VS Code recommendations are optional. The workspace points at `.venv`, allowing
 the Python extension to resolve the platform-specific interpreter path.
 
+Install development dependencies in the environment selected by your editor, too:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m pyright
+```
+
+An environment containing only runtime dependencies cannot resolve test helpers
+such as `pytest.raises` or the documentation tooling. This can produce many unknown
+type warnings even when checks in a separate environment pass. Select
+`.venv/Scripts/python.exe` on Windows or `.venv/bin/python` on Linux and macOS.
+After installing missing packages, restart the editor's language server if stale
+diagnostics remain. Keep the strict checks enabled.
+
 ## Quality checks
 
 With the development environment activated:
@@ -41,13 +55,14 @@ With the development environment activated:
 python scripts/quality.py check
 ```
 
-The command runs Ruff formatting and lint checks, strict Pyright, pytest and
+The command runs documentation checks, Ruff formatting and lint checks, strict Pyright, pytest and
 `compileall`, stopping at the first failure. Its authoritative command list is
 [`scripts/quality.py`](../scripts/quality.py). Test output stays under `runs/`.
 
 Useful focused commands:
 
 ```bash
+python scripts/quality.py docs
 python -m pytest tests/test_verify.py tests/test_pipeline.py -q
 python scripts/quality.py coverage
 python scripts/quality.py mutate

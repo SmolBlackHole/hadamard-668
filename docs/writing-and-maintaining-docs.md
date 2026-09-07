@@ -10,6 +10,7 @@ Parent: [Documentation index](README.md)
   - [Keep navigation useful](#keep-navigation-useful)
   - [Describe evidence precisely](#describe-evidence-precisely)
   - [Document code contracts](#document-code-contracts)
+  - [Check Markdown and mathematics](#check-markdown-and-mathematics)
 
 ## Choose the owner
 
@@ -51,3 +52,29 @@ Public modules, classes and functions need docstrings. Private helpers need them
 when the contract is not clear from the signature and implementation. Tests are
 exempt because their names describe the behavior under test. Ruff checks this
 boundary in the [quality workflow](development.md#quality-checks).
+
+## Check Markdown and mathematics
+
+Install the development packages and run the local CLI, without editor extensions:
+
+```bash
+python -m pip install -e ".[dev]"
+python scripts/quality.py docs
+```
+
+[PyMarkdown](https://pymarkdown.readthedocs.io/en/latest/) (`pymarkdownlnt`) checks
+Markdown structure. The math check uses markdown-it-py to extract expressions and
+latex2mathml to check conversion, plus rules for observed GitHub rendering failures.
+Both checks also run in the standard quality command and CI. They cover root Markdown
+files and `docs/`; recovered historical documents under `research-archive/` are excluded.
+
+Use fenced blocks with the `math` language for display equations, without dollar
+delimiters inside. Use dollar delimiters for inline math. Write comparisons as
+`\lt` and `\gt`, because raw angle brackets can be interpreted as HTML by GitHub,
+causing errors or silently dropping parts of equations. Use `\mathrm{NAF}` for
+operator labels instead of `\operatorname{NAF}` in these documents.
+
+The local check detects malformed braces, unconverted commands and known rendering
+hazards. It does not reproduce every detail of GitHub's MathJax configuration and
+HTML processing. Inspect changed equations on GitHub as well, especially matrices
+and case distinctions where missing rows may not produce an error message.

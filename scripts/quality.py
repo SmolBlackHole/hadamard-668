@@ -10,15 +10,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 Command = tuple[str, ...]
+DOCS_CHECK: Command = (sys.executable, "scripts/check_docs.py")
 
 COMMANDS: dict[str, tuple[Command, ...]] = {
     "check": (
+        DOCS_CHECK,
         (sys.executable, "-m", "ruff", "format", "--check", "."),
         (sys.executable, "-m", "ruff", "check", "."),
         (sys.executable, "-m", "pyright"),
         (sys.executable, "-m", "pytest", "-q", "--basetemp", "runs/pytest-quality"),
         (sys.executable, "-m", "compileall", "-q", "src", "tests", "scripts", "run.py"),
     ),
+    "docs": (DOCS_CHECK,),
     "fix": (
         (sys.executable, "-m", "ruff", "format", "."),
         (sys.executable, "-m", "ruff", "check", "--fix", "."),
@@ -73,7 +76,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=COMMANDS,
         default="check",
         nargs="?",
-        help="check (default), fix, coverage, or mutate",
+        help="check (default), docs, fix, coverage, or mutate",
     )
     args = parser.parse_args(argv)
     if args.action == "check":

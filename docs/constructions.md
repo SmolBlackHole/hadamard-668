@@ -36,7 +36,7 @@ sequence length `n`.
 The implemented prime-field case applies exactly when
 
 ```math
-n>0,
+n\gt 0,
 \qquad
 n \text{ is even},
 \qquad

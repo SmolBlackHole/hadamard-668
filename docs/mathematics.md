@@ -37,7 +37,7 @@ The antiperiodic extension satisfies
 \bar x_{j+n} = -\bar x_j.
 ```
 
-For $0 \le t < n$, the negaperiodic autocorrelation is
+For $0 \le t \lt n$, the negaperiodic autocorrelation is
 
 ```math
 \mathrm{NAF}_x(t)
@@ -74,7 +74,7 @@ The following conditions are equivalent:
 ```math
 HH^T = 4nI
 \iff
-r_t = 0 \quad \text{for } 1 \le t < n.
+r_t = 0 \quad \text{for } 1 \le t \lt n.
 ```
 
 `src/verify.py` checks the residual equations independently of the tracker.
@@ -143,7 +143,7 @@ unordered pairs of distinct matrix rows:
 
 ```math
 E
-= \sum_{i<j}\langle H_i,H_j\rangle^2
+= \sum_{i\lt j}\langle H_i,H_j\rangle^2
 = \frac12\lVert HH^T-4nI\rVert_F^2.
 ```
 
@@ -219,7 +219,7 @@ the same sequence:
 ```math
 \Delta_Fu
 = \sum_{i\in F}d_i
-  + \sum_{\substack{i<j\\s_i=s_j}}
+  + \sum_{\substack{i\lt j\\s_i=s_j}}
     \kappa_{ij}e_{\ell_{ij}}.
 ```
 
@@ -228,8 +228,8 @@ For $h=|c_i-c_j|$ and $\ell_{ij}=\min(h,n-h)$,
 ```math
 \kappa_{ij}=
 \begin{cases}
-x_{s,c_i}x_{s,c_j}, & h<n-h,\\
--x_{s,c_i}x_{s,c_j}, & h>n-h.
+x_{s,c_i}x_{s,c_j}, & h\lt n-h,\\
+-x_{s,c_i}x_{s,c_j}, & h\gt n-h.
 \end{cases}
 ```
 
@@ -277,7 +277,7 @@ u=0
 D^TD=2nI_m.
 ```
 
-The case $n=4$ is an exception: $D^TD=2nI$ can hold even when $Q>0$.
+The case $n=4$ is an exception: $D^TD=2nI$ can hold even when $Q\gt 0$.
 
 Let $F_D=D^TD-2nI$. For even $n\ge6$,
 
@@ -321,7 +321,7 @@ C_t=\sum_{s=0}^{3}\sum_{j=0}^{h-1}
 y_j^{(s)}\overline{y_{j+t\bmod h}^{(s)}}.
 ```
 
-Then, for $1\le t<h$,
+Then, for $1\le t\lt h$,
 
 ```math
 C_t=\omega^{-t}(r_t+ir_{h-t})

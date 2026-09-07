@@ -23,6 +23,10 @@ py-modules = ["run"]
 
 [project.optional-dependencies]
 dev = [
+    "latex2mathml>=3.81,<4",
+    "markdown-it-py>=4.2,<5",
+    "mdit-py-plugins>=0.6,<0.7",
+    "pymarkdownlnt>=0.9.39,<0.10",
     "hypothesis>=6.100",
     "pyright>=1.1.390",
     "pytest>=8",
