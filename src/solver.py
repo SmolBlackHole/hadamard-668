@@ -47,6 +47,7 @@ def tabu_walk_kernel(
     noise: npt.NDArray[np.float64],
     tenure: float,
     decay: float,
+    accept_equal: bool = False,
 ) -> tuple[
     Int8Array,
     Int8Array,
@@ -74,6 +75,7 @@ def tabu_walk_kernel(
             the number of walk steps.
         tenure: Soft Tabu penalty assigned to the accepted flip.
         decay: Multiplicative Tabu-penalty decay per step.
+        accept_equal: Save the latest equal-best visited state as well.
 
     Returns:
         Best sequence, delta, norm, and residual snapshots; best ``Q``; steps
@@ -82,15 +84,16 @@ def tabu_walk_kernel(
 
     Note:
         The input state buffers are mutated in place. Best-state buffers are
-        meaningful only when the walk visits a state below its initial ``Q``.
+        meaningful only when the walk visits a state below its initial ``Q``,
+        unless ``accept_equal`` initializes them with the starting state.
     """
     n_seqs, n_cols = seqs.shape
     n_lags = u.size
     tabu = np.zeros((n_seqs, n_cols), dtype=np.float64)
-    best_seq = np.empty_like(seqs)
-    best_delta = np.empty_like(delta)
-    best_norm2 = np.empty_like(norm2)
-    best_u = np.empty_like(u)
+    best_seq = seqs.copy() if accept_equal else np.empty_like(seqs)
+    best_delta = delta.copy() if accept_equal else np.empty_like(delta)
+    best_norm2 = norm2.copy() if accept_equal else np.empty_like(norm2)
+    best_u = u.copy() if accept_equal else np.empty_like(u)
     best_q = q
     used = 0
     solve_q_before = -1
@@ -148,7 +151,7 @@ def tabu_walk_kernel(
         tabu[s, c] = tenure
         used = step + 1
 
-        if q < best_q:
+        if q < best_q or (accept_equal and q == best_q):
             best_q = q
             best_seq[:, :] = seqs
             best_delta[:, :] = delta
@@ -188,10 +191,14 @@ class SolverConfig:
         tabu_noise: Scale of random multiplicative score noise.
         geo_weight: Optional weight for singleton-delta norm during greedy scans.
         targeted_escape: Allow one targeted escape per outer search.
+        targeted_selection: Proposal selection: ``legacy`` first columns,
+            ``random`` sampled columns, or ``residual`` sampled columns ranked
+            by full post-flip ``Q``. Ranking consumes candidate evaluations.
         escape_quench_budget: Candidate limit for each nested targeted quench.
         qwindow_high: Empirical ``Q`` threshold for handing a greedy improvement
             directly to Tabu or escape handling. Zero disables the handoff.
         trace_phases: Record detailed state and cost events for every phase.
+        tabu_accept_equal: Continue from a changed equal-best Tabu snapshot.
     """
 
     kick: bool = True
@@ -205,6 +212,8 @@ class SolverConfig:
     escape_quench_budget: int = 10_000_000
     qwindow_high: int = 9  # empirical handoff from greedy to escape phases
     trace_phases: bool = False
+    targeted_selection: str = "legacy"
+    tabu_accept_equal: bool = False
 
     def __post_init__(self) -> None:
         if self.tabu_steps < 0:
@@ -217,18 +226,20 @@ class SolverConfig:
             raise ValueError("escape_quench_budget must be positive")
         if self.qwindow_high < 0:
             raise ValueError("qwindow_high cannot be negative")
+        if self.targeted_selection not in {"legacy", "random", "residual"}:
+            raise ValueError("targeted_selection must be legacy, random, or residual")
 
 
 @dataclass(frozen=True)
 class TabuWalkResult:
-    """Summarize a Tabu walk and its best strictly improving state.
+    """Summarize a Tabu walk and its adopted best state.
 
-    ``energy`` is ``None`` when the walk found no strict improvement. ``steps``
+    ``energy`` is ``None`` when the walk adopted no state. ``steps``
     counts executed walk transitions, not candidate evaluations; each step
     evaluates all ``4n`` single flips.
 
     Attributes:
-        energy: Best strict-improvement energy, or ``None``.
+        energy: Adopted best energy, possibly equal to the start, or ``None``.
         steps: Number of executed walk transitions.
         solve_q_before: ``Q`` immediately before a solving transition.
         lowest_q: Lowest ``Q`` visited by the walk.
@@ -327,13 +338,32 @@ def _record_phase(
 
 
 def _targeted_candidates(
-    delta: Int8Array, u: npt.NDArray[np.int32], n: int
+    delta: Int8Array,
+    u: npt.NDArray[np.int32],
+    n: int,
+    rng: np.random.Generator | None = None,
 ) -> list[tuple[int, int, int, int]]:
-    """Spread at most 625 four-sequence starts over feasible residual lags."""
+    """Spread at most 625 four-sequence starts over feasible residual lags.
+
+    Without ``rng``, preserve the legacy first-five-column proposal order.
+    Otherwise sample up to five matching columns uniformly without replacement
+    for each sequence and lag, including random order within the sample.
+    """
     per_lag: list[list[tuple[int, int, int, int]]] = []
     for k in np.flatnonzero(u):
         target = -u[k]
-        columns = [[c for c in range(n) if delta[s * n + c, k] == target][:5] for s in range(4)]
+        columns: list[list[int]] = []
+        for s in range(4):
+            matching = [c for c in range(n) if delta[s * n + c, k] == target]
+            if rng is None:
+                columns.append(matching[:5])
+            else:
+                columns.append(
+                    [
+                        int(c)
+                        for c in rng.choice(matching, size=min(5, len(matching)), replace=False)
+                    ]
+                )
         if all(columns):
             per_lag.append([(c0, c1, c2, c3) for c0, c1, c2, c3 in product(*columns)])
     if not per_lag:
@@ -377,6 +407,30 @@ def _targeted_candidates(
     return selected
 
 
+def _rank_targeted_candidates(
+    candidates: list[tuple[int, int, int, int]],
+    delta: Int8Array,
+    u: npt.NDArray[np.int32],
+    n: int,
+    budget: CandidateBudget,
+) -> list[tuple[int, int, int, int]]:
+    """Stably rank the affordable proposal prefix by exact post-flip ``Q``.
+
+    Each proposal flips different sequences, so singleton residual deltas add
+    without interaction corrections. Reserve one evaluation per scored proposal
+    before computing its score. Initializing a later quench is separate work.
+    """
+    count = budget.take(len(candidates))
+    scored: list[tuple[int, tuple[int, int, int, int]]] = []
+    for candidate in candidates[:count]:
+        residual = u.astype(np.int64)
+        for s, c in enumerate(candidate):
+            residual += delta[s * n + c]
+        scored.append((int(np.dot(residual, residual)), candidate))
+    scored.sort(key=lambda item: item[0])
+    return [candidate for _, candidate in scored]
+
+
 # --- Core Phases --------------------------------------------------------------
 
 
@@ -390,58 +444,43 @@ def _greedy_descent(
     cfg: SolverConfig,
     stats: SearchStats,
 ) -> tuple[bool, int, int]:
-    """Run one first-improvement single-flip scan.
+    """Score all affordable singles and prioritize a directly solving flip.
 
     Returns:
         Whether a flip was accepted, its resulting energy, and the number of
         single-flip scores charged to the candidate budget.
 
     Note:
-        Scores are computed in batches of at most 64. A whole computed batch is
-        charged even when its first improving flip is accepted.
+        Charge every scored flip. Without a direct solution, retain the first
+        improving position (or the existing geometry-weighted batch selection).
+        A partial final budget permits only a prefix of the neighborhood.
     """
-    B = len(positions)
-    improved = False
-    used = 0
-
-    for start in range(0, B, SINGLE_BATCH_SIZE):
-        batch_size = budget.take(min(SINGLE_BATCH_SIZE, B - start))
-        if batch_size == 0:
-            break
-        stop = start + batch_size
-        used += batch_size
-        energies = tracker.flip_batch(start, stop)
-
-        if cfg.geo_weight > 0:
-            _n2 = tracker._norm2
-            assert _n2 is not None
-            n2 = _n2[start:stop].astype(np.float64)
-            scored = energies.astype(np.float64) + cfg.geo_weight * n2 * q_scale
-            cand = np.flatnonzero(scored < cur_e)
-            if cand.size > 1:
-                idx = start + int(cand[np.argmin(scored[cand])])
-            elif cand.size == 1:
-                idx = start + int(cand[0])
-            else:
-                continue
-        else:
-            cand = np.flatnonzero(energies < cur_e)
-            if not cand.size:
-                continue
-            idx = start + int(cand[0])
-
-        s, c = positions[idx]
-        prev_e = cur_e
-        cur_e = tracker.accept(cur_seq, s, c)
-        stats.greedy_energy_improvement += prev_e - cur_e
-        stats.hit_greedy()
-        if cur_e == 0:
-            stats.record_solve("greedy", prev_e // q_scale)
-        improved = True
-        break
-
+    used = budget.take(len(positions))
     stats.greedy_candidate_evals += used
-    return improved, cur_e, used
+    energies = tracker.flip_batch(0, used)
+    zero = np.flatnonzero(energies == 0)
+    if zero.size:
+        idx = int(zero[0])
+    elif cfg.geo_weight > 0:
+        assert tracker._norm2 is not None
+        scored = energies.astype(np.float64) + cfg.geo_weight * tracker._norm2[:used] * q_scale
+        candidates = np.flatnonzero(scored < cur_e)
+        if not candidates.size:
+            return False, cur_e, used
+        stop = (int(candidates[0]) // SINGLE_BATCH_SIZE + 1) * SINGLE_BATCH_SIZE
+        batch = candidates[candidates < stop]
+        idx = int(batch[np.argmin(scored[batch])])
+    else:
+        candidates = np.flatnonzero(energies < cur_e)
+        if not candidates.size:
+            return False, cur_e, used
+        idx = int(candidates[0])
+    updated = tracker.accept(cur_seq, *positions[idx])
+    stats.greedy_energy_improvement += cur_e - updated
+    stats.hit_greedy()
+    if updated == 0:
+        stats.record_solve("greedy", cur_e // q_scale)
+    return True, updated, used
 
 
 def _tabu_phase(
@@ -456,7 +495,7 @@ def _tabu_phase(
     """Run one Tabu walk and update its phase statistics.
 
     Returns:
-        Whether the walk strictly improved its start, the resulting energy,
+        Whether the walk adopted a strict or enabled equal improvement, its energy,
         and the number of executed walk steps. The third value is not a count
         of candidate evaluations; each step costs ``4n`` evaluations.
     """
@@ -480,13 +519,14 @@ def _tabu_phase(
         stats.tabu_walks_q3plus += 1
     if result.energy is not None:
         stats.tabu_energy_improvement += prev_e - result.energy
-        stats.tabu_improvements += 1
-        if q_start == 1:
-            stats.tabu_improvements_q1 += 1
-        elif q_start == 2:
-            stats.tabu_improvements_q2 += 1
-        else:
-            stats.tabu_improvements_q3plus += 1
+        if result.energy < prev_e:
+            stats.tabu_improvements += 1
+            if q_start == 1:
+                stats.tabu_improvements_q1 += 1
+            elif q_start == 2:
+                stats.tabu_improvements_q2 += 1
+            else:
+                stats.tabu_improvements_q3plus += 1
         if result.energy == 0:
             stats.tabu_solves += 1
             if q_start == 1:
@@ -512,7 +552,7 @@ def _tabu_phase(
             result.downhill_moves,
             result.lateral_moves,
             result.uphill_moves,
-            "solved" if result.energy == 0 else "improved",
+            "solved" if result.energy == 0 else "improved" if result.energy < prev_e else "equal",
         )
         return True, result.energy, result.steps
     _record_phase(
@@ -555,7 +595,14 @@ def _targeted_kick(
     assert tracker._delta is not None and tracker._u is not None
     _d = tracker._delta
     _u = tracker._u
-    candidates = _targeted_candidates(_d, _u, n)
+    if cfg.targeted_selection == "legacy":
+        candidates = _targeted_candidates(_d, _u, n)
+    else:
+        candidates = _targeted_candidates(_d, _u, n, rng)
+    if cfg.targeted_selection == "residual":
+        before_ranking = budget.used
+        candidates = _rank_targeted_candidates(candidates, _d, _u, n, budget)
+        stats.escape_candidate_evals += budget.used - before_ranking
     accepted_moves = 0
 
     if not candidates:
@@ -837,12 +884,12 @@ def _tabu_walk(
     *,
     max_steps: int | None = None,
 ) -> TabuWalkResult:
-    """Explore unrestricted single flips and adopt only a strict improvement.
+    """Explore unrestricted single flips and adopt the best permitted snapshot.
 
     The compiled walk may move downhill, laterally, or uphill. If its best
     visited state beats the starting energy, ``cur_seq`` and ``tracker`` adopt
-    the exact cached snapshot. Otherwise both main-search objects remain
-    unchanged.
+    the exact cached snapshot. ``tabu_accept_equal`` also allows the latest
+    changed equal-best state. Otherwise both main-search objects remain unchanged.
     """
     steps = config.tabu_steps if max_steps is None else min(config.tabu_steps, max_steps)
     if steps <= 0:
@@ -881,9 +928,13 @@ def _tabu_walk(
         noise,
         config.tabu_tenure,
         config.tabu_decay,
+        config.tabu_accept_equal,
     )
     best_e = 64 * n_cols * best_q
-    if best_e >= cur_e:
+    accept_equal = (
+        config.tabu_accept_equal and best_e == cur_e and not np.array_equal(best_seq, cur_seq)
+    )
+    if best_e >= cur_e and not accept_equal:
         return TabuWalkResult(
             None,
             evaluations,

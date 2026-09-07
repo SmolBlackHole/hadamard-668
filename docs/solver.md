@@ -68,11 +68,15 @@ best state.
 | `tabu_noise` | `0.2` | Random contribution to the score |
 | `geo_weight` | `0.0` | Optional weighting of the delta norm |
 | `targeted_escape` | `True` | Allow one targeted escape per search |
+| `targeted_selection` | `"legacy"` | Legacy, randomized, or full-residual-ranked proposals |
+| `tabu_accept_equal` | `False` | Continue from a changed equal-best tabu snapshot |
 | `escape_quench_budget` | `10_000_000` | Budget per nested quench |
 | `qwindow_high` | `9` | Empirical threshold for handing off from greedy to escape |
 | `trace_phases` | `False` | Record detailed phase events |
 
-The CLI exposes every option except `qwindow_high` directly.
+The main CLI exposes every option except `qwindow_high`, `targeted_selection` and
+`tabu_accept_equal` directly. Research options can be supplied through the
+[ablation runner's custom configurations](experiments.md#ablations).
 
 ## Tracker state
 
@@ -91,13 +95,13 @@ regression tests cover this invariant.
 
 ## Greedy phase
 
-The greedy scan visits flips in sequence-major order. It evaluates contiguous
-batches of at most 64 single flips.
+The greedy scan evaluates all affordable single flips in sequence-major order.
+It first selects any directly solving flip, even if an earlier flip also improves Q.
 
-With `geo_weight = 0`, the solver accepts the first improving flip in the first
-successful batch. It does not search globally for the best single flip. With
-positive geometry weighting, it chooses the lowest weighted score within the
-first successful batch.
+Without a direct solution and with `geo_weight = 0`, it accepts the first improving
+flip. With positive geometry weighting, it retains the lowest weighted score in
+the first successful group of 64 positions. The complete scored prefix is charged
+in either case. A partial remaining budget can leave later flips unexamined.
 
 After an improving greedy step at `Q > qwindow_high`, another greedy scan
 begins. At `Q <= qwindow_high`, the solver resets the success flag. With the
@@ -132,6 +136,11 @@ move downhill, sideways, or uphill. It tracks the best exact state visited,
 but adopts that state after the walk only if it strictly improves on the
 walk's starting state.
 
+With experimental `tabu_accept_equal=True`, the latest changed equal-best state
+may also be adopted. This continues the outer search without counting a strict
+energy improvement. Full tracker caches are adopted together. The global best
+energy remains separate from the current search state.
+
 `tabu_moves` counts steps actually taken during the walk. They remain in the
 statistics even when the entire walk is later discarded.
 
@@ -161,6 +170,13 @@ u'_k=u_k-4u_k=-3u_k.
 The proposal deliberately worsens this residual component. The subsequent
 quench is intended to reach a different basin of attraction.
 
+The legacy selector takes the first five matching columns. Experimental `random`
+selection samples those columns without replacement. `residual` ranks the sampled
+proposal pool by full post-flip Q. Since the four flips affect different sequences,
+their cached residual changes add exactly. Every ranked candidate costs one outer
+budget evaluation, in addition to proposal initialization and quench work. Lower
+post-flip Q is not known to imply higher downstream solution probability.
+
 An unsolved quench does not replace the main search's current state. A better
 state found within it can only update the global best state. The nested solver
 uses `SolverConfig(targeted_escape=False)`; it does not inherit the other
@@ -187,7 +203,7 @@ interchangeable with candidate counts from other implementations.
 | Nested quench | Its own candidate evaluations |
 | Tracker build and initial state | 0 |
 
-A greedy batch may cost up to 64 units even though the solver accepts only one
+A greedy scan may cost up to `4n` units even though the solver accepts only one
 flip from it. `CandidateBudget.take()` limits each step to the remaining
 budget. Search ends at `Q = 0` or when no budget remains.
 

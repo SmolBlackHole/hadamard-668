@@ -81,7 +81,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="*", type=Path, help="Explicit Markdown files to check.")
     args = parser.parse_args(argv)
-    files: list[Path] = args.paths or sorted([*ROOT.glob("*.md"), *ROOT.glob("docs/**/*.md")])
+    files: list[Path] = args.paths or sorted(
+        [*ROOT.glob("*.md"), *ROOT.glob("docs/**/*.md"), *ROOT.glob("lab/**/*.md")]
+    )
     files = [path.resolve() for path in files]
     lint = subprocess.run(
         [

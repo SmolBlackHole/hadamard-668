@@ -23,9 +23,14 @@ not reproducible evidence.
 | How does the search work? | [Solver](solver.md) |
 | When can a matrix be constructed directly? | [Constructions](constructions.md) |
 | How do I store, audit and compare results? | [Experiments](experiments.md) |
+| Which tools should I use for research? | [Research laboratory](laboratory.md) |
 | Which module owns each part of the system? | [Architecture](architecture.md) |
 | How do I install and check the project? | [Development](development.md) |
 | How should documentation be maintained? | [Writing documentation](writing-and-maintaining-docs.md) |
+| Did shorter targeted quenches improve yield? | [Quench allocation experiment](quench-allocation.md) |
+| What is being tested next? | [Solver research worklist](research-todo.md) |
+| What did the research round establish? | [Solver research results](research-results.md) |
+| What distinguishes low error from recoverability? | [Landscape investigation](landscape-results.md) |
 
 ## Sources of truth
 

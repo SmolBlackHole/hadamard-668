@@ -18,6 +18,7 @@ import numpy.typing as npt
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from lab.neighborhoods import repair_witnesses
 from src.output import load_runs
 from src.tracker import Tracker
 
@@ -45,7 +46,7 @@ def _support_histogram(delta: npt.NDArray[np.int8]) -> dict[str, int]:
     return {str(int(value)): int(count) for value, count in zip(values, counts, strict=True)}
 
 
-def _pair_diagnosis(sequences: Int8Array) -> PairDiagnosis:
+def pair_diagnosis(sequences: Int8Array) -> PairDiagnosis:
     """Exhaustively score unordered two-flip repairs without changing state.
 
     The tracker is mutated for each first flip and restored before the next
@@ -146,7 +147,7 @@ def analyze_q1_state(sequences: npt.ArrayLike) -> dict[str, object]:
         raise RuntimeError("delta dictionary and flip_qs disagree on solving singles")
 
     supports = np.count_nonzero(delta, axis=1)
-    pair = _pair_diagnosis(array)
+    pair = pair_diagnosis(array)
     repair_depth: int | str
     if exact.size:
         repair_depth = 1
@@ -185,6 +186,7 @@ def diagnose_database(
     *,
     strategy: str = "gs4",
     selected_n: set[int] | None = None,
+    extended: bool = False,
 ) -> dict[str, object]:
     """Diagnose unsolved Q=1 endpoints stored in a result database.
 
@@ -192,6 +194,7 @@ def diagnose_database(
         db_path: SQLite result database to read.
         strategy: Strategy group selected from the persisted dataset.
         selected_n: Optional sequence lengths to include.
+        extended: Also exhaust triples and one-per-sequence quadruple repairs.
 
     Returns:
         JSON-serializable per-length summaries and individual Q=1 analyses.
@@ -223,6 +226,8 @@ def diagnose_database(
             raw = base64.b64decode(str(entry["seqs_b64"]))
             sequences = np.frombuffer(raw, dtype=np.int8).reshape(4, n)
             analysis = analyze_q1_state(sequences)
+            if extended:
+                analysis["extended_repairs"] = repair_witnesses(sequences)
             analysis.update(seed=int(entry["seed"]), energy=energy)
             q1_results.append(analysis)
             results.append(analysis)
@@ -301,11 +306,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=Path("runs/q1_diagnosis.json"))
     parser.add_argument("--strategy", default="gs4")
     parser.add_argument("--n", type=int, nargs="*")
+    parser.add_argument(
+        "--extended", action="store_true", help="Also test triples and restricted quadruples."
+    )
     args = parser.parse_args(argv)
     if not args.input.exists():
         parser.error(f"database not found: {args.input}")
     selected_n = set(args.n) if args.n else None
-    report = diagnose_database(args.input, strategy=args.strategy, selected_n=selected_n)
+    report = diagnose_database(
+        args.input, strategy=args.strategy, selected_n=selected_n, extended=args.extended
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print_summary(report)

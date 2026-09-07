@@ -10,6 +10,7 @@ dist/
 .pytest-tmp/
 .cupy-cache/
 runs/
+research-archive/
 *.db-shm
 *.db-wal
 data/_bench_*.db

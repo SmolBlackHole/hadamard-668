@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from scripts.analyze_solutions import main as analyze_main
+from lab.catalog import main as analyze_main
 from src.models import RunResult, SearchStats
 from src.output import save_run
 from src.solution_analysis import FEATURE_VERSION, analyze_solution_database, solution_features

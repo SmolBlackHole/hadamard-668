@@ -19,7 +19,7 @@ COMMANDS: dict[str, tuple[Command, ...]] = {
         (sys.executable, "-m", "ruff", "check", "."),
         (sys.executable, "-m", "pyright", "--pythonpath", sys.executable),
         (sys.executable, "-m", "pytest", "-q", "--basetemp", "runs/pytest-quality"),
-        (sys.executable, "-m", "compileall", "-q", "src", "tests", "scripts", "run.py"),
+        (sys.executable, "-m", "compileall", "-q", "src", "tests", "scripts", "lab", "run.py"),
     ),
     "docs": (DOCS_CHECK,),
     "fix": (

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from scripts.q1_diagnosis import analyze_q1_state, diagnose_database
+from lab.diagnose import analyze_q1_state, diagnose_database
 from src.models import RunResult, SearchStats
 from src.output import load_runs, save_run
 from src.tracker import Tracker

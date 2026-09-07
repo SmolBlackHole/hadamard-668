@@ -22,6 +22,7 @@ are not part of the canonical evidence.
   - [Ablations](#ablations)
   - [Comparing other solvers](#comparing-other-solvers)
   - [Local solution catalog](#local-solution-catalog)
+  - [Sweep plots](#sweep-plots)
   - [Database migration](#database-migration)
 
 ## Data layers
@@ -194,12 +195,12 @@ is not a single topological edge in the state space.
 
 ## Ablations
 
-`scripts.ablation` compares configurations using the same seeds and candidate
+`lab.compare` compares configurations using the same seeds and candidate
 budget. Before its first measurement, each worker performs an untimed warm-up
 of 10,000 candidate evaluations to keep Numba compilation out of the comparison.
 
 ```bash
-python -m scripts.ablation --targeted --n 43 --n 47 --n 51 \
+python -m lab.compare --targeted --n 43 --n 47 --n 51 \
   --seeds 50 --candidate-budget 6000000 --workers 8 \
   --output runs/targeted-ablation.json
 ```
@@ -208,10 +209,25 @@ The handoff from greedy search to escape can be tested separately with
 identical seeds:
 
 ```bash
-python -m scripts.ablation --qwindow --n 52 --seeds 1000 \
+python -m lab.compare --qwindow --n 52 --seeds 1000 \
   --candidate-budget 6000000 --workers 12 \
   --output runs/qwindow-n52-1k-6m.json
 ```
+
+To compare quench allocation against the default and disabled targeted escape,
+repeat `--quench-budget`. Every arm retains the same total candidate budget:
+
+```bash
+python -m lab.compare --quench-budget 100000 --quench-budget 500000 \
+  --n 46 --n 50 --n 54 --seeds 1000 --seed-start 42 \
+  --candidate-budget 6000000 --workers 12 \
+  --output runs/quench-budget-screen.json
+```
+
+Use a disjoint seed range for confirmation after selecting a promising setting.
+`--seed-start` defaults to zero; `run.py` defaults to seed 42, so set it explicitly
+when reproducing a CLI sweep. Quench limits must be positive. The quench comparison,
+`--targeted`, and `--qwindow` are mutually exclusive experiment modes.
 
 The primary comparison metrics are:
 
@@ -222,6 +238,23 @@ The primary comparison metrics are:
 - median and p90, always reported alongside solve rate and total cost.
 
 Files under `runs/` are local experiment artifacts and are not versioned.
+
+For research controls beyond the named modes, `--configs path.json` accepts a
+nonempty JSON object mapping arm names to `SolverConfig` overrides. For example:
+
+```json
+{
+  "default": {},
+  "greedy-to-minimum": {"qwindow_high": 0},
+  "no-targeted": {"targeted_escape": false},
+  "long-memory": {"targeted_escape": false, "tabu_decay": 0.95}
+}
+```
+
+This mode is exclusive with the named comparisons. Reports include effective
+configurations, Python/platform information and SHA-256 hashes of source files.
+Keep the raw report when comparing changes made without a new commit. A dirty
+commit label alone cannot identify which implementation produced a result.
 
 ## Comparing other solvers
 
@@ -245,7 +278,7 @@ The repository does not ship a solution-catalog snapshot. Generate a catalog
 from an existing local database:
 
 ```bash
-python -m scripts.analyze_solutions \
+python -m lab.catalog \
   --database data/hadamard.db \
   --output runs/solution-catalog.json
 ```
@@ -258,6 +291,32 @@ The script refuses to run if the specified database is missing, preventing an
 accidental empty catalog from a missing input. Catalog counts and length
 coverage depend on the database supplied; retain that database and the code
 revision when reporting results.
+
+## Sweep plots
+
+Install development dependencies with `python -m pip install -e ".[dev]"`, then run:
+
+```bash
+python -m lab.plot --database data/hadamard.db --output runs/plots
+```
+
+Open `runs/plots/README.md` for the generated figures. Each cohort has PNG and SVG
+plots plus a CSV summary: solve yield, best-Q percentiles, the full best-Q
+distribution and median candidate effort including failures. The `manifest.json`
+retains selected records and cohort metadata for reproducibility.
+
+The database is opened read-only and fetched in one query. No search is started.
+Only records marked valid are used; this is not a new independent solution audit.
+Cohorts separate revision, configuration, strategy, construction, budget and
+odd/even lengths. Repeated `(n, seed)` entries within a cohort retain the latest ID
+and are counted in the report. No confidence interval assumes these seeds are
+independent samples. Missing effort measurements are omitted from effort statistics
+and their available count is reported in CSV.
+
+Use `--first-id 6301 --last-id 20300` to select a particular batch. A `-dirty`
+revision alone cannot distinguish different uncommitted source trees. The stored
+best Q does not reveal when it was reached or how long a run remained there.
+Line segments connect sampled lengths and are not a fitted scaling law.
 
 ## Database migration
 

@@ -93,16 +93,15 @@ the remote jobs have passed; inspect their actual results on GitHub.
 
 | Command | Purpose |
 | --- | --- |
-| `python -m scripts.ablation --help` | Paired comparisons of solver configurations |
-| `python -m scripts.analyze_solutions --help` | Generate a catalog from an existing database |
+| `python -m lab.compare --help` | Paired comparisons of solver configurations |
+| `python -m lab.catalog --help` | Generate a catalog from an existing database |
 | `python -m scripts.migrate_database --help` | Migrate stored identities and audit the result |
-| `python -m scripts.q1_diagnosis --help` | Diagnose the local Q=1 landscape |
-| `python -m scripts.bench_starts` | Run the predefined random-versus-cyclic benchmark |
+| `python -m lab.diagnose --help` | Diagnose the local Q=1 landscape |
+| `python -m lab.compare --compare-starts --help` | Compare random and cyclic starts |
 | `python -m src.interleaver --check` | Sample the alternation identity |
 | `python -m src.deinterleaver --verify` | Check experimental deinterleaving round trips |
 
-The start benchmark runs a fixed, potentially expensive sweep. Inspect
-[`scripts/bench_starts.py`](../scripts/bench_starts.py) before running it.
+The [laboratory guide](laboratory.md) describes bounded comparisons and recovery experiments.
 The interleaver and deinterleaver are standalone research programs, with their own
 construction implementations. They do not define the production acceptance path.
 Their numerical experiments are not proofs of the accompanying mathematical claims.

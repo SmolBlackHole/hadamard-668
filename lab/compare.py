@@ -1,6 +1,6 @@
 """Ablation test: measure each solver component's contribution.
 
-Run with ``python -m scripts.ablation`` from the repository root.
+Run with ``python -m lab.compare`` from the repository root.
 
 Runs the configured solver variants on identical seed ranges.
 Outputs a comparison table centered on solve yield, wall time, unique solution
@@ -11,9 +11,11 @@ the same solver version because the phases charge different kinds of work.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
+import platform
 import statistics
 import time
 from collections import Counter, defaultdict
@@ -23,6 +25,8 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
+from lab.plot import plot_comparison
+from lab.provenance import capture_source
 from src.canonical import orbit_hash, validation_hash
 from src.generator import start_construction
 from src.pipeline import execute
@@ -40,6 +44,7 @@ class AblationConfig:
 
     name: str
     config: SolverConfig
+    start_kind: str | None = None
 
 
 CONFIGS = [
@@ -187,6 +192,19 @@ def main() -> None:
     )
     parser.add_argument("--targeted", action="store_true", help="Compare targeted escape on/off.")
     parser.add_argument(
+        "--compare-starts", action="store_true", help="Pair random and cyclic starts."
+    )
+    parser.add_argument(
+        "--configs", type=Path, help="JSON object mapping arm names to SolverConfig overrides."
+    )
+    parser.add_argument(
+        "--quench-budget",
+        type=int,
+        action="append",
+        help="Compare these quench limits against default and no-targeted; repeat for multiple limits.",
+    )
+    parser.add_argument("--seed-start", type=int, default=0, help="First paired seed.")
+    parser.add_argument(
         "--qwindow",
         action="store_true",
         help="Compare the default Q handoff threshold 9 with the disabled threshold 0.",
@@ -213,11 +231,47 @@ def main() -> None:
     parser.add_argument("--trace-phases", action="store_true")
     parser.add_argument("--output", type=Path, default=Path("runs/ablation.json"))
     args = parser.parse_args()
+    quench_budgets = cast(list[int], args.quench_budget or [])
     if args.candidate_budget < 1 or args.seeds < 1 or args.workers < 1:
         parser.error("candidate-budget, seeds, and workers must be positive")
-    if args.targeted and args.qwindow:
-        parser.error("--targeted and --qwindow are mutually exclusive")
-    if args.qwindow:
+    if (
+        sum(
+            (
+                args.targeted,
+                args.qwindow,
+                bool(quench_budgets),
+                bool(args.configs),
+                args.compare_starts,
+            )
+        )
+        > 1
+    ):
+        parser.error("choose only one comparison mode")
+    if args.seed_start < 0 or any(b < 1 for b in quench_budgets):
+        parser.error("seed-start must be nonnegative and quench budgets must be positive")
+    if args.compare_starts:
+        configs = [AblationConfig(kind, SolverConfig(), kind) for kind in ("random", "cyclic")]
+    elif args.configs:
+        try:
+            definitions = json.loads(args.configs.read_text(encoding="utf-8"))
+            if not isinstance(definitions, dict) or not definitions:
+                raise ValueError("configs must be a nonempty JSON object")
+            definitions = cast(dict[str, dict[str, Any]], definitions)
+            configs = [
+                AblationConfig(name, SolverConfig(**values)) for name, values in definitions.items()
+            ]
+        except (OSError, ValueError, TypeError) as error:
+            parser.error(str(error))
+    elif quench_budgets:
+        configs = [
+            AblationConfig("default", SolverConfig()),
+            AblationConfig("no-targeted", SolverConfig(targeted_escape=False)),
+            *[
+                AblationConfig(f"quench={b}", SolverConfig(escape_quench_budget=b))
+                for b in dict.fromkeys(quench_budgets)
+            ],
+        ]
+    elif args.qwindow:
         configs = [
             AblationConfig("qwindow=9", SolverConfig(qwindow_high=9)),
             AblationConfig("qwindow=off", SolverConfig(qwindow_high=0)),
@@ -240,10 +294,30 @@ def main() -> None:
     tasks: list[tuple[str, int, int, int, str, SolverConfig]] = []
     for ac in configs:
         for n in ns:
-            for seed in range(args.seeds):
-                tasks.append((ac.name, n, seed, args.candidate_budget, args.start_kind, ac.config))
+            for seed in range(args.seed_start, args.seed_start + args.seeds):
+                tasks.append(
+                    (
+                        ac.name,
+                        n,
+                        seed,
+                        args.candidate_budget,
+                        ac.start_kind or args.start_kind,
+                        ac.config,
+                    )
+                )
 
     total = len(tasks)
+    try:
+        provenance = capture_source(args.output)
+    except FileExistsError as error:
+        parser.error(str(error))
+    root = Path(__file__).resolve().parents[1]
+    source_hashes = {
+        str(path.relative_to(root)).replace("\\", "/"): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        for path in sorted([root / "run.py", *root.glob("src/*.py"), *root.glob("scripts/*.py")])
+    }
     print(
         f"Ablation: {len(configs)} configs x {len(ns)} n x {args.seeds} seeds = {total} runs ({workers} workers)\n"
     )
@@ -279,9 +353,15 @@ def main() -> None:
         args.output,
         {
             "experiment_schema_version": 2,
+            "provenance": provenance,
+            "starts": {ac.name: ac.start_kind or args.start_kind for ac in configs},
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "source_sha256": source_hashes,
             "timing_mode": "steady_state_after_per_worker_warmup",
             "candidate_budget": args.candidate_budget,
             "seeds": args.seeds,
+            "seed_start": args.seed_start,
             "workers": workers,
             "start_kind": args.start_kind,
             "elapsed_seconds": elapsed,
@@ -322,6 +402,7 @@ def main() -> None:
         print()
 
     print(f"Raw results: {args.output}")
+    plot_comparison(args.output)
 
 
 if __name__ == "__main__":

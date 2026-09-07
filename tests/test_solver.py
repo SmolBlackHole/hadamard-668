@@ -13,6 +13,7 @@ from src.models import CandidateBudget, SearchPhase, SearchStats, SolverResult
 from src.solver import (
     SolverConfig,
     TabuWalkResult,
+    _rank_targeted_candidates,
     _tabu_walk,
     _targeted_candidates,
 )
@@ -232,6 +233,112 @@ def test_targeted_candidates_deduplicate_and_backfill() -> None:
     assert len(candidates) == len(set(candidates))
 
 
+def test_targeted_random_samples_columns_beyond_legacy_prefix() -> None:
+    n = 24
+    delta = np.full((4 * n, 1), -1, dtype=np.int8)
+    u = np.ones(1, dtype=np.int32)
+    legacy = _targeted_candidates(delta, u, n)
+    sampled = _targeted_candidates(delta, u, n, np.random.default_rng(41))
+
+    assert legacy == list(product(range(5), repeat=4))
+    assert sampled == _targeted_candidates(delta, u, n, np.random.default_rng(41))
+    assert sampled != _targeted_candidates(delta, u, n, np.random.default_rng(42))
+    assert len(sampled) == len(set(sampled)) == 625
+    assert all(len({candidate[s] for candidate in sampled}) == 5 for s in range(4))
+    assert any(c >= 5 for candidate in sampled for c in candidate)
+
+
+@pytest.mark.parametrize("n", [7, 8])
+def test_targeted_residual_ranking_matches_rebuilt_trackers(n: int) -> None:
+    rng = np.random.default_rng(53)
+    seqs = rng.choice((-1, 1), size=(4, n)).astype(np.int8)
+    tracker = Tracker()
+    tracker.build(seqs)
+    assert tracker._delta is not None and tracker._u is not None
+    candidates = [tuple(int(c) for c in rng.integers(n, size=4)) for _ in range(80)]
+    proposals = [cast(tuple[int, int, int, int], candidate) for candidate in candidates]
+    energies: dict[tuple[int, int, int, int], int] = {}
+    for candidate in proposals:
+        changed = seqs.copy()
+        residual = tracker._u.astype(np.int64)
+        for s, c in enumerate(candidate):
+            changed[s, c] *= -1
+            residual += tracker._delta[s * n + c]
+        rebuilt = Tracker()
+        rebuilt.build(changed)
+        energies[candidate] = rebuilt.energy()
+        assert int(np.dot(residual, residual)) * 64 * n == rebuilt.energy()
+    budget = CandidateBudget(len(proposals) + 7)
+
+    ranked = _rank_targeted_candidates(proposals, tracker._delta, tracker._u, n, budget)
+
+    assert ranked == sorted(proposals, key=energies.__getitem__)
+    assert budget.used == len(proposals)
+    assert budget.remaining == 7
+
+
+@pytest.mark.parametrize("remaining", [0, 1, 2, 3])
+def test_targeted_residual_ranking_respects_remaining_budget(remaining: int) -> None:
+    n = 3
+    delta = np.full((4 * n, 1), -1, dtype=np.int8)
+    u = np.ones(1, dtype=np.int32)
+    proposals = [(0, 0, 0, 0), (1, 1, 1, 1), (2, 2, 2, 2)]
+    budget = CandidateBudget(10, used=10 - remaining)
+
+    ranked = _rank_targeted_candidates(proposals, delta, u, n, budget)
+
+    assert ranked == proposals[:remaining]
+    assert budget.used == 10
+
+
+@pytest.mark.parametrize("remaining", [1, 2, 3, 4, 5, 6])
+def test_targeted_residual_escape_accounts_ranking_and_quenches(
+    monkeypatch: pytest.MonkeyPatch, remaining: int
+) -> None:
+    from src import solver
+
+    seqs = np.ones((4, 3), dtype=np.int8)
+    tracker = Tracker()
+    tracker.build(seqs)
+
+    def candidates(*_args: object) -> list[tuple[int, int, int, int]]:
+        return [(0, 0, 0, 0), (1, 1, 1, 1), (2, 2, 2, 2)]
+
+    monkeypatch.setattr(solver, "_targeted_candidates", candidates)
+    quench_budgets: list[int] = []
+
+    def fake_search(
+        cand: np.ndarray, _tracker: Tracker, *_args: object, **kwargs: object
+    ) -> SolverResult:
+        limit = cast(CandidateBudget, kwargs["budget"]).limit
+        quench_budgets.append(limit)
+        return SolverResult(cand, 1, limit, SearchStats(greedy_candidate_evals=limit))
+
+    monkeypatch.setattr(solver, "_search", fake_search)
+    budget = CandidateBudget(remaining)
+    stats = SearchStats()
+    solver._targeted_kick(
+        seqs,
+        tracker,
+        np.random.default_rng(1),
+        budget,
+        seqs.copy(),
+        tracker.energy(),
+        SolverConfig(targeted_selection="residual"),
+        stats,
+    )
+
+    assert budget.used <= remaining
+    assert budget.used == stats.total_candidate_evals
+    assert stats.escape_candidate_evals == min(3, remaining) + len(quench_budgets)
+    assert quench_budgets == ([remaining - 4] if remaining >= 5 else [])
+
+
+def test_targeted_selection_rejects_unknown_mode() -> None:
+    with pytest.raises(ValueError, match="targeted_selection"):
+        SolverConfig(targeted_selection="unknown")
+
+
 def test_targeted_escape_uses_support_lags(monkeypatch: pytest.MonkeyPatch) -> None:
     from src import solver
 
@@ -415,6 +522,88 @@ def test_tabu_walk_replays_its_best_state() -> None:
     assert result.energy == expected_energy
     assert np.array_equal(seqs, expected)
     assert tracker.energy() == expected_energy
+
+
+@pytest.mark.parametrize("accept_equal", [False, True])
+def test_tabu_equal_plateau_adoption_and_exact_snapshot(accept_equal: bool) -> None:
+    seqs = np.random.default_rng(23).choice((-1, 1), size=(4, 5)).astype(np.int8)
+    original = seqs.copy()
+    tracker = Tracker()
+    tracker.build(seqs)
+    initial_energy = tracker.energy()
+    assert initial_energy == 320
+    assert min(tracker.flip_energies()) == initial_energy
+    result = _tabu_walk(
+        seqs,
+        tracker,
+        initial_energy,
+        np.random.default_rng(1),
+        SolverConfig(tabu_steps=1, tabu_noise=0.0, tabu_accept_equal=accept_equal),
+    )
+
+    assert result.energy == (initial_energy if accept_equal else None)
+    assert np.array_equal(seqs, original) is not accept_equal
+    assert result.steps == result.lateral_moves == 1
+    rebuilt = Tracker()
+    rebuilt.build(seqs)
+    assert tracker.energy() == rebuilt.energy() == initial_energy
+    assert tracker._u is not None and rebuilt._u is not None
+    assert tracker._delta is not None and rebuilt._delta is not None
+    assert tracker._norm2 is not None and rebuilt._norm2 is not None
+    assert np.array_equal(tracker._u, rebuilt._u)
+    assert np.array_equal(tracker._delta, rebuilt._delta)
+    assert np.array_equal(tracker._norm2, rebuilt._norm2)
+    assert np.array_equal(tracker.flip_qs(), rebuilt.flip_qs())
+
+
+def test_tabu_equal_phase_does_not_claim_strict_improvement() -> None:
+    from src.solver import _tabu_phase
+
+    seqs = np.random.default_rng(23).choice((-1, 1), size=(4, 5)).astype(np.int8)
+    tracker = Tracker()
+    tracker.build(seqs)
+    budget = CandidateBudget(seqs.size)
+    stats = SearchStats()
+    accepted, energy, steps = _tabu_phase(
+        seqs,
+        tracker,
+        tracker.energy(),
+        np.random.default_rng(1),
+        budget,
+        SolverConfig(tabu_steps=1, tabu_noise=0.0, tabu_accept_equal=True, trace_phases=True),
+        stats,
+    )
+
+    assert accepted
+    assert energy == 320
+    assert steps == stats.tabu_moves == 1
+    assert stats.tabu_energy_improvement == stats.tabu_improvements == 0
+    assert stats.tabu_improvements_q1 == stats.tabu_improvements_q2 == 0
+    assert stats.tabu_improvements_q3plus == stats.tabu_solves == 0
+    assert budget.used == stats.total_candidate_evals == seqs.size
+    assert stats.phase_events[-1].outcome == "equal"
+
+
+def test_tabu_equal_does_not_adopt_when_only_uphill_state_was_visited() -> None:
+    seqs = np.random.default_rng(23).choice((-1, 1), size=(4, 5)).astype(np.int8)
+    original = seqs.copy()
+    tracker = Tracker()
+    tracker.build(seqs)
+    assert tracker._delta is not None
+    original_deltas = tracker._delta.copy()
+    result = _tabu_walk(
+        seqs,
+        tracker,
+        tracker.energy(),
+        np.random.default_rng(1),
+        SolverConfig(tabu_steps=1, tabu_noise=100.0, tabu_accept_equal=True),
+    )
+
+    assert result.uphill_moves == 1
+    assert result.energy is None
+    assert np.array_equal(seqs, original)
+    assert np.array_equal(tracker._delta, original_deltas)
+    assert tracker.energy() == 320
 
 
 def test_tabu_walk_keeps_main_state_when_it_finds_no_improvement() -> None:

@@ -23,6 +23,7 @@ py-modules = ["run"]
 
 [project.optional-dependencies]
 dev = [
+    "matplotlib>=3.10,<4",
     "latex2mathml>=3.81,<4",
     "markdown-it-py>=4.2,<5",
     "mdit-py-plugins>=0.6,<0.7",
@@ -78,7 +79,7 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 
 [tool.pyright]
-include = ["src", "tests", "scripts", "run.py"]
+include = ["src", "tests", "scripts", "lab", "run.py"]
 exclude = [
     ".venv",
     ".venv-*",
