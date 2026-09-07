@@ -14,10 +14,9 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import cast
 from xml.etree import ElementTree
 
-from latex2mathml.converter import convert  # pyright: ignore[reportUnknownVariableType]
+from latex2mathml.converter import convert
 from markdown_it import MarkdownIt
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 
@@ -48,7 +47,7 @@ def check_math(expression: str) -> list[str]:
     if errors:
         return errors
     try:
-        mathml = ElementTree.fromstring(cast(str, convert(expression)))
+        mathml = ElementTree.fromstring(convert(expression))
     except Exception as error:  # Converter exposes several unrelated exception types.
         return [f"TeX conversion failed: {type(error).__name__}: {error}"]
     unknown = sorted(set(re.findall(r"\\[a-zA-Z]+", "".join(mathml.itertext()))))
