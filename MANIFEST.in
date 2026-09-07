@@ -1,0 +1,4 @@
+include CONTRIBUTING.md SECURITY.md CITATION.cff pytest.ini uv.lock
+recursive-include docs *.md
+recursive-include scripts *.py
+recursive-include tests *.py

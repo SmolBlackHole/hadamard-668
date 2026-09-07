@@ -21,7 +21,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database", type=Path, default=Path("data/hadamard.db"))
-    parser.add_argument("--output", type=Path, default=Path("data/gs4_solution_catalog_v1.json"))
+    parser.add_argument("--output", type=Path, default=Path("runs/solution-catalog.json"))
     args = parser.parse_args(argv)
     if not args.database.is_file():
         parser.error(f"database does not exist: {args.database}")

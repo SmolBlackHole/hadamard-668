@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, cite it and include the commit used for your experiments."
+title: "Hadamard-668"
+type: software
+authors:
+    - name: "SmolBlackHole"
+version: 0.1.0
+license: MPL-2.0
+repository-code: "https://github.com/SmolBlackHole/hadamard-668"
+abstract: "CPU heuristic search and exact constructions for negacyclic Goethals-Seidel Hadamard matrices."

@@ -1,55 +1,70 @@
-# Exakte Konstruktionen
+# Exact constructions
 
-Konstruktion und Suche sind getrennte Pfade. Eine exakte Konstruktion erzeugt
-Folgen mit `Q = 0`, ohne den heuristischen Solver aufzurufen. Der Pipelinepfad
-prüft das Ergebnis trotzdem mit denselben Akzeptanzkriterien wie eine gefundene
-Lösung.
+Parent: [Documentation index](README.md)
 
-## Strategien
+Construction and search are separate paths. An exact construction produces
+sequences with `Q = 0` without invoking the heuristic solver. The pipeline
+still checks the result against the same acceptance criteria as a solution
+found by search.
 
-| Strategie | Verhalten |
+## Contents
+
+- [Exact constructions](#exact-constructions)
+  - [Contents](#contents)
+  - [Strategies](#strategies)
+  - [Paley/Ito path](#paleyito-path)
+  - [Turyn product](#turyn-product)
+  - [Golay-2 doubling](#golay-2-doubling)
+  - [The construct dispatcher](#the-construct-dispatcher)
+  - [Recursive budget limitation](#recursive-budget-limitation)
+  - [Verification](#verification)
+  - [References](#references)
+
+## Strategies
+
+| Strategy | Behavior |
 | --- | --- |
-| `gs4` | immer heuristische Suche |
-| `paley-ng` | direkte Paley/Ito-Konstruktion oder Eingabefehler |
-| `construct` | direkte Paley/Ito-Konstruktion, rekursive Verdopplung oder Suche |
+| `gs4` | Always uses heuristic search |
+| `paley-ng` | Direct Paley/Ito construction or an input error |
+| `construct` | Direct Paley/Ito construction, recursive doubling, or search |
 
-`--order` bezeichnet die Matrixordnung `4n`. `--sweep` erwartet dagegen die
-Folgenlänge `n`.
+`--order` specifies the matrix order `4n`. In contrast, `--sweep` expects the
+sequence length `n`.
 
-## Paley/Ito-Pfad
+## Paley/Ito path
 
-Der implementierte prime-field-Fall gilt genau dann, wenn
+The implemented prime-field case applies exactly when
 
 $$
 n>0,
 \qquad
-n \text{ gerade},
+n \text{ is even},
 \qquad
-p=2n-1 \text{ prim}.
+p=2n-1 \text{ is prime}.
 $$
 
-`paley_ng_sequences(n)` konstruiert deterministisch ein negaperiodisches
-Golay-Paar `(a, b)` und liefert das GS4-Tupel
+`paley_ng_sequences(n)` deterministically constructs a negaperiodic Golay
+pair `(a, b)` and returns the GS4 tuple
 
 $$
 (a,b,a,b).
 $$
 
-Seed, Startzustand und Candidate-Budget spielen auf diesem Pfad keine Rolle.
-Der aktuelle Regressionstest deckt insbesondere `n = 52`, `p = 103` und damit
-eine Hadamard-Matrix der Ordnung 208 ab.
+The seed, initial state, and candidate budget have no effect on this path.
+The regression tests cover `n = 52`, `p = 103`, yielding a Hadamard matrix
+of order 208.
 
 ```bash
 python run.py --strategy paley-ng --order 208 --no-output
 ```
 
-Die Implementierung unterstützt nur den Primfall `p = 2n - 1`. Allgemeine
-Primzahlpotenzen sind nicht implementiert.
+The implementation supports only the prime case `p = 2n - 1`. General prime
+powers are not implemented.
 
-## Turyn-Produkt
+## Turyn product
 
-Seien `(g, h)` ein gewöhnliches Golay-Paar und `(c, d)` ein geeignetes
-negaperiodisches Paar. Mit
+Let `(g, h)` be an ordinary Golay pair and `(c, d)` a suitable negaperiodic
+pair. With
 
 $$
 g_+ = \frac{g+h}{2},
@@ -57,7 +72,7 @@ g_+ = \frac{g+h}{2},
 g_- = \frac{g-h}{2}
 $$
 
-berechnet `turyn_pair()`
+`turyn_pair()` computes
 
 $$
 e = c\otimes g_+ + d^R\otimes g_-,
@@ -67,17 +82,17 @@ $$
 f = d\otimes g_+ - c^R\otimes g_-.
 $$
 
-`turyn_gs4()` wendet denselben Faktor getrennt auf die Paare `(a, b)` und
-`(c, d)` eines GS4-Tupels an.
+`turyn_gs4()` applies the same factor separately to the pairs `(a, b)` and
+`(c, d)` of a GS4 tuple.
 
-Die generischen Funktionen prüfen Form und binäre Ausgabe. Sie beweisen nicht,
-dass der erste Faktor ein Golay-Paar oder das Eingangstupel eine GS4-Lösung
-ist. Diese mathematischen Vorbedingungen liegen beim Aufrufer. Der
-Pipelinepfad prüft das fertige Tupel anschließend vollständig.
+The generic functions check the shape and binary output. They do not prove
+that the first factor is a Golay pair or that the input tuple is a GS4
+solution. The caller is responsible for these mathematical preconditions.
+The pipeline fully verifies the resulting tuple afterward.
 
-## Golay-2-Verdopplung
+## Golay-2 doubling
 
-`double_gs4()` verwendet das feste Golay-Paar
+`double_gs4()` uses the fixed Golay pair
 
 $$
 g=(1,-1),
@@ -85,64 +100,65 @@ g=(1,-1),
 h=(1,1).
 $$
 
-Damit wird aus einer GS4-Lösung der Länge `n` eine GS4-Lösung der Länge `2n`.
-Der aktuelle Testbestand prüft konkret den Lift von `n = 52` nach `n = 104`.
+This turns a GS4 solution of length `n` into a GS4 solution of length `2n`.
+The tests specifically check the lift from `n = 52` to `n = 104`.
 
-## Tatsächlicher construct-Dispatcher
+## The construct dispatcher
 
 ```mermaid
 flowchart TD
-    Start["construct für Länge n"] --> Paley{"n gerade und 2n-1 prim?"}
-    Paley -->|ja| Direct["Paley/Ito konstruieren"]
-    Direct --> Verify["Kandidaten vollständig prüfen"]
-    Paley -->|nein| Even{"n gerade?"}
-    Even -->|nein| Search["GS4-Suche auf n"]
-    Even -->|ja| Half["construct für n/2"]
-    Half --> Solved{"Basis gelöst?"}
-    Solved -->|ja| Double["Golay-2-Verdopplung"]
+    Start["construct for length n"] --> Paley{"n even and 2n-1 prime?"}
+    Paley -->|yes| Direct["Construct Paley/Ito pair"]
+    Direct --> Verify["Fully verify candidate"]
+    Paley -->|no| Even{"n even?"}
+    Even -->|no| Search["GS4 search at n"]
+    Even -->|yes| Half["construct for n/2"]
+    Half --> Solved{"Base solved?"}
+    Solved -->|yes| Double["Golay-2 doubling"]
     Double --> Verify
-    Solved -->|nein| Search
-    Search --> Result["Besten Suchzustand zurückgeben"]
+    Solved -->|no| Search
+    Search --> Result["Return best search state"]
     Verify --> Result
 ```
 
-Der Dispatcher versucht zuerst den direkten Paley/Ito-Pfad. Ist dieser nicht
-anwendbar und `n` gerade, ruft er rekursiv `construct(n/2)` auf. Eine gelöste
-Basis wird verdoppelt. Andernfalls startet die freie GS4-Suche auf der
-ursprünglichen Länge.
+The dispatcher first tries the direct Paley/Ito path. If that does not apply
+and `n` is even, it recursively calls `construct(n/2)`. A solved base is
+doubled. Otherwise, unrestricted GS4 search starts at the original length.
 
-Nicht implementiert sind:
+The following are not implemented:
 
-- ein Dispatcher über allgemeine Primzahlpotenzen;
-- die automatische Faktorisierung über beliebige Golay-Längen;
-- Base-Sequence-, T-Sequence- oder TT-Solver;
-- eine automatische Wahl zwischen mehreren exakten Produktkonstruktionen.
+- A dispatcher covering general prime powers.
+- Automatic factorization using arbitrary Golay lengths.
+- Base-sequence, T-sequence, or TT solvers.
+- Automatic selection among multiple exact product constructions.
 
-## Budgetgrenze des rekursiven Pfads
+## Recursive budget limitation
 
-Jeder rekursive `execute()`-Aufruf erhält derzeit ein eigenes vollständiges
-Candidate-Budget. Scheitert die Suche auf `n/2` und beginnt danach eine neue
-Suche auf `n`, kann die reale Gesamtarbeit das am äußeren Run angegebene Budget
-überschreiten. Der verworfene Basislauf wird außerdem nicht in
-`RunResult.candidate_evals` des äußeren Laufs eingerechnet.
+Each recursive `execute()` call currently receives its own full candidate
+budget. If search at `n/2` fails and a new search then starts at `n`, the
+actual total work can exceed the budget specified for the outer run.
+The discarded base run is also excluded from the outer run's
+`RunResult.candidate_evals`.
 
-`construct`-Runs mit fehlgeschlagener Basis dürfen deshalb anhand ihrer
-Candidate-Zahl nicht mit direkten `gs4`-Runs verglichen werden. Direkte
-Paley/Ito-Konstruktionen und erfolgreiche Verdopplungen melden dagegen korrekt
-null beziehungsweise die Arbeit der gelösten Basis.
+Consequently, candidate counts from `construct` runs with a failed base
+must not be compared with those from direct `gs4` runs. Direct Paley/Ito
+constructions and successful doublings correctly report zero work or the
+work of the solved base, respectively.
 
-## Verifikation
+## Verification
 
-Jedes konstruierte Tupel passiert `verify_candidate()`:
+Every constructed tuple passes through `verify_candidate()`:
 
-1. Form und binäre Werte prüfen;
-2. alle negaperiodischen GS4-Residualgleichungen prüfen;
-3. die vollständige Matrix der Ordnung `4n` bauen;
-4. Zeilennormen und paarweise Orthogonalität unabhängig prüfen.
+1. Check the shape and binary values.
+2. Check all negaperiodic GS4 residual equations.
+3. Build the full matrix of order `4n`.
+4. Independently check row norms and pairwise orthogonality.
 
-Erst danach markiert die Pipeline das Ergebnis als verifiziert.
+Only then does the pipeline mark the result as verified. See
+[the mathematical model](mathematics.md) for the residual equations and
+energy normalization.
 
-## Literatur
+## References
 
-- N. A. Balonin und D. Z. Djokovic, *Negaperiodic Golay pairs and Hadamard
+- N. A. Balonin and D. Z. Djokovic, *Negaperiodic Golay pairs and Hadamard
   matrices*, [arXiv:1508.00640](https://arxiv.org/abs/1508.00640)

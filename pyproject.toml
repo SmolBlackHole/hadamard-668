@@ -1,9 +1,25 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "hadamard-668"
 version = "0.1.0"
 description = "CPU heuristic search for negacyclic Goethals-Seidel Hadamard matrices"
+readme = "README.md"
+license = "MPL-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "SmolBlackHole" }]
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.24,<3", "numba>=0.66,<0.67"]
+
+[project.urls]
+Repository = "https://github.com/SmolBlackHole/hadamard-668"
+Issues = "https://github.com/SmolBlackHole/hadamard-668/issues"
+
+[tool.setuptools]
+packages = ["src"]
+py-modules = ["run"]
 
 [project.optional-dependencies]
 dev = [
@@ -61,6 +77,7 @@ skip-magic-trailing-comma = false
 include = ["src", "tests", "scripts", "run.py"]
 exclude = [
     ".venv",
+    ".venv-*",
     ".git",
     "runs",
     ".pytest-tmp",

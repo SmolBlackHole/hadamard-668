@@ -1,63 +1,52 @@
-# Dokumentation
+# Documentation
 
-Diese Dokumentation beschreibt den aktuellen Checkout. Historische
-Laborjournale, verworfene Solvervarianten und Ergebnisse ohne erhaltene
-Rohartefakte gehören nicht zum kanonischen Bestand.
+Parent: [Project README](../README.md)
 
-## Lesereihenfolge
+This documentation describes the current implementation. Claims about experiments
+require retained data; historical aggregates without their source artifacts are
+not reproducible evidence.
 
-1. [`mathematics.md`](mathematics.md) definiert das GS4-Problem und die exakte
-   Zielfunktion.
-2. [`solver.md`](solver.md) erklärt, wie der aktuelle Solver diese Zielfunktion
-   durchsucht.
-3. [`constructions.md`](constructions.md) trennt die exakten Konstruktionen von
-   der heuristischen Suche.
-4. [`experiments.md`](experiments.md) beschreibt Speicherung, Metriken und
-   reproduzierbare Auswertung.
+## Contents
 
-```mermaid
-flowchart LR
-    Math["mathematics.md<br/>Problem und Invarianten"] --> Solver["solver.md<br/>Suchalgorithmus"]
-    Math --> Constructions["constructions.md<br/>Exakte Pfade"]
-    Solver --> Experiments["experiments.md<br/>Daten und Vergleiche"]
-    Constructions --> Experiments
-```
+- [Documentation](#documentation)
+  - [Contents](#contents)
+  - [Reading guide](#reading-guide)
+  - [Sources of truth](#sources-of-truth)
+  - [Notation](#notation)
+  - [Maintaining documentation](#maintaining-documentation)
 
-## Quellenhierarchie
+## Reading guide
 
-Bei einem Widerspruch gilt folgende Reihenfolge:
+| Question | Read |
+| --- | --- |
+| What mathematical problem does the solver search? | [Mathematics](mathematics.md) |
+| How does the search work? | [Solver](solver.md) |
+| When can a matrix be constructed directly? | [Constructions](constructions.md) |
+| How do I store, audit and compare results? | [Experiments](experiments.md) |
+| Which module owns each part of the system? | [Architecture](architecture.md) |
+| How do I install and check the project? | [Development](development.md) |
+| How should documentation be maintained? | [Writing documentation](writing-and-maintaining-docs.md) |
 
-1. Mathematische Akzeptanzkriterien werden durch `src/builder.py` und
-   `src/verify.py` festgelegt.
-2. Solververhalten und Budgetsemantik werden durch `src/solver.py`,
-   `src/tracker.py` und `src/models.py` festgelegt.
-3. Persistenz und Identitäten werden durch `src/output.py` und
-   `src/canonical.py` festgelegt.
-4. Ergebniszahlen müssen aus einem erhaltenen Artefakt stammen. Im Repository
-   ist das `data/gs4_solution_catalog_v1.json`; lokale Datenbanken und Dateien
-   unter `runs/` sind nicht versioniert.
+## Sources of truth
 
-Abgeleitete Formeln stehen in `mathematics.md` zusammen mit ihrem
-Gültigkeitsbereich und den zugehörigen Regressionstests. Eine niedrigere
-Energie, ein schnellerer Einzellauf oder eine größere Zahl akzeptierter Moves
-ist für sich allein kein Beleg für einen besseren Solver.
+Code defines implemented behavior; tests provide executable regression evidence.
+The [architecture guide](architecture.md#ownership) maps responsibilities to modules.
+Mathematical derivations state their assumptions and link to the relevant tests.
+
+Local databases and files under `runs/` are not shipped with the repository.
+Reproduce and retain your own experiment artifacts as described in
+[Experiments](experiments.md). A lower energy, a faster single run or more accepted
+moves alone does not demonstrate a better solver.
 
 ## Notation
 
-`n` ist die Länge jeder der vier binären Folgen. Die resultierende Matrix hat
-Ordnung `4n`. `r` bezeichnet das kombinierte negaperiodische Residuum,
-`u = r/4` seine reduzierte Form, `Q = ||u||²` die Solverzielfunktion und
-`E = 64nQ` die im Repository verwendete Gram-Energie.
+`n` is the length of each of the four binary sequences. The matrix order is `4n`.
+`r` is the combined negaperiodic residual, `u = r/4` its reduced form over
+independent lags, `Q = ||u||²` the search objective, and `E = 64nQ` the repository's
+Gram energy. See [Mathematics](mathematics.md) for the derivation and valid domain.
 
-## Quellcode-Dokumentation
+## Maintaining documentation
 
-Python-Docstrings sind englisch und folgen PEP 257 im Google-Stil. Die erste
-Zeile fasst den Vertrag zusammen. `Args:`, `Returns:`, `Raises:`, `Attributes:`,
-`Note:` und `Warning:` erscheinen nur, wenn sie zusätzliche Information
-tragen. Typen stehen in den Annotationen; Docstrings erklären stattdessen
-Form, Einheit, Reihenfolge, Mutation, Besitz und fachliche Bedeutung.
-
-Öffentliche Module, Klassen und Funktionen benötigen einen Docstring. Private
-Helfer werden nur dokumentiert, wenn ihr Vertrag nicht aus Signatur und Code
-hervorgeht. Tests sind ausgenommen, weil ihre Namen das geprüfte Verhalten
-beschreiben. Ruff erzwingt diese Grenze als Teil von `scripts/quality.py check`.
+Give each fact one authoritative page and link to it from related topics.
+Follow the [documentation guide](writing-and-maintaining-docs.md) when adding,
+translating or moving a page.

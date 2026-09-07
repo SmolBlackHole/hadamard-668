@@ -1,5 +1,10 @@
 __pycache__/
 *.pyc
+*.egg-info/
+build/
+dist/
+.ruff_cache/
+.hypothesis/
 .pytest_cache/
 .gremlins_cache/
 .pytest-tmp/
@@ -9,7 +14,10 @@ runs/
 *.db-wal
 data/_bench_*.db
 .venv/
+.venv-*/
 .env
+.env.*
+!.env.example
 .coverage
 coverage.json
 reference_pzinn/

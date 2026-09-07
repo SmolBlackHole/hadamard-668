@@ -1,132 +1,69 @@
 # Hadamard-668
 
+[![Quality](https://github.com/SmolBlackHole/hadamard-668/actions/workflows/quality.yml/badge.svg)](https://github.com/SmolBlackHole/hadamard-668/actions/workflows/quality.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
+[![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE)
 
-CPU-basierte Suche nach reellen Hadamard-Matrizen in der negazyklischen
-Goethals-Seidel-Familie. Das konkrete Fernziel ist eine Matrix der Ordnung 668,
-also vier binäre Folgen der Länge `n = 167`.
+CPU-based research software for finding real Hadamard matrices in the negacyclic
+Goethals-Seidel family. The long-term target is order 668: four binary sequences
+of length `n = 167`.
 
-## Projektstatus
+**This project has not found a matrix of order 668.** It provides a heuristic
+solver for smaller GS4 instances, exact Paley/Ito constructions, independent
+verification, and SQLite-backed experiments. A search can finish without a solution.
 
-Für Ordnung 668 wurde keine Matrix gefunden. Der heuristische Solver löst
-kleinere GS4-Instanzen und speichert seine Ergebnisse reproduzierbar in SQLite.
-Der versionierte Katalog enthält derzeit 794 verifizierte Lösungen aus 794
-Quick-Orbits für `n = 31` bis `n = 64`.
+## Quick start
 
-`n = 52` ist kein ungelöstes Konstruktionsproblem: Weil `2n - 1 = 103` prim
-ist, erzeugt der implementierte Paley/Ito-Pfad deterministisch eine Matrix der
-Ordnung 208. Heuristische Lösungen für dieselbe Länge werden im Katalog davon
-getrennt ausgewiesen.
-
-## Installation
+Clone the repository and install it with Python 3.11 or newer:
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/SmolBlackHole/hadamard-668.git
 cd hadamard-668
-python -m pip install -e ".[dev]"
+python -m venv .venv
 ```
 
-## Schnellstart
+Activate the environment with `.venv\Scripts\Activate.ps1` in PowerShell or
+`source .venv/bin/activate` in bash, then run:
 
-Ein heuristischer Lauf ohne Datenbankausgabe:
+```bash
+python -m pip install -e ".[dev]"
+python run.py --strategy paley-ng --order 208 --no-output
+```
+
+This deterministic construction builds and verifies an order-208 matrix. For
+a seeded heuristic search:
 
 ```bash
 python run.py --strategy gs4 --order 128 --candidate-budget 6000000 --seed 42 --no-output
 ```
 
-Ein paralleler Sweep über mehrere Sequenzlängen:
+`--order` is the matrix order `4n`; `--sweep` takes sequence lengths `n`.
+Omit `--no-output` to store runs in the local `data/hadamard.db` database.
+Numba compilation adds overhead to the first search in a process.
 
-```bash
-python run.py --sweep gs4 32 34 36 --seeds 100 --candidate-budget 6000000 --workers 12
-```
+## Documentation
 
-Die exakte Paley/Ito-Konstruktion für Ordnung 208:
+Start at the [documentation index](docs/README.md):
 
-```bash
-python run.py --strategy paley-ng --order 208 --no-output
-```
+- [Mathematics](docs/mathematics.md): GS4 equations, energy and flip algebra.
+- [Solver](docs/solver.md): search phases, settings and candidate budgets.
+- [Constructions](docs/constructions.md): exact paths and their limits.
+- [Experiments](docs/experiments.md): persistence, analysis and reproducibility.
+- [Development](docs/development.md): installation, checks and contribution workflow.
 
-Eine vorhandene Datenbank read-only prüfen:
+The recursive `construct` strategy has a known
+[budget accounting limitation](docs/constructions.md#recursive-budget-limitation).
 
-```bash
-python run.py --check data/hadamard.db
-```
+## Contributing
 
-## Modell
+Run `python scripts/quality.py check` before proposing changes. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the contribution contract and
+[SECURITY.md](SECURITY.md) for reporting security issues.
 
-Vier Folgen `a, b, c, d` aus `{+1, -1}^n` bestimmen vier negazyklische
-Blöcke und daraus eine GS4-Matrix `H` der Ordnung `4n`. Die
-Hadamard-Bedingung ist äquivalent zu
+Citation metadata is available in [CITATION.cff](CITATION.cff). When reporting
+experimental results, include the commit, configuration, seeds and budget.
 
-```text
-NAF_a(t) + NAF_b(t) + NAF_c(t) + NAF_d(t) = 0
-für t = 1, ..., n - 1.
-```
+## License
 
-Der Tracker speichert nur die unabhängigen, durch vier geteilten Residuen
-`u`. Seine Zielfunktion ist `Q = ||u||²`; die im Repository verwendete
-Gram-Energie ist `E = 64nQ`. `Q = 0` ist exakt die GS4-Bedingung.
-
-Die vollständige Herleitung steht in
-[`docs/mathematics.md`](docs/mathematics.md).
-
-## Systemfluss
-
-```mermaid
-flowchart TD
-    CLI["run.py"] --> Tasks["Seeds und Konfigurationen"]
-    Tasks --> Pipeline["pipeline.execute"]
-    Pipeline --> Strategy{"Strategie"}
-    Strategy -->|gs4| Search["Heuristische Suche"]
-    Strategy -->|paley-ng| Supported{"Paley-Bedingung erfüllt?"}
-    Supported -->|ja| Construction["Paley/Ito"]
-    Supported -->|nein| InputError["Eingabefehler"]
-    Strategy -->|construct| Construct["Paley, Rekursion oder GS4-Fallback"]
-    Construction --> Verify["Folgen und GS4-Matrix prüfen"]
-    Search --> Solved{"Q = 0?"}
-    Solved -->|ja| Verify
-    Solved -->|nein| Result["Bester gefundener Zustand"]
-    Verify --> Result
-    Construct --> Result
-    Result --> Store{"Ausgabe aktiviert?"}
-    Store -->|ja| Database["SQLite: runs und solutions"]
-    Store -->|nein| Done["Fertig"]
-    Database --> Audit["Optionaler DB-Audit"]
-    Audit --> Done
-    InputError --> Done
-```
-
-Jeder abgeschlossene Lauf kann in `runs` gespeichert werden. Nur ein
-Nullenergie-Kandidat wird im Pipelinepfad unabhängig geprüft und zusätzlich in
-`solutions` übernommen. Die lokale Datei `data/hadamard.db` ist absichtlich
-nicht versioniert.
-
-## Dokumentation
-
-- [`docs/mathematics.md`](docs/mathematics.md): GS4-Gleichung, Energie,
-  Flip-Algebra und Tight-Frame-Struktur.
-- [`docs/solver.md`](docs/solver.md): aktueller Suchalgorithmus, Defaults,
-  Budget und Kontrollfluss.
-- [`docs/constructions.md`](docs/constructions.md): implementierte exakte
-  Konstruktionen und tatsächlicher `construct`-Dispatcher.
-- [`docs/experiments.md`](docs/experiments.md): Datenmodell, Identitäten,
-  Metriken und Reproduktionsvertrag.
-
-Der Einstieg und die Quellenhierarchie stehen in
-[`docs/README.md`](docs/README.md).
-
-## Qualität
-
-```bash
-python scripts/quality.py check
-```
-
-Der Check umfasst Ruff, Pyright, pytest und `compileall`. Lang laufende
-Mutationstests werden separat mit `python scripts/quality.py mutate` gestartet.
-
-## Literatur
-
-- J. M. Goethals und J. J. Seidel, *A skew Hadamard matrix of order 36*,
-  [doi:10.1017/S144678870000673X](https://doi.org/10.1017/S144678870000673X)
-- N. A. Balonin und D. Z. Djokovic, *Negaperiodic Golay pairs and Hadamard
-  matrices*, [arXiv:1508.00640](https://arxiv.org/abs/1508.00640)
+This Source Code Form is subject to the terms of the Mozilla Public License,
+v. 2.0. See [LICENSE](LICENSE) for the complete license text.

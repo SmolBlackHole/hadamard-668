@@ -1,25 +1,43 @@
-# Mathematik des GS4-Modells
+# Mathematics of the GS4 model
 
-Dieses Dokument beschreibt die exakte Zielfunktion des Solvers. Es trennt
-Gleichungen, die den aktuellen Code definieren, von zusätzlichen
-Strukturidentitäten. Historische Experimente und offene Neuheitsfragen sind
-nicht Teil dieses Modells.
+Parent: [Documentation index](README.md)
 
-## Folgen und negaperiodische Autokorrelation
+This document describes the solver's exact objective function. It separates
+the equations that define the current code from additional structural
+identities. Historical experiments and open questions about novelty are
+outside the scope of this model.
 
-Sei
+## Contents
+
+- [Mathematics of the GS4 model](#mathematics-of-the-gs4-model)
+  - [Contents](#contents)
+  - [Sequences and negaperiodic autocorrelation](#sequences-and-negaperiodic-autocorrelation)
+  - [GS4 matrix and Hadamard condition](#gs4-matrix-and-hadamard-condition)
+  - [Independent lags and integer reduction](#independent-lags-and-integer-reduction)
+  - [Energy and normalization](#energy-and-normalization)
+  - [Single-flip operator](#single-flip-operator)
+  - [Exact multi-flips](#exact-multi-flips)
+  - [Gram matrix of the flip dictionary](#gram-matrix-of-the-flip-dictionary)
+  - [Half-length folding for even n](#half-length-folding-for-even-n)
+  - [What the model establishes](#what-the-model-establishes)
+  - [Code and test references](#code-and-test-references)
+  - [References](#references)
+
+## Sequences and negaperiodic autocorrelation
+
+Let
 
 $$
 x = (x_0, \ldots, x_{n-1}) \in \{-1,+1\}^n.
 $$
 
-Die antiperiodische Fortsetzung erfüllt
+The antiperiodic extension satisfies
 
 $$
 \bar x_{j+n} = -\bar x_j.
 $$
 
-Für $0 \le t < n$ ist die negaperiodische Autokorrelation
+For $0 \le t < n$, the negaperiodic autocorrelation is
 
 $$
 \operatorname{NAF}_x(t)
@@ -28,18 +46,18 @@ $$
   - \sum_{j=n-t}^{n-1}x_jx_{j+t-n}.
 $$
 
-Für vier Folgen $x^{(1)},\ldots,x^{(4)}$ definiert das Projekt das kombinierte
-Residuum
+For four sequences $x^{(1)},\ldots,x^{(4)}$, the project defines the combined
+residual
 
 $$
 r_t = \sum_{s=1}^{4}\operatorname{NAF}_{x^{(s)}}(t),
 \qquad r_0 = 4n.
 $$
 
-## GS4-Matrix und Hadamard-Bedingung
+## GS4 matrix and Hadamard condition
 
-Aus den vier Folgen entstehen die negazyklischen Matrizen $A,B,C,D$. Mit der
-Rückwärts-Identität $J$ baut `src/builder.py` die Matrix
+The four sequences define the negacyclic matrices $A,B,C,D$. Using the
+backward identity matrix $J$, `src/builder.py` constructs
 
 $$
 H =
@@ -51,34 +69,34 @@ A   & BJ    & CJ    & DJ \\
 \end{bmatrix}.
 $$
 
-Die folgenden Bedingungen sind äquivalent:
+The following conditions are equivalent:
 
 $$
 HH^T = 4nI
 \iff
-r_t = 0 \quad \text{für } 1 \le t < n.
+r_t = 0 \quad \text{for } 1 \le t < n.
 $$
 
-`src/verify.py` prüft die Residualgleichungen unabhängig vom Tracker. Ein im
-Pipelinepfad gefundener Nullenergie-Kandidat wird zusätzlich als vollständige
-GS4-Matrix aufgebaut und mit einem reinen Python-Zeilenaudit geprüft.
+`src/verify.py` checks the residual equations independently of the tracker.
+For a zero-energy candidate found through the pipeline, the full GS4 matrix
+is also built and checked by a pure-Python row audit.
 
 ```mermaid
 flowchart LR
-    X["Vier Folgen<br/>x in {±1}^(4n)"] --> R["Residuum<br/>r_t = Summe der NAFs"]
-    X --> H["GS4-Builder<br/>H der Ordnung 4n"]
-    R --> U["Reduktion<br/>u = r / 4"]
+    X["Four sequences<br/>x in {±1}^(4n)"] --> R["Residual<br/>r_t = sum of NAFs"]
+    X --> H["GS4 builder<br/>H of order 4n"]
+    R --> U["Reduction<br/>u = r / 4"]
     U --> Q["Q = ||u||²"]
     Q --> E["E = 64 n Q"]
     Q -->|"Q = 0"| Zero["u = 0"]
     H --> Hadamard
     Zero --> Hadamard["H H^T = 4n I"]
-    Hadamard -->|äquivalent| Zero
+    Hadamard -->|equivalent| Zero
 ```
 
-## Unabhängige Lags und ganzzahlige Reduktion
+## Independent lags and integer reduction
 
-Die antiperiodische Symmetrie liefert
+Antiperiodic symmetry gives
 
 $$
 r_{-t}=r_t,
@@ -86,23 +104,22 @@ r_{-t}=r_t,
 r_{n-t}=-r_t.
 $$
 
-Damit genügen
+It therefore suffices to use
 
 $$
 m = \left\lfloor\frac{n-1}{2}\right\rfloor
 $$
 
-unabhängige Koordinaten. Für gerades $n$ ist der Mittelpunkt-Lag $r_{n/2}$
-identisch null.
+independent coordinates. For even $n$, the midpoint lag $r_{n/2}$ is
+identically zero.
 
-Jedes kombinierte Residuum ist durch vier teilbar. Für eine einzelne Folge
-gilt
+Each combined residual is divisible by four. For a single sequence,
 
 $$
 \operatorname{NAF}_x(t) \equiv n-2t \pmod 4.
 $$
 
-Die Summe über vier Folgen ist daher null modulo vier. Der Tracker speichert
+The sum over four sequences is therefore zero modulo four. The tracker stores
 
 $$
 u_t = \frac{r_t}{4},
@@ -113,16 +130,16 @@ $$
 ```mermaid
 flowchart TB
     Full["r_1, ..., r_(n-1)"] --> Symmetry["r_(n-t) = -r_t"]
-    Symmetry --> Odd["n ungerade<br/>m = (n-1)/2"]
-    Symmetry --> Even["n gerade<br/>r_(n/2) = 0<br/>m = (n-2)/2"]
-    Odd --> Stored["gespeichert: u_1, ..., u_m"]
+    Symmetry --> Odd["n odd<br/>m = (n-1)/2"]
+    Symmetry --> Even["n even<br/>r_(n/2) = 0<br/>m = (n-2)/2"]
+    Odd --> Stored["stored: u_1, ..., u_m"]
     Even --> Stored
 ```
 
-## Energie und Normierung
+## Energy and normalization
 
-Die Repository-Energie ist die Summe der quadrierten Skalarprodukte über
-ungeordnete Paare verschiedener Matrixzeilen:
+The energy used in this repository is the sum of squared inner products over
+unordered pairs of distinct matrix rows:
 
 $$
 E
@@ -130,8 +147,8 @@ E
 = \frac12\lVert HH^T-4nI\rVert_F^2.
 $$
 
-Sie ist nicht der volle Frobeniusdefekt, sondern dessen Hälfte. Für das
-GS4-Residuum gilt exakt
+It equals half the full squared Frobenius defect. For the GS4 residual,
+the exact identity is
 
 $$
 E
@@ -139,19 +156,19 @@ E
 = 64nQ.
 $$
 
-Damit sind
+Thus,
 
 $$
 E=0 \iff Q=0 \iff u=0 \iff HH^T=4nI.
 $$
 
-Diese Identität wird in `tests/test_tracker.py` und
-`tests/test_properties.py` gegen die vollständig gebaute Gram-Matrix geprüft.
+This identity is checked against the fully constructed Gram matrix in
+`tests/test_tracker.py` and `tests/test_properties.py`.
 
-## Single-Flip-Operator
+## Single-flip operator
 
-Für jeden der $4n$ möglichen Bitflips $i=(s,c)$ sei $d_i$ die Änderung des
-reduzierten Residuums. Komponentenweise gilt
+For each of the $4n$ possible bit flips $i=(s,c)$, let $d_i$ be the change in
+the reduced residual. Componentwise,
 
 $$
 d_{i,t}
@@ -160,13 +177,13 @@ d_{i,t}
 \in \{-1,0,1\}.
 $$
 
-Die Zeilen bilden das zustandsabhängige Flip-Wörterbuch
+These rows form the state-dependent flip dictionary
 
 $$
 D(x) \in \{-1,0,1\}^{4n\times m}.
 $$
 
-Für einen Flip gilt exakt
+For a single flip, the exact update is
 
 $$
 u' = u+d_i,
@@ -176,28 +193,28 @@ $$
 Q' = Q + 2\langle u,d_i\rangle + \lVert d_i\rVert_2^2.
 $$
 
-Der Tracker hält $D$, die Zeilennormen und $u$ im Cache. Nach einem
-akzeptierten Flip aktualisiert er alle betroffenen Einträge in $O(n)$.
+The tracker caches $D$, its row norms, and $u$. After an accepted flip, it
+updates all affected entries in $O(n)$.
 
 ```mermaid
 flowchart LR
-    State["Zustand x"] --> Dictionary["u(x) und D(x)"]
+    State["State x"] --> Dictionary["u(x) and D(x)"]
     Dictionary --> Score["Q_i' = Q + 2<u,d_i> + ||d_i||²"]
     Score --> Move["Flip i"]
-    Move --> Next["Neuer Zustand x'"]
-    Next --> NextDictionary["u(x') und D(x')"]
-    NextDictionary -.->|neues Wörterbuch| Score
+    Move --> Next["New state x'"]
+    Next --> NextDictionary["u(x') and D(x')"]
+    NextDictionary -.->|new dictionary| Score
 ```
 
-Ein kleineres $Q$ beschreibt einen kleineren aktuellen Fehler. Es beschreibt
-nicht vollständig, welche Moves im nächsten Zustand verfügbar sein werden,
-weil sich $D(x)$ mit jedem Flip ändert.
+A smaller $Q$ means a smaller current error. It does not fully describe
+which moves will be available in the next state, because $D(x)$ changes with
+every flip.
 
-## Exakte Multi-Flips
+## Exact multi-flips
 
-Wiederholt auftretende Flips heben sich paarweise auf. Für die verbleibende
-Flipmenge $F$ setzt sich die Residualänderung aus den Single-Deltas und
-Korrekturen für Paare innerhalb derselben Folge zusammen:
+Repeated flips cancel in pairs. For the remaining flip set $F$, the residual
+change consists of the single-flip deltas and corrections for pairs within
+the same sequence:
 
 $$
 \Delta_Fu
@@ -206,7 +223,7 @@ $$
     \kappa_{ij}e_{\ell_{ij}}.
 $$
 
-Für $h=|c_i-c_j|$ und $\ell_{ij}=\min(h,n-h)$ ist
+For $h=|c_i-c_j|$ and $\ell_{ij}=\min(h,n-h)$,
 
 $$
 \kappa_{ij}=
@@ -216,11 +233,11 @@ x_{s,c_i}x_{s,c_j}, & h<n-h,\\
 \end{cases}
 $$
 
-Beim geraden Mittelpunkt $h=n/2$ liegt die Korrektur ausschließlich im
-identisch verschwindenden Mittelpunkt-Lag und wird nicht gespeichert. Flips in
-verschiedenen Folgen erzeugen keine Paarkorrektur.
+For the even midpoint $h=n/2$, the correction affects only the identically
+zero midpoint lag and is not stored. Flips in different sequences produce
+no pair correction.
 
-Danach gilt
+Then
 
 $$
 Q(F)=\lVert u+\Delta_Fu\rVert_2^2,
@@ -228,31 +245,31 @@ Q(F)=\lVert u+\Delta_Fu\rVert_2^2,
 E(F)=64nQ(F).
 $$
 
-Das Residuum ist höchstens quadratisch in den Flipindikatoren. Die Energie ist
-die quadrierte Norm dieses Residuums und deshalb im Allgemeinen quartisch.
-`Tracker.combo_energy()` bleibt exakt, weil die Methode zuerst das vollständige
-Residuum konstruiert und erst danach seine Norm bildet.
+The residual is at most quadratic in the flip indicators. Energy is the
+squared norm of this residual and is therefore generally quartic.
+`Tracker.combo_energy()` remains exact because it first constructs the full
+residual and only then computes its norm.
 
-## Grammatrix des Flip-Wörterbuchs
+## Gram matrix of the flip dictionary
 
-Mit antiperiodisch fortgesetztem $r$ gilt für unabhängige Lags $t$ und $\ell$
+With $r$ extended antiperiodically, for independent lags $t$ and $\ell$,
 
 $$
 (D^TD)_{t,\ell}
 = \frac{r_{\ell-t}+r_{\ell+t}}{2}.
 $$
 
-Außerdem gilt die Balanceidentität
+The following balance identity also holds:
 
 $$
 \sum_i d_i=-4u.
 $$
 
-Damit ist $D^TD$ vollständig durch das aktuelle Residuum bestimmt. Es enthält
-die aggregierte Spaltengeometrie, aber nicht die Zuordnung der konkreten Zeilen
-zu den $4n$ Flips.
+Thus, $D^TD$ is fully determined by the current residual. It captures the
+aggregate column geometry, but not the assignment of individual rows to the
+$4n$ flips.
 
-Für $n\ge5$ gilt die Tight-Frame-Äquivalenz
+For $n\ge5$, the tight-frame equivalence is
 
 $$
 u=0
@@ -260,34 +277,34 @@ u=0
 D^TD=2nI_m.
 $$
 
-Der Fall $n=4$ ist eine Ausnahme: Dort kann $D^TD=2nI$ auch bei $Q>0$ gelten.
+The case $n=4$ is an exception: $D^TD=2nI$ can hold even when $Q>0$.
 
-Setze $F_D=D^TD-2nI$. Für gerades $n\ge6$ gilt
+Let $F_D=D^TD-2nI$. For even $n\ge6$,
 
 $$
 \lVert F_D\rVert_F^2=4(n-4)Q.
 $$
 
-Für ungerades $n\ge5$ und
+For odd $n\ge5$, with
 
 $$
 a=\sum_{t=1}^{(n-1)/2}(-1)^tu_t
 $$
 
-gilt
+we have
 
 $$
 \lVert F_D\rVert_F^2=4(n-4)Q+8a^2.
 $$
 
-Diese Identitäten sind Regressionstests in `tests/test_tracker.py`. Derselbe
-Testbestand enthält zwei Zustände mit identischem $u$ und identischem $D^TD$,
-aber unterschiedlicher Zahl direkt lösender Single-Flips. Ein Framepotential
-ist deshalb keine zusätzliche Navigationsmetrik.
+These identities are covered by regression tests in `tests/test_tracker.py`.
+The same tests include two states with identical $u$ and $D^TD$ but different
+numbers of single flips that immediately solve the problem. A frame potential
+therefore does not provide an additional navigation metric.
 
-## Halb-Längen-Faltung für gerades n
+## Half-length folding for even n
 
-Für $n=2h$ zerlege jede Folge als $x=(p,q)$ und setze
+For $n=2h$, split each sequence as $x=(p,q)$ and set
 
 $$
 z_j=p_j+iq_j,
@@ -297,57 +314,57 @@ z_j=p_j+iq_j,
 y_j=\omega^jz_j.
 $$
 
-Definiere die summierte periodische Autokorrelation der vier $y$-Folgen als
+Define the summed periodic autocorrelation of the four $y$ sequences as
 
 $$
 C_t=\sum_{s=0}^{3}\sum_{j=0}^{h-1}
 y_j^{(s)}\overline{y_{j+t\bmod h}^{(s)}}.
 $$
 
-Dann gilt für $1\le t<h$
+Then, for $1\le t<h$,
 
 $$
 C_t=\omega^{-t}(r_t+ir_{h-t})
 $$
 
-und damit
+and hence
 
 $$
 Q=\frac1{32}\sum_{t=1}^{h-1}|C_t|^2.
 $$
 
-Diese Darstellung ist exakt und in `tests/test_tracker.py` geprüft. Der
-aktuelle Solver verwendet sie nicht. Sie halbiert die Folgenlänge, entfernt
-aber keine binären Freiheitsgrade.
+This representation is exact and checked in `tests/test_tracker.py`. The
+current solver does not use it. It halves the sequence length but removes
+no binary degrees of freedom.
 
-## Was das Modell aussagt
+## What the model establishes
 
-Das Modell liefert:
+The model provides:
 
-- ein exaktes, ganzzahliges Akzeptanzkriterium;
-- exakte Kosten für Single- und Multi-Flips;
-- einen kompakten Residualraum mit ungefähr `n/2` Koordinaten;
-- eine klare Trennung zwischen aktuellem Fehler `u` und dem
-  zustandsabhängigen Move-Wörterbuch `D(x)`.
+- An exact integer acceptance criterion.
+- Exact costs for single flips and multi-flips.
+- A compact residual space with approximately `n/2` coordinates.
+- A clear distinction between the current error `u` and the state-dependent
+  move dictionary `D(x)`.
 
-Es liefert keinen polynomialen Konstruktionsalgorithmus, keine
-Existenzklassifikation und keinen Beweis, dass ein niedrigeres `Q` zu einer
-höheren späteren Solve-Wahrscheinlichkeit führt.
+It provides no polynomial-time construction algorithm, no existence
+classification, and no proof that a lower `Q` increases the probability of
+eventually finding a solution.
 
-## Code- und Testanker
+## Code and test references
 
-| Aussage | Implementierung | Regression |
+| Claim | Implementation | Regression tests |
 | --- | --- | --- |
-| GS4-Blockmatrix | `src/builder.py` | `tests/test_builders.py` |
-| Residuum, `u`, `Q`, `E` | `src/tracker.py` | `tests/test_tracker.py`, `tests/test_properties.py` |
-| Single- und Multi-Flips | `src/tracker.py` | `tests/test_tracker.py`, `tests/test_properties.py` |
-| unabhängige Verifikation | `src/verify.py` | `tests/test_verify.py`, `tests/test_pipeline.py` |
-| Paley/Ito und Verdopplung | `src/constructions.py` | `tests/test_pipeline.py` |
-| Halb-Längen-Faltung | keine Solverphase | `tests/test_tracker.py` |
+| GS4 block matrix | `src/builder.py` | `tests/test_builders.py` |
+| Residual, `u`, `Q`, `E` | `src/tracker.py` | `tests/test_tracker.py`, `tests/test_properties.py` |
+| Single flips and multi-flips | `src/tracker.py` | `tests/test_tracker.py`, `tests/test_properties.py` |
+| Independent verification | `src/verify.py` | `tests/test_verify.py`, `tests/test_pipeline.py` |
+| Paley/Ito and doubling | `src/constructions.py` | `tests/test_pipeline.py` |
+| Half-length folding | No solver phase | `tests/test_tracker.py` |
 
-## Literatur
+## References
 
-- J. M. Goethals und J. J. Seidel, *A skew Hadamard matrix of order 36*,
+- J. M. Goethals and J. J. Seidel, *A skew Hadamard matrix of order 36*,
   [doi:10.1017/S144678870000673X](https://doi.org/10.1017/S144678870000673X)
-- N. A. Balonin und D. Z. Djokovic, *Negaperiodic Golay pairs and Hadamard
+- N. A. Balonin and D. Z. Djokovic, *Negaperiodic Golay pairs and Hadamard
   matrices*, [arXiv:1508.00640](https://arxiv.org/abs/1508.00640)

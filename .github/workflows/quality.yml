@@ -1,0 +1,49 @@
+# SPDX-FileCopyrightText: 2026 SmolBlackHole
+# SPDX-License-Identifier: MPL-2.0
+
+name: Quality
+
+on:
+    push:
+    pull_request:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    quality:
+        name: Python ${{ matrix.python }} on ${{ matrix.os }}
+        runs-on: ${{ matrix.os }}
+        timeout-minutes: 20
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, windows-latest]
+                python: ["3.11", "3.13"]
+
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v6
+
+            - name: Set up Python
+              uses: actions/setup-python@v6
+              with:
+                  python-version: ${{ matrix.python }}
+
+            - name: Set up uv
+              uses: astral-sh/setup-uv@v6
+              with:
+                  enable-cache: true
+
+            - name: Install locked dependencies
+              run: uv sync --locked --extra dev
+
+            - name: Run checks
+              run: uv run --locked --extra dev python scripts/quality.py check
+
+            - name: Build distributions
+              run: uv build
+
+            - name: Check exact construction
+              run: uv run --locked --extra dev python run.py --strategy paley-ng --order 208 --no-output

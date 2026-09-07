@@ -1,19 +1,38 @@
-# Experimente und Daten
+# Experiments and data
 
-Ein Solverlauf ist nur dann auswertbar, wenn Instanz, Seed, Budget,
-Konfiguration, Codezustand und Akzeptanzprüfung erhalten bleiben. Dieses
-Dokument beschreibt den aktuellen Vertrag dafür. Historische Aggregate ohne
-Rohartefakt sind kein Teil der kanonischen Evidenz.
+Parent: [Documentation index](README.md)
 
-## Datenebenen
+A solver run can be evaluated only if its instance, seed, budget,
+configuration, code revision, and acceptance checks are preserved. This
+document defines that contract. Historical aggregates without raw artifacts
+are not part of the canonical evidence.
 
-Die lokale SQLite-Datenbank trennt drei Ebenen:
+## Contents
 
-- `runs` enthält jeden gespeicherten Endzustand, gelöst oder ungelöst;
-- `solutions` enthält verifizierte Nullenergie-Zustände, dedupliziert über den
-  exakten Payload-Hash;
-- `solution_features` enthält neu berechenbare Merkmale mit expliziter
-  Feature-Version.
+- [Experiments and data](#experiments-and-data)
+  - [Contents](#contents)
+  - [Data layers](#data-layers)
+  - [State identities](#state-identities)
+    - [Exact state](#exact-state)
+    - [Quick orbit](#quick-orbit)
+  - [Persistence and verification](#persistence-and-verification)
+  - [Candidate evaluations](#candidate-evaluations)
+  - [Statistics schema v2](#statistics-schema-v2)
+  - [Phase traces](#phase-traces)
+  - [Ablations](#ablations)
+  - [Comparing other solvers](#comparing-other-solvers)
+  - [Local solution catalog](#local-solution-catalog)
+  - [Database migration](#database-migration)
+
+## Data layers
+
+The local SQLite database separates three layers:
+
+- `runs` contains every saved final state, solved or unsolved;
+- `solutions` contains verified zero-energy states, deduplicated by the exact
+  payload hash;
+- `solution_features` contains recomputable features with an explicit feature
+  version.
 
 ```mermaid
 erDiagram
@@ -59,131 +78,125 @@ erDiagram
     SOLUTIONS ||--o{ SOLUTION_FEATURES : has
 ```
 
-Zwischen `runs` und `solutions` besteht bewusst kein Fremdschlüssel. Ein
-ungelöster Run ist ein Experiment, aber keine Lösung. Ein gelöster Run kann
-wegen des Unique-Constraints auf dem exakten Hash auf eine bereits bekannte
-Lösung treffen.
+There is deliberately no foreign key between `runs` and `solutions`. An
+unsolved run is an experiment, but not a solution. A solved run can match an
+existing solution because the exact hash has a uniqueness constraint.
 
-## Zustandsidentitäten
+## State identities
 
-Jeder gespeicherte Zustand hat zwei verschiedene Identitäten.
+Each stored state has two distinct identities.
 
-### Exakter Zustand
+### Exact state
 
-`validation_hash` ist SHA-256 über die rohen `(4, n)`-Bytes im `int8`-Format.
-Er identifiziert genau einen gespeicherten Repräsentanten und schützt
-`seqs_b64` vor Beschädigung.
+`validation_hash` is the SHA-256 hash of the raw `(4, n)` bytes in `int8`
+format. It identifies one exact stored representative and provides an
+integrity check for `seqs_b64`.
 
-### Quick-Orbit
+### Quick orbit
 
-`orbit_hash` ist SHA-256 über einen kanonischen Repräsentanten unter:
+`orbit_hash` is the SHA-256 hash of a canonical representative under:
 
-- unabhängigen Negashifts der vier Folgen;
-- unabhängigen Umkehrungen der vier Folgen;
-- Permutation der vier Folgen.
+- independent negashifts of the four sequences;
+- independent reversals of the four sequences;
+- permutations of the four sequences.
 
-Der Kanonisierer heißt `gs4-quick-orbit-v1`. Dezimation ist nicht Teil dieser
-Äquivalenz. `orbit_hash` darf deshalb nicht als vollständige Klassifikation
-aller mathematisch äquivalenten Hadamard-Matrizen gelesen werden.
+The canonicalizer is named `gs4-quick-orbit-v1`. Decimation is not part of this
+equivalence relation. `orbit_hash` therefore does not fully classify all
+mathematically equivalent Hadamard matrices.
 
-`canonical_b64` speichert den kanonischen Repräsentanten. Der ursprüngliche
-Payload wird dadurch nicht ersetzt.
+`canonical_b64` stores the canonical representative without replacing the
+original payload.
 
 ```mermaid
 flowchart TD
-    State["Vier int8-Folgen"] --> Raw["Rohe Bytes"]
+    State["Four int8 sequences"] --> Raw["Raw bytes"]
     Raw --> Validation["validation_hash"]
-    State --> Actions["Negashifts, Umkehrungen, Permutation"]
-    Actions --> Canonical["kanonischer Repräsentant"]
+    State --> Actions["Negashifts, reversals, permutation"]
+    Actions --> Canonical["Canonical representative"]
     Canonical --> Orbit["orbit_hash"]
     Canonical --> Payload["canonical_b64"]
-    Validation --> Record["SQLite-Datensatz"]
+    Validation --> Record["SQLite record"]
     Orbit --> Record
     Payload --> Record
 ```
 
-## Speicherung und Prüfung
+## Persistence and verification
 
-`save_runs()` schreibt einen Batch in einer Transaktion. Jeder `RunResult`
-landet in `runs`. Bei `energy == 0` hat die Pipeline den Kandidaten zuvor über
-die Residualgleichungen und die vollständige Matrix geprüft; er wird zusätzlich
-mit `INSERT OR IGNORE` in `solutions` gespeichert.
+`save_runs()` writes a batch in one transaction. Every `RunResult` is stored
+in `runs`. At `energy == 0`, the pipeline has already checked the candidate
+against the residual equations and the full matrix; it is also stored in
+`solutions` with `INSERT OR IGNORE`.
 
-Die Legacy-Spalte `sha256` spiegelt bei neuen Zeilen `validation_hash`. Der
-bestehende Unique-Constraint liegt weiterhin auf `sha256`.
+For new rows, the legacy `sha256` column mirrors `validation_hash`. The
+existing uniqueness constraint remains on `sha256`.
 
 ```bash
 python run.py --check data/hadamard.db
 ```
 
-Der Datenbank-Audit öffnet die Datei read-only und prüft für jeden Datensatz:
+The database audit opens the file read-only and checks each record's:
 
-1. Base64 und Payload-Länge;
-2. SHA-256 des exakten Zustands;
-3. kanonischen Payload und Quick-Orbit;
-4. bei als gelöst gespeicherten Zeilen alle GS4-Residualgleichungen.
+1. Base64 encoding and payload length;
+2. exact-state SHA-256 hash;
+3. canonical payload and quick orbit;
+4. GS4 residual equations, for rows stored as solved.
 
-Der DB-Audit baut nicht für jede gespeicherte Lösung erneut die vollständige
-`4n`-Matrix. Dieser teurere unabhängige Matrixaudit liegt an der
-Pipeline-Akzeptanzgrenze.
+The database audit does not rebuild the full `4n` matrix for every stored
+solution. That more expensive independent matrix audit belongs to the
+[pipeline acceptance boundary](solver.md#pipeline-and-verification).
 
-## Candidate-Evaluations
+## Candidate evaluations
 
-Candidate-Evaluations sind logische Arbeitseinheiten des aktuellen Solvers:
+Candidate evaluations are logical work units of the current solver:
 
-- ein berechneter Greedy-Single-Score zählt 1;
-- ein Tabu-Schritt zählt `4n`;
-- ein Random Kick zählt 1;
-- ein Targeted-Vorschlag zählt 1 plus die Arbeit seines Quenchs.
+- a computed greedy single-flip score counts as 1;
+- a tabu step counts as `4n`;
+- a random kick counts as 1;
+- a targeted proposal counts as 1 plus the work of its quench.
 
-`candidate_budget` ist das konfigurierte Limit, `candidate_evals` die
-tatsächlich berechnete Arbeit. Diese Werte erlauben gepaarte Vergleiche
-innerhalb derselben Solverrevision. Sie sind keine hardwareunabhängigen
-Operationen und nicht direkt mit Candidate-Zahlen anderer Implementierungen
-vergleichbar.
+`candidate_budget` is the configured limit; `candidate_evals` is the work
+actually evaluated. These values support paired comparisons within the same
+solver revision. They are not hardware-independent operations or directly
+comparable to candidate counts from other implementations.
 
-Die rekursive Strategie `construct` hat eine gesonderte Budgetgrenze, die in
-[`constructions.md`](constructions.md#budgetgrenze-des-rekursiven-pfads)
-beschrieben ist.
+The recursive `construct` strategy has a separate
+[budget limitation](constructions.md#recursive-budget-limitation).
 
-## Statistik-Schema v2
+## Statistics schema v2
 
-`stats_json.stats_schema_version = 2` trennt Arbeit, akzeptierte Übergänge und
-Lösungsursprung.
+`stats_json.stats_schema_version = 2` separates work, accepted transitions,
+and solution origin.
 
-| Gruppe | Felder |
+| Group | Fields |
 | --- | --- |
-| Arbeit | `greedy_candidate_evals`, `tabu_candidate_evals`, `escape_candidate_evals`, `quench_candidate_evals` |
-| Übergänge | `greedy_moves`, `tabu_moves`, `random_kicks`, `targeted_quenches`, `quench_moves` |
-| Zeit | `greedy_time_s`, `tabu_time_s`, `escape_time_s`, `rebuild_time_s` |
-| Lösung | `solve_phase`, `solve_q_before` und phasenspezifische Zähler |
+| Work | `greedy_candidate_evals`, `tabu_candidate_evals`, `escape_candidate_evals`, `quench_candidate_evals` |
+| Transitions | `greedy_moves`, `tabu_moves`, `random_kicks`, `targeted_quenches`, `quench_moves` |
+| Time | `greedy_time_s`, `tabu_time_s`, `escape_time_s`, `rebuild_time_s` |
+| Solution | `solve_phase`, `solve_q_before`, and phase-specific counters |
 
-Die Summe der vier Arbeitsfelder ist `total_candidate_evals` und muss dem
-verbrauchten Budget entsprechen. Akzeptierte Moves sind keine
-Performanceeinheit: Tabu-Moves bleiben beispielsweise gezählt, wenn der Walk
-als Ganzes verworfen wird.
+The four work fields sum to `total_candidate_evals`, which must equal the
+consumed budget. Accepted moves are not a performance unit: for example,
+tabu moves remain counted even if the walk as a whole is discarded.
 
-## Phasen-Traces
+## Phase traces
 
-Mit `--trace-phases` speichert der Solver kompakte Ereignisse für
+With `--trace-phases`, the solver records compact events for
 
 ```text
-INITIALIZE -> GREEDY -> TABU -> TARGETED oder RANDOM_KICK -> GREEDY
+INITIALIZE -> GREEDY -> TABU -> TARGETED or RANDOM_KICK -> GREEDY
 ```
 
-Jedes Ereignis enthält unter anderem `Q` vor und nach der Phase, das niedrigste
-besuchte `Q`, Candidate-Arbeit, Bewegungsrichtungen sowie exakten und
-kanonischen Hash des Endpunkts.
+Each event includes `Q` before and after the phase, the lowest `Q` visited,
+candidate work, move directions, and the endpoint's exact and canonical hashes.
 
-Ein Targeted-Ereignis fasst mehrere verzweigte Starts und verschachtelte
-Suchen zusammen. Es ist keine einzelne topologische Kante im Zustandsraum.
+A targeted event summarizes several branched starts and nested searches. It
+is not a single topological edge in the state space.
 
-## Ablationen
+## Ablations
 
-`scripts.ablation` vergleicht Konfigurationen mit denselben Seeds und demselben
-Candidate-Budget. Jeder Worker führt vor seiner ersten Messung einen ungetimten
-Warm-up mit 10.000 Candidate-Evaluations aus, damit Numba-Kompilation nicht nur
-der ersten Konfiguration belastet wird.
+`scripts.ablation` compares configurations using the same seeds and candidate
+budget. Before its first measurement, each worker performs an untimed warm-up
+of 10,000 candidate evaluations to keep Numba compilation out of the comparison.
 
 ```bash
 python -m scripts.ablation --targeted --n 43 --n 47 --n 51 \
@@ -191,7 +204,8 @@ python -m scripts.ablation --targeted --n 43 --n 47 --n 51 \
   --output runs/targeted-ablation.json
 ```
 
-Der Greedy-zu-Escape-Handoff lässt sich separat mit identischen Seeds prüfen:
+The handoff from greedy search to escape can be tested separately with
+identical seeds:
 
 ```bash
 python -m scripts.ablation --qwindow --n 52 --seeds 1000 \
@@ -199,65 +213,58 @@ python -m scripts.ablation --qwindow --n 52 --seeds 1000 \
   --output runs/qwindow-n52-1k-6m.json
 ```
 
-Primäre Vergleichsgrößen sind:
+The primary comparison metrics are:
 
-- Solve-Rate über gepaarte Seeds;
-- gesamte Laufzeit pro Lösung einschließlich fehlgeschlagener Runs;
-- Lösungen und Quick-Orbits pro Worker-Stunde;
-- Candidate-Evaluations pro Lösung;
-- Median und p90 nur zusammen mit Solve-Rate und Gesamtkosten.
+- solve rate across paired seeds;
+- total runtime per solution, including failed runs;
+- solutions and quick orbits per worker-hour;
+- candidate evaluations per solution;
+- median and p90, always reported alongside solve rate and total cost.
 
-Dateien unter `runs/` sind lokale Experimentartefakte und werden nicht
-versioniert.
+Files under `runs/` are local experiment artifacts and are not versioned.
 
-## Vergleich mit anderen Solvern
+## Comparing other solvers
 
-Vor einem Vergleich müssen mindestens feststehen:
+Before comparing results, establish at least:
 
-- Sequenzfamilie, insbesondere zyklisch oder negazyklisch;
-- Folgenlänge `n` und Matrixordnung `4n`;
-- Startverteilung und Seedmenge;
-- Abbruchregel und Candidate- oder Zeitbudget;
-- Code-Revision, Hardware und Workerzahl;
-- exakte Verifikation;
-- Äquivalenzrelation für die Deduplizierung.
+- the sequence family, particularly cyclic versus negacyclic;
+- sequence length `n` and matrix order `4n`;
+- the initial-state distribution and seed set;
+- the stopping rule and candidate or time budget;
+- code revision, hardware, and worker count;
+- exact verification;
+- the equivalence relation used for deduplication.
 
-Unterschiedliche Suchräume bleiben getrennte Benchmarkzeilen. Ein besserer
-Wert von `Q` ist kein Erfolg, solange er nicht bei gleichem Kostenvertrag zu
-mehr verifizierten Lösungen führt.
+Different search spaces belong in separate benchmark rows. A lower `Q` is not
+a success unless it produces more verified solutions under the same cost
+contract.
 
-## Versionierter Lösungskatalog
+## Local solution catalog
 
-`data/gs4_solution_catalog_v1.json` ist der erhaltene öffentliche Snapshot.
-Er enthält derzeit:
-
-- 794 verifizierte Lösungen;
-- 794 verschiedene Quick-Orbits;
-- Längen von `n = 31` bis `n = 64`;
-- 20 Lösungen bei `n = 52`, darunter eine im implementierten Paley-Orbit.
-
-Der Katalog speichert `gs4-solution-features-v1`, darunter NAF-Signaturen,
-Paarseparatoren, Nachbar-Q-Histogramme, Symbolverteilungen, Quick-Orbit-Größe
-und Paley-Orbit-Zugehörigkeit.
-
-Zur Neuerzeugung ist eine vorhandene lokale Datenbank erforderlich:
+The repository does not ship a solution-catalog snapshot. Generate a catalog
+from an existing local database:
 
 ```bash
 python -m scripts.analyze_solutions \
   --database data/hadamard.db \
-  --output data/gs4_solution_catalog_v1.json
+  --output runs/solution-catalog.json
 ```
 
-Das Skript verweigert den Lauf, wenn die angegebene Datenbank fehlt. Dadurch
-kann ein frischer Clone den versionierten Katalog nicht versehentlich durch
-einen leeren Snapshot ersetzen.
+The catalog uses `gs4-solution-features-v1`. Its features include NAF
+signatures, pair separators, neighboring-Q histograms, symbol distributions,
+quick-orbit size, and membership in the implemented Paley orbit.
 
-## Datenbankmigration
+The script refuses to run if the specified database is missing, preventing an
+accidental empty catalog from a missing input. Catalog counts and length
+coverage depend on the database supplied; retain that database and the code
+revision when reporting results.
+
+## Database migration
 
 ```bash
 python -m scripts.migrate_database data/hadamard.db
 ```
 
-Die Migration schreibt fehlende Identitäten und Validierungsfelder in eine
-bestehende Datenbank. Sie ist kein read-only Audit. Vor einer Migration einer
-nicht reproduzierbaren Datenbank sollte eine Kopie angelegt werden.
+Migration writes missing identities and validation fields to an existing
+database. It is not a read-only audit. Copy any database that cannot be
+reproduced before migrating it.
