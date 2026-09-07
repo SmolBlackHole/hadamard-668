@@ -116,3 +116,30 @@ support a classifier; this acceptance criterion is closed as insufficient eviden
 The next architecture proposal covers modular solver phases and consolidation of
 the standalone interleaver/deinterleaver programs. No solver phase changes belong
 to the laboratory consolidation itself.
+
+## Approved solver architecture refactor
+
+- [x] A1: Capture deterministic states, budgets, statistics and warm timings.
+- [x] A2: Split solver responsibilities, define snapshot ownership and explicit phase injection.
+- [x] A3: Migrate laboratory callers and consolidate interleaving using canonical helpers.
+- [x] A4: Verify replay, tests, package contents and warm runtime before closing the refactor.
+
+Preserve algorithm behavior, RNG consumption and budget rules. No algorithm
+experiment or automatic commit is part of this architecture change.
+
+Validation against the pre-refactor baseline `aa3bab4`: 56 searches at n=13/36/56/167,
+seven configurations and two seeds reproduce sequence bytes, energy, candidate
+counts and all non-timing statistics exactly. The archived n=56 comparison
+reproduces all 32 paired seeds, and recovery reproduces all 1,100 stored records.
+Local evidence is retained under the ignored `runs/refactor/` directory.
+
+The full quality check passes 191 tests, documentation checks, Ruff, Pyright and
+compilation. The wheel includes all eight solver modules and runs a search from
+an isolated extraction. A two-worker laboratory comparison also succeeds and
+captures the complete solver package in its source snapshot. Both interleaving
+lifts reproduce the former implementations and their folds invert bitwise.
+
+Warm n=56 timing, 20 seeds at 6M evaluations per repetition: baseline median
+1.671s, post-refactor median 1.745s (+4.4%). Three repetitions per version have
+overlapping ranges (1.392-1.726s versus 1.568-1.783s). This small timing sample
+does not establish a speedup or isolate the refactor's runtime cost.

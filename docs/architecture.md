@@ -41,7 +41,7 @@ its detailed control flow and budget caveat are in [Constructions](constructions
 | `src/generator.py` | Strategies and initial states |
 | `src/pipeline.py` | End-to-end execution and acceptance boundary |
 | `src/tracker.py` | Exact search energy and incremental flip caches |
-| `src/solver.py` | Heuristic search phases |
+| `src/solver/` | Search orchestration and independently replaceable phases |
 | `src/constructions.py` | Canonical exact sequence constructions |
 | `src/builder.py` | Pure GS4 matrix construction |
 | `src/verify.py` | Residual, matrix and database verification |
@@ -49,8 +49,12 @@ its detailed control flow and budget caveat are in [Constructions](constructions
 | `src/output.py` | SQLite persistence and migration |
 | `src/solution_analysis.py` | Versioned solution features and catalog analysis |
 
-The standalone interleaver and deinterleaver research programs are described in
-[Development](development.md#research-utilities). They are outside this pipeline.
+The [solver package](solver.md#implementation-boundaries) separates orchestration,
+phase policy, working state and tracing. Its public entry point remains
+`from src.solver import search, SolverConfig`.
+
+The combined `lab.interleaving` research module uses canonical constructions and
+verification. It is outside the search pipeline; see [Laboratory](laboratory.md).
 
 ## Acceptance boundary
 

@@ -20,7 +20,7 @@ def capture_source(output: Path) -> dict[str, object]:
         raise FileExistsError(f"choose a fresh experiment output: {output}")
     root = Path(__file__).resolve().parents[1]
     files = [
-        *root.glob("src/*.py"),
+        *root.glob("src/**/*.py"),
         *root.glob("lab/**/*.py"),
         root / "run.py",
         root / "pyproject.toml",

@@ -4,19 +4,21 @@ Parent: [Documentation index](README.md)
 
 ## Contents
 
-- [Responsibilities](#responsibilities)
-- [Commands](#commands)
-- [Experiment contract](#experiment-contract)
-- [Completed experiments](#completed-experiments)
-- [Algorithm changes](#algorithm-changes)
+- [Research laboratory](#research-laboratory)
+  - [Contents](#contents)
+  - [Responsibilities](#responsibilities)
+  - [Commands](#commands)
+  - [Experiment contract](#experiment-contract)
+  - [Completed experiments](#completed-experiments)
+  - [Algorithm changes](#algorithm-changes)
 
 ## Responsibilities
 
 `src/` owns the production solver, exact constructions, verification and persistence.
 `run.py --sweep` remains the normal search entry point. `lab/` measures and compares
 that implementation. `scripts/` contains quality checks and database maintenance.
-The standalone interleaver/deinterleaver programs still live in `src/`; their
-consolidation belongs to the upcoming architecture change.
+Interleaving and deinterleaving live together in `lab.interleaving`; canonical
+Paley/Turyn construction and candidate verification remain in `src/`.
 
 | Module | Responsibility |
 | --- | --- |
@@ -26,6 +28,7 @@ consolidation belongs to the upcoming architecture change.
 | `lab.diagnose` | Q=1 single/pair analysis; optional extended repair witnesses |
 | `lab.neighborhoods` | Exact larger neighborhoods and specified-group classification |
 | `lab.catalog` | Versioned solution catalog |
+| `lab.interleaving` | Alternation lifts, Paley/Turyn folds and identity controls |
 | `lab.provenance` | Source snapshots for new comparison and recovery experiments |
 
 Recovery uses the same exact pair diagnostic as Q=1 analysis. The larger
@@ -40,6 +43,8 @@ Install `python -m pip install -e ".[dev]"` and run from the repository root:
 python -m lab.plot --database data/hadamard.db --output runs/plots
 python -m lab.compare --compare-starts --n 36 40 --seeds 100 --seed-start 1042 --candidate-budget 6000000 --workers 4 --output runs/start-comparison.json
 python -m lab.recover --help
+python -m lab.interleaving roundtrip
+python -m lab.interleaving paley 83
 python -m lab.diagnose --input data/hadamard.db --n 52 --output runs/q1-52.json
 python -m lab.catalog --database data/hadamard.db --output runs/catalog.json
 ```
@@ -88,6 +93,10 @@ Test a bounded prototype first. A useful result must improve the intended task,
 not only an easy synthetic control or an intermediate Q value. Only then consider
 optimization and direct replacement of an existing production algorithm.
 Do not accumulate production switches for every abandoned prototype.
+
+Use `search(..., operators=SearchOperators(greedy=prototype))` for a phase
+experiment. The replacement is local to that run and its nested quenches; other
+phases retain production defaults. See the [phase contracts](solver.md#implementation-boundaries).
 
 Keep refactoring separate from algorithm changes: first preserve states, budget
 counts and seeded behavior; then measure a proposed behavioral change explicitly.

@@ -24,6 +24,7 @@ The objective function is derived in [Mathematics](mathematics.md).
   - [Candidate budget](#candidate-budget)
   - [Pipeline and verification](#pipeline-and-verification)
   - [CLI examples](#cli-examples)
+  - [Implementation boundaries](#implementation-boundaries)
   - [Module ownership](#module-ownership)
 
 ## State flow
@@ -213,7 +214,7 @@ budget. Search ends at `Q = 0` or when no budget remains.
 
 1. An exact strategy is constructed and verified directly.
 2. Otherwise, `src/generator.py` produces a random or cyclic initial state.
-3. `src/solver.py` returns the best state found.
+3. `src/solver/engine.py` returns the best state found.
 4. Only at `Q = 0` does `verify_candidate()` check the residual equations,
    construct the full matrix, and run the independent row audit.
 5. `src/output.py` can then save every run in `runs`. Verified zero-energy
@@ -243,6 +244,44 @@ python run.py --strategy gs4 --order 208 --candidate-budget 6000000 --trace-phas
 ```
 
 Use `python run.py --help` for the complete CLI.
+
+## Implementation boundaries
+
+The package exports `search`, `SolverConfig` and `SearchOperators`. Existing
+pipeline callers keep the same imports and candidate-budget interface.
+
+| Module within `src/solver/` | Owns |
+| --- | --- |
+| `config.py` | Validated search settings |
+| `engine.py` | Phase ordering, working state, global best, nested quenches and outer accounting |
+| `state.py` | Working-state container and typed walk/targeted results |
+| `greedy.py` | Affordable single-flip scoring and greedy acceptance |
+| `tabu.py` | Compiled walk, snapshot adoption and Tabu phase statistics |
+| `escape.py` | Targeted proposals, ranking and random kicks |
+| `tracing.py` | Optional phase events and basis signatures |
+
+`SearchState` groups working sequences, their tracker and cached energy. The
+global best is a separate copy. A nested quench owns a separate tracker and
+local budget, shares the caller's RNG, and charges consumed work to the outer
+budget. It retains the configuration described under [Targeted escape](#targeted-escape).
+
+`Tracker.snapshot()` copies mutable sequence/residual/delta caches for the
+compiled walk and shares update geometry, which callers must never mutate.
+`Tracker.adopt_snapshot()` transfers cache ownership without a rebuild or an
+additional array copy. A caller must stop mutating a snapshot after adoption.
+The public search result is the best state, so the supplied tracker is not
+guaranteed to describe the returned sequences.
+
+For an experiment, pass `SearchOperators(greedy=prototype)` to `search`.
+Replacements apply to this run and its nested quenches, without global patches.
+Greedy replacements mutate the working state/tracker together, charge all scores
+to the budget and phase statistics, and return `(accepted, energy, evaluations)`.
+Tabu replacements own their walk statistics and return
+`(accepted, energy, steps)`, where each step costs `4n` evaluations.
+Candidate generators only propose indices. Random-kick replacements mutate the
+state/tracker and return energy; the engine charges their one evaluation and
+records their statistics. All replacements must preserve these contracts and
+use the supplied RNG if they need randomness.
 
 ## Module ownership
 

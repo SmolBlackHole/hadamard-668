@@ -11,7 +11,6 @@ the same solver version because the phases charge different kinds of work.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import os
@@ -311,13 +310,7 @@ def main() -> None:
         provenance = capture_source(args.output)
     except FileExistsError as error:
         parser.error(str(error))
-    root = Path(__file__).resolve().parents[1]
-    source_hashes = {
-        str(path.relative_to(root)).replace("\\", "/"): hashlib.sha256(
-            path.read_bytes()
-        ).hexdigest()
-        for path in sorted([root / "run.py", *root.glob("src/*.py"), *root.glob("scripts/*.py")])
-    }
+    source_hashes = provenance["source_sha256"]
     print(
         f"Ablation: {len(configs)} configs x {len(ns)} n x {args.seeds} seeds = {total} runs ({workers} workers)\n"
     )

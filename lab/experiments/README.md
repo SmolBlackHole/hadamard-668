@@ -14,6 +14,7 @@ Run them only when reproducing the corresponding report: they write to the fixed
 | `python -m lab.experiments.greedy` | Compare the recorded scan with the full-scan prototype | [Landscape results](../../docs/landscape-results.md) |
 
 The original greedy baseline is extracted from `bb26d1d`; retain that Git history.
-Temporary function replacement stays inside the experiment process and is restored
-on exit. New algorithm development uses separate bounded experiments, followed by
+Historical phase functions are passed explicitly through `SearchOperators` for
+each run, including nested quenches. They do not replace global solver functions.
+New algorithm development uses separate bounded experiments, followed by
 direct production integration only after explicit evaluation.

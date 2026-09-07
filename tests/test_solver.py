@@ -9,16 +9,69 @@ import numpy as np
 import pytest
 
 from src.builder import build_gs4
-from src.models import CandidateBudget, SearchPhase, SearchStats, SolverResult
-from src.solver import (
-    SolverConfig,
-    TabuWalkResult,
-    _rank_targeted_candidates,
-    _tabu_walk,
-    _targeted_candidates,
-)
+from src.models import CandidateBudget, Int8Array, SearchPhase, SearchStats, SolverResult
+from src.solver import SearchOperators, SolverConfig, escape
 from src.solver import search as ils_search
+from src.solver.engine import _targeted_kick
+from src.solver.escape import rank_targeted_candidates, targeted_candidates
+from src.solver.greedy import greedy_descent
+from src.solver.state import TabuWalkResult
+from src.solver.tabu import _tabu_walk
 from src.tracker import Tracker
+
+
+def test_phase_override_is_local_and_reaches_nested_quenches() -> None:
+    calls: list[tuple[Tracker, SolverConfig]] = []
+
+    def measured_greedy(
+        sequences: Int8Array,
+        tracker: Tracker,
+        positions: tuple[tuple[int, int], ...],
+        energy: int,
+        budget: CandidateBudget,
+        scale: int,
+        config: SolverConfig,
+        stats: SearchStats,
+    ) -> tuple[bool, int, int]:
+        calls.append((tracker, config))
+        return greedy_descent(sequences, tracker, positions, energy, budget, scale, config, stats)
+
+    state = np.ones((4, 13), dtype=np.int8)
+    operators = SearchOperators(greedy=measured_greedy)
+    custom = ils_search(
+        state, Tracker(), np.random.default_rng(42), candidate_budget=1000, operators=operators
+    )
+    assert calls
+    call_count = len(calls)
+    default = ils_search(state, Tracker(), np.random.default_rng(42), candidate_budget=1000)
+    assert len(calls) == call_count
+    assert custom.energy == default.energy
+    assert custom.candidate_evals == default.candidate_evals
+    assert np.array_equal(custom.sequences, default.sequences)
+
+    outer = Tracker()
+    outer.build(state)
+    before = outer.flip_energies()
+    budget = CandidateBudget(1000)
+    stats = SearchStats()
+    _targeted_kick(
+        state,
+        outer,
+        np.random.default_rng(9),
+        budget,
+        state.copy(),
+        outer.energy(),
+        SolverConfig(escape_quench_budget=500),
+        stats,
+        operators,
+    )
+    assert stats.targeted_quenches > 0 and len(calls) > call_count
+    assert all(
+        tracker is not outer and not config.targeted_escape
+        for tracker, config in calls[call_count:]
+    )
+    assert np.array_equal(outer.flip_energies(), before)
+    assert stats.total_candidate_evals == budget.used
 
 
 class _ScriptedTracker:
@@ -92,7 +145,7 @@ def test_solver_stops_immediately_after_greedy_solution(
         del args, kwargs
         pytest.fail("tabu must not run after greedy reaches zero energy")
 
-    monkeypatch.setattr("src.solver._tabu_phase", fail_tabu)
+    monkeypatch.setattr("src.solver.tabu.tabu_phase", fail_tabu)
     tracker = _OneStepImprovementTracker(initial_energy=64, accepted_energy=0)
     seqs = np.ones((4, 2), dtype=np.int8)
 
@@ -134,7 +187,7 @@ def test_qwindow_hands_low_q_greedy_improvement_to_tabu(
         stats.tabu_candidate_evals += 1
         return False, cur_e, 0
 
-    monkeypatch.setattr("src.solver._tabu_phase", record_tabu)
+    monkeypatch.setattr("src.solver.tabu.tabu_phase", record_tabu)
     n = 2
     q_scale = 64 * n
     tracker = _OneStepImprovementTracker(
@@ -157,7 +210,7 @@ def test_qwindow_hands_low_q_greedy_improvement_to_tabu(
 
 
 def test_solver_best_e_never_increases() -> None:
-    from src.solver import _update_best
+    from src.solver.engine import _update_best
 
     best_seq = np.ones((4, 3), dtype=np.int8)
     cur_seq = best_seq.copy()
@@ -199,12 +252,12 @@ def _targeted_fixture() -> tuple[np.ndarray, np.ndarray]:
     return delta, u
 
 
-def test_targeted_candidates_are_deterministic_bounded_and_cover_support_lags() -> None:
+def testtargeted_candidates_are_deterministic_bounded_and_cover_support_lags() -> None:
     delta, u = _targeted_fixture()
 
-    candidates = _targeted_candidates(delta, u, 24)
+    candidates = targeted_candidates(delta, u, 24)
 
-    assert candidates == _targeted_candidates(delta, u, 24)
+    assert candidates == targeted_candidates(delta, u, 24)
     assert len(candidates) == 625
     assert len(candidates) == len(set(candidates))
     first_lag = set(product(range(5), repeat=4))
@@ -217,7 +270,7 @@ def test_targeted_candidates_are_deterministic_bounded_and_cover_support_lags() 
     assert (14, 14, 14, 14) in candidates
 
 
-def test_targeted_candidates_deduplicate_and_backfill() -> None:
+def testtargeted_candidates_deduplicate_and_backfill() -> None:
     n = 8
     u = np.zeros(3, dtype=np.int32)
     u[[0, 1]] = 1
@@ -227,7 +280,7 @@ def test_targeted_candidates_deduplicate_and_backfill() -> None:
         delta[rows, 0] = -1
         delta[rows, 1] = -1
 
-    candidates = _targeted_candidates(delta, u, n)
+    candidates = targeted_candidates(delta, u, n)
 
     assert len(candidates) == 625
     assert len(candidates) == len(set(candidates))
@@ -237,12 +290,12 @@ def test_targeted_random_samples_columns_beyond_legacy_prefix() -> None:
     n = 24
     delta = np.full((4 * n, 1), -1, dtype=np.int8)
     u = np.ones(1, dtype=np.int32)
-    legacy = _targeted_candidates(delta, u, n)
-    sampled = _targeted_candidates(delta, u, n, np.random.default_rng(41))
+    legacy = targeted_candidates(delta, u, n)
+    sampled = targeted_candidates(delta, u, n, np.random.default_rng(41))
 
     assert legacy == list(product(range(5), repeat=4))
-    assert sampled == _targeted_candidates(delta, u, n, np.random.default_rng(41))
-    assert sampled != _targeted_candidates(delta, u, n, np.random.default_rng(42))
+    assert sampled == targeted_candidates(delta, u, n, np.random.default_rng(41))
+    assert sampled != targeted_candidates(delta, u, n, np.random.default_rng(42))
     assert len(sampled) == len(set(sampled)) == 625
     assert all(len({candidate[s] for candidate in sampled}) == 5 for s in range(4))
     assert any(c >= 5 for candidate in sampled for c in candidate)
@@ -270,7 +323,7 @@ def test_targeted_residual_ranking_matches_rebuilt_trackers(n: int) -> None:
         assert int(np.dot(residual, residual)) * 64 * n == rebuilt.energy()
     budget = CandidateBudget(len(proposals) + 7)
 
-    ranked = _rank_targeted_candidates(proposals, tracker._delta, tracker._u, n, budget)
+    ranked = rank_targeted_candidates(proposals, tracker._delta, tracker._u, n, budget)
 
     assert ranked == sorted(proposals, key=energies.__getitem__)
     assert budget.used == len(proposals)
@@ -285,7 +338,7 @@ def test_targeted_residual_ranking_respects_remaining_budget(remaining: int) -> 
     proposals = [(0, 0, 0, 0), (1, 1, 1, 1), (2, 2, 2, 2)]
     budget = CandidateBudget(10, used=10 - remaining)
 
-    ranked = _rank_targeted_candidates(proposals, delta, u, n, budget)
+    ranked = rank_targeted_candidates(proposals, delta, u, n, budget)
 
     assert ranked == proposals[:remaining]
     assert budget.used == 10
@@ -295,7 +348,7 @@ def test_targeted_residual_ranking_respects_remaining_budget(remaining: int) -> 
 def test_targeted_residual_escape_accounts_ranking_and_quenches(
     monkeypatch: pytest.MonkeyPatch, remaining: int
 ) -> None:
-    from src import solver
+    from src.solver import engine as solver
 
     seqs = np.ones((4, 3), dtype=np.int8)
     tracker = Tracker()
@@ -304,7 +357,7 @@ def test_targeted_residual_escape_accounts_ranking_and_quenches(
     def candidates(*_args: object) -> list[tuple[int, int, int, int]]:
         return [(0, 0, 0, 0), (1, 1, 1, 1), (2, 2, 2, 2)]
 
-    monkeypatch.setattr(solver, "_targeted_candidates", candidates)
+    monkeypatch.setattr(escape, "targeted_candidates", candidates)
     quench_budgets: list[int] = []
 
     def fake_search(
@@ -340,7 +393,7 @@ def test_targeted_selection_rejects_unknown_mode() -> None:
 
 
 def test_targeted_escape_uses_support_lags(monkeypatch: pytest.MonkeyPatch) -> None:
-    from src import solver
+    from src.solver import engine as solver
 
     seqs = np.ones((4, 3), dtype=np.int8)
     tracker = Tracker()
@@ -349,7 +402,7 @@ def test_targeted_escape_uses_support_lags(monkeypatch: pytest.MonkeyPatch) -> N
     def candidates(*_args: object) -> list[tuple[int, int, int, int]]:
         return [(0, 0, 0, 0)]
 
-    monkeypatch.setattr(solver, "_targeted_candidates", candidates)
+    monkeypatch.setattr(escape, "targeted_candidates", candidates)
 
     def fake_search(
         cand: np.ndarray, empty_tracker: Tracker, *_args: object, **_kwargs: object
@@ -388,7 +441,7 @@ def test_targeted_escape_passes_limited_quench_budget(
     outer_budget: int,
     expected_budget: int,
 ) -> None:
-    from src import solver
+    from src.solver import engine as solver
 
     seqs = np.ones((4, 3), dtype=np.int8)
     tracker = Tracker()
@@ -398,7 +451,7 @@ def test_targeted_escape_passes_limited_quench_budget(
     def candidates(*_args: object) -> list[tuple[int, int, int, int]]:
         return [(0, 0, 0, 0)]
 
-    monkeypatch.setattr(solver, "_targeted_candidates", candidates)
+    monkeypatch.setattr(escape, "targeted_candidates", candidates)
 
     def fake_search(
         cand: np.ndarray, _tracker: Tracker, *_args: object, **kwargs: object
@@ -424,7 +477,7 @@ def test_targeted_escape_passes_limited_quench_budget(
 def test_targeted_escape_records_nested_solve_and_candidate_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from src import solver
+    from src.solver import engine as solver
 
     seqs = np.ones((4, 3), dtype=np.int8)
     tracker = Tracker()
@@ -433,7 +486,7 @@ def test_targeted_escape_records_nested_solve_and_candidate_work(
     def candidates(*_args: object) -> list[tuple[int, int, int, int]]:
         return [(0, 0, 0, 0)]
 
-    monkeypatch.setattr(solver, "_targeted_candidates", candidates)
+    monkeypatch.setattr(escape, "targeted_candidates", candidates)
 
     def fake_search(
         cand: np.ndarray, _tracker: Tracker, *_args: object, **_kwargs: object
@@ -557,14 +610,14 @@ def test_tabu_equal_plateau_adoption_and_exact_snapshot(accept_equal: bool) -> N
 
 
 def test_tabu_equal_phase_does_not_claim_strict_improvement() -> None:
-    from src.solver import _tabu_phase
+    from src.solver.tabu import tabu_phase
 
     seqs = np.random.default_rng(23).choice((-1, 1), size=(4, 5)).astype(np.int8)
     tracker = Tracker()
     tracker.build(seqs)
     budget = CandidateBudget(seqs.size)
     stats = SearchStats()
-    accepted, energy, steps = _tabu_phase(
+    accepted, energy, steps = tabu_phase(
         seqs,
         tracker,
         tracker.energy(),
@@ -689,7 +742,7 @@ def test_solver_kicks_after_an_unsuccessful_tabu_walk(monkeypatch: pytest.Monkey
         calls.append(1)
         return TabuWalkResult(None, 3)
 
-    monkeypatch.setattr("src.solver._tabu_walk", failed_tabu)
+    monkeypatch.setattr("src.solver.tabu._tabu_walk", failed_tabu)
     tracker = _ScriptedTracker()
     seqs = np.ones((4, 2), dtype=np.int8)
 
@@ -712,7 +765,7 @@ def test_solver_counts_tabu_outcomes_by_start_q(monkeypatch: pytest.MonkeyPatch)
     def successful_tabu(*_args: object, **_kwargs: object) -> TabuWalkResult:
         return TabuWalkResult(0, 3, solve_q_before=4)
 
-    monkeypatch.setattr("src.solver._tabu_walk", successful_tabu)
+    monkeypatch.setattr("src.solver.tabu._tabu_walk", successful_tabu)
     tracker = _ScriptedTracker(initial_energy=256)
     seqs = np.ones((4, 2), dtype=np.int8)
 

@@ -11,6 +11,27 @@ from src.builder import build_gs4
 from src.tracker import Tracker
 
 
+def test_snapshot_isolates_caches_and_transfers_ownership() -> None:
+    state = np.random.default_rng(93).choice((-1, 1), size=(4, 13)).astype(np.int8)
+    original = Tracker()
+    original.build(state)
+    before = original.flip_energies()
+    snapshot = original.snapshot()
+    assert not np.shares_memory(snapshot.sequences, state)
+    other = Tracker()
+    other.adopt_snapshot(snapshot)
+    working = snapshot.sequences.copy()
+    other.accept(working, 2, 7)
+    assert np.array_equal(original.flip_energies(), before)
+    assert np.array_equal(original.snapshot().sequences, state)
+    assert np.array_equal(snapshot.sequences, working)
+    assert snapshot.update_cols is original.snapshot().update_cols
+    rebuilt = Tracker()
+    rebuilt.build(working)
+    assert other.energy() == rebuilt.energy()
+    assert np.array_equal(other.flip_energies(), rebuilt.flip_energies())
+
+
 def _full_energy(seqs: np.ndarray) -> int:
     matrix = build_gs4(seqs).astype(np.int64)
     gram = matrix @ matrix.T

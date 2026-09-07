@@ -7,7 +7,8 @@ import numpy as np
 from lab.recover import descend, geometry
 from src.constructions import paley_ng_sequences
 from src.models import CandidateBudget, SearchStats
-from src.solver import SolverConfig, _greedy_descent
+from src.solver import SolverConfig
+from src.solver.greedy import greedy_descent
 from src.tracker import Tracker
 from src.verify import verify_candidate
 
@@ -36,7 +37,7 @@ def test_full_scan_takes_direct_solution_and_charges_every_score() -> None:
     budget = CandidateBudget(208)
     stats = SearchStats()
     positions = tuple((s, c) for s in range(4) for c in range(52))
-    improved, energy, used = _greedy_descent(
+    improved, energy, used = greedy_descent(
         state, tracker, positions, tracker.energy(), budget, 64 * 52, SolverConfig(), stats
     )
     assert improved and energy == 0
@@ -63,7 +64,7 @@ def test_full_scan_respects_partial_budget() -> None:
     tracker.build(state)
     budget = CandidateBudget(1)
     positions = tuple((s, c) for s in range(4) for c in range(6))
-    _, _, used = _greedy_descent(
+    _, _, used = greedy_descent(
         state, tracker, positions, tracker.energy(), budget, 64 * 6, SolverConfig(), SearchStats()
     )
     assert used == budget.used == 1

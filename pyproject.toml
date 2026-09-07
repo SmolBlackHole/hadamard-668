@@ -18,7 +18,7 @@ Repository = "https://github.com/SmolBlackHole/hadamard-668"
 Issues = "https://github.com/SmolBlackHole/hadamard-668/issues"
 
 [tool.setuptools]
-packages = ["src"]
+packages = ["src", "src.solver"]
 py-modules = ["run"]
 
 [project.optional-dependencies]
@@ -38,7 +38,7 @@ dev = [
 ]
 
 [tool.pytest-gremlins]
-paths = ["src/tracker.py", "src/solver.py"]
+paths = ["src/tracker.py", "src/solver"]
 cache = true
 
 [tool.ruff]

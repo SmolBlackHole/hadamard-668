@@ -18,19 +18,24 @@ import numpy as np
 
 from lab.experiments.replay import reference_scan
 from lab.recover import decode, descend, geometry
-from src import solver
 from src.models import Int8Array
-from src.solver import search
+from src.solver import SearchOperators, search
 from src.tracker import Tracker
 from src.verify import verify_candidate
 
 
-def continuation(state: Int8Array) -> list[dict[str, int]]:
+def continuation(
+    state: Int8Array, operators: SearchOperators | None = None
+) -> list[dict[str, int]]:
     """Run three identical-budget searches with fresh, recorded RNG seeds."""
     results: list[dict[str, int]] = []
     for seed in (200001, 200002, 200003):
         result = search(
-            state.copy(), Tracker(), np.random.default_rng(seed), candidate_budget=250_000
+            state.copy(),
+            Tracker(),
+            np.random.default_rng(seed),
+            candidate_budget=250_000,
+            operators=operators,
         )
         if result.solved:
             verify_candidate(result.sequences)
@@ -44,7 +49,7 @@ def continuation(state: Int8Array) -> list[dict[str, int]]:
     return results
 
 
-def main() -> None:
+def main(operators: SearchOperators | None = None) -> None:
     """Generate controls, match endpoints and persist exact source states/results."""
     output = Path("runs/research/landscape")
     output.mkdir(parents=True, exist_ok=True)
@@ -114,7 +119,7 @@ def main() -> None:
             ):
                 state = decode(encoded, n)
                 pair[label + "_geometry"] = geometry(state)
-                pair[label + "_continuations"] = continuation(state)
+                pair[label + "_continuations"] = continuation(state, operators)
             pairs.append(pair)
             if len(pairs) == 20:
                 break
@@ -135,7 +140,7 @@ def main() -> None:
         (output / "matched.json").write_text(json.dumps(reports, indent=2), encoding="utf-8")
 
 
-def recovery() -> None:
+def recovery(operators: SearchOperators | None = None) -> None:
     """Measure recovery versus certified perturbation radius, without Q matching."""
     output = Path("runs/research/landscape")
     output.mkdir(parents=True, exist_ok=True)
@@ -165,7 +170,11 @@ def recovery() -> None:
                     q = tracker.energy() // (64 * n)
                     seed = 300000 + repeat
                     result = search(
-                        state, Tracker(), np.random.default_rng(seed), candidate_budget=250_000
+                        state,
+                        Tracker(),
+                        np.random.default_rng(seed),
+                        candidate_budget=250_000,
+                        operators=operators,
                     )
                     if result.solved:
                         verify_candidate(result.sequences)
@@ -196,10 +205,6 @@ def recovery() -> None:
 
 
 if __name__ == "__main__":
-    original_scan = solver._greedy_descent
-    solver._greedy_descent = reference_scan()
-    try:
-        main()
-        recovery()
-    finally:
-        solver._greedy_descent = original_scan
+    reference_operators = SearchOperators(greedy=reference_scan())
+    main(reference_operators)
+    recovery(reference_operators)

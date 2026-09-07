@@ -13,10 +13,30 @@ single-flip scores, and cache updates are NumPy array operations.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import cache
 
 import numpy as np
 import numpy.typing as npt
+
+
+@dataclass(frozen=True)
+class TrackerSnapshot:
+    """Owned mutable caches and shared immutable geometry for a compiled walk.
+
+    Snapshots may be mutated independently of the source tracker. After adoption,
+    ownership transfers to the receiving tracker; the caller must stop mutating
+    the cache arrays. Update geometry is shared and must never be modified.
+    """
+
+    sequences: npt.NDArray[np.int8]
+    u: npt.NDArray[np.int32]
+    q: int
+    delta: npt.NDArray[np.int8]
+    norm2: npt.NDArray[np.int32]
+    update_cols: npt.NDArray[np.intp]
+    update_lags: npt.NDArray[np.intp]
+    update_signs: npt.NDArray[np.int8]
 
 
 class Tracker:
@@ -66,26 +86,35 @@ class Tracker:
         )
         self._update_cols, self._update_lags, self._update_signs = _update_geometry(self._n)
 
-    def _adopt(
-        self,
-        seqs: npt.NDArray[np.int8],
-        u: npt.NDArray[np.int32],
-        q: int,
-        delta: npt.NDArray[np.int8],
-        norm2: npt.NDArray[np.int32],
-    ) -> None:
-        """Adopt an exact cache snapshot without copying its arrays.
+    def snapshot(self) -> TrackerSnapshot:
+        """Copy working caches for an independent walk, sharing update geometry."""
+        assert self._seqs is not None and self._u is not None
+        assert self._delta is not None and self._norm2 is not None
+        assert self._update_cols is not None and self._update_lags is not None
+        assert self._update_signs is not None
+        return TrackerSnapshot(
+            self._seqs.copy(),
+            self._u.copy(),
+            self._q,
+            self._delta.copy(),
+            self._norm2.copy(),
+            self._update_cols,
+            self._update_lags,
+            self._update_signs,
+        )
 
-        Note:
-            Ownership of all array arguments transfers to this tracker. The
-            caller must not mutate them after adoption.
-        """
-        self._seqs = seqs
-        self._u = u
-        self._q = q
-        self._e = 64 * self._n * q
-        self._delta = delta
-        self._norm2 = norm2
+    def adopt_snapshot(self, snapshot: TrackerSnapshot) -> None:
+        """Take ownership of exact caches without copying or rebuilding them."""
+        self._n = snapshot.sequences.shape[1]
+        self._seqs = snapshot.sequences
+        self._u = snapshot.u
+        self._q = snapshot.q
+        self._e = 64 * self._n * snapshot.q
+        self._delta = snapshot.delta
+        self._norm2 = snapshot.norm2
+        self._update_cols = snapshot.update_cols
+        self._update_lags = snapshot.update_lags
+        self._update_signs = snapshot.update_signs
 
     def energy(self) -> int:
         """Return the exact matrix energy ``E = 64nQ`` of the current state."""

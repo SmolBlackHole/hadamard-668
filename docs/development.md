@@ -98,10 +98,10 @@ the remote jobs have passed; inspect their actual results on GitHub.
 | `python -m scripts.migrate_database --help` | Migrate stored identities and audit the result |
 | `python -m lab.diagnose --help` | Diagnose the local Q=1 landscape |
 | `python -m lab.compare --compare-starts --help` | Compare random and cyclic starts |
-| `python -m src.interleaver --check` | Sample the alternation identity |
-| `python -m src.deinterleaver --verify` | Check experimental deinterleaving round trips |
+| `python -m lab.interleaving check` | Sample the alternation identity |
+| `python -m lab.interleaving roundtrip` | Check experimental deinterleaving round trips |
 
 The [laboratory guide](laboratory.md) describes bounded comparisons and recovery experiments.
-The interleaver and deinterleaver are standalone research programs, with their own
-construction implementations. They do not define the production acceptance path.
-Their numerical experiments are not proofs of the accompanying mathematical claims.
+The combined interleaving module uses canonical Paley/Turyn constructors and the
+production acceptance verifier. Its round trips and sampled identities are
+numerical controls, not proofs of the accompanying mathematical claims.

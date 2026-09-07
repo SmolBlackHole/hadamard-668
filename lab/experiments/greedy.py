@@ -52,80 +52,77 @@ def main() -> None:
     """Screen paired random starts and replay certified one-flip controls."""
     output = Path("runs/research/landscape")
     output.mkdir(parents=True, exist_ok=True)
-    original = solver._greedy_descent
     baseline = reference_scan()
     results: list[dict[str, object]] = []
-    try:
-        for n in (36, 40, 44):
-            for seed in range(42, 192):
-                for label, function in (("baseline", baseline), ("full_scan", full_scan)):
-                    solver._greedy_descent = function
-                    rng = np.random.default_rng(seed)
-                    state = RANDOM_START.build(n, rng)
-                    started = perf_counter()
-                    result = solver.search(state, Tracker(), rng, candidate_budget=6_000_000)
-                    elapsed = perf_counter() - started
-                    if result.solved:
-                        verify_candidate(result.sequences)
-                    results.append(
-                        {
-                            "n": n,
-                            "seed": seed,
-                            "arm": label,
-                            "solved": result.solved,
-                            "q": result.energy // (64 * n),
-                            "evals": result.candidate_evals,
-                            "elapsed": elapsed,
-                        }
-                    )
-            print(
-                f"n={n}: "
-                + str(
-                    {
-                        arm: sum(
-                            1 for r in results if r["n"] == n and r["arm"] == arm and r["solved"]
-                        )
-                        for arm in ("baseline", "full_scan")
-                    }
-                ),
-                flush=True,
-            )
-            (output / "greedy-screen.json").write_text(
-                json.dumps(results, indent=2), encoding="utf-8"
-            )
-        controls = json.loads((output / "recovery.json").read_text(encoding="utf-8"))
-        replay: list[dict[str, object]] = []
-        solver._greedy_descent = full_scan
-        with sqlite3.connect("file:data/hadamard.db?mode=ro", uri=True) as connection:
-            for control in controls:
-                if control["radius"] != 1:
-                    continue
-                encoded = connection.execute(
-                    "SELECT seqs_b64 FROM runs WHERE id=?", (control["parent_id"],)
-                ).fetchone()[0]
-                state = decode(encoded, control["n"])
-                state.flat[control["flips"]] *= -1
+    for n in (36, 40, 44):
+        for seed in range(42, 192):
+            for label, function in (("baseline", baseline), ("full_scan", full_scan)):
+                rng = np.random.default_rng(seed)
+                state = RANDOM_START.build(n, rng)
+                started = perf_counter()
                 result = solver.search(
                     state,
                     Tracker(),
-                    np.random.default_rng(control["seed"]),
-                    candidate_budget=250_000,
+                    rng,
+                    candidate_budget=6_000_000,
+                    operators=solver.SearchOperators(greedy=function),
                 )
+                elapsed = perf_counter() - started
                 if result.solved:
                     verify_candidate(result.sequences)
-                replay.append(
+                results.append(
                     {
-                        "parent_id": control["parent_id"],
-                        "n": control["n"],
-                        "seed": control["seed"],
-                        "baseline_q": control["end_q"],
-                        "full_scan_q": result.energy // (64 * control["n"]),
+                        "n": n,
+                        "seed": seed,
+                        "arm": label,
+                        "solved": result.solved,
+                        "q": result.energy // (64 * n),
                         "evals": result.candidate_evals,
+                        "elapsed": elapsed,
                     }
                 )
-        (output / "greedy-recovery.json").write_text(json.dumps(replay, indent=2), encoding="utf-8")
-    finally:
-        solver._greedy_descent = original
+        print(
+            f"n={n}: "
+            + str(
+                {
+                    arm: sum(1 for r in results if r["n"] == n and r["arm"] == arm and r["solved"])
+                    for arm in ("baseline", "full_scan")
+                }
+            ),
+            flush=True,
+        )
+        (output / "greedy-screen.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
+    controls = json.loads((output / "recovery.json").read_text(encoding="utf-8"))
+    replay: list[dict[str, object]] = []
+    with sqlite3.connect("file:data/hadamard.db?mode=ro", uri=True) as connection:
+        for control in controls:
+            if control["radius"] != 1:
+                continue
+            encoded = connection.execute(
+                "SELECT seqs_b64 FROM runs WHERE id=?", (control["parent_id"],)
+            ).fetchone()[0]
+            state = decode(encoded, control["n"])
+            state.flat[control["flips"]] *= -1
+            result = solver.search(
+                state,
+                Tracker(),
+                np.random.default_rng(control["seed"]),
+                candidate_budget=250_000,
+                operators=solver.SearchOperators(greedy=full_scan),
+            )
+            if result.solved:
+                verify_candidate(result.sequences)
+            replay.append(
+                {
+                    "parent_id": control["parent_id"],
+                    "n": control["n"],
+                    "seed": control["seed"],
+                    "baseline_q": control["end_q"],
+                    "full_scan_q": result.energy // (64 * control["n"]),
+                    "evals": result.candidate_evals,
+                }
+            )
+    (output / "greedy-recovery.json").write_text(json.dumps(replay, indent=2), encoding="utf-8")
     plot_results()
 
 

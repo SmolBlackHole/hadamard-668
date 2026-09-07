@@ -42,7 +42,7 @@ def test_recovery_retains_inputs_and_refuses_overwrite(tmp_path: Path) -> None:
     assert all(row["end_q"] == 0 and row["candidate_evals"] == 24 for row in report["runs"])
     assert report["parents"][0]["seqs_b64"] == base64.b64encode(sequences.tobytes()).decode()
     assert (tmp_path / "recovery.png").is_file()
-    assert (tmp_path / "recovery-source" / "src" / "solver.py").is_file()
+    assert (tmp_path / "recovery-source" / "src" / "solver" / "engine.py").is_file()
     assert database.read_bytes() == before
     previous = output.read_bytes()
     with pytest.raises(SystemExit):

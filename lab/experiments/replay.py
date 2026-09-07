@@ -17,6 +17,7 @@ import numpy as np
 
 from src import solver
 from src.generator import RANDOM_START
+from src.solver import greedy
 from src.tracker import Tracker
 
 
@@ -28,7 +29,7 @@ def reference_scan() -> Callable[..., tuple[bool, int, int]]:
         for node in ast.parse(source).body
         if isinstance(node, ast.FunctionDef) and node.name == "_greedy_descent"
     )
-    namespace = dict(vars(solver))
+    namespace = dict(vars(greedy))
     exec(
         compile(ast.Module(body=[node], type_ignores=[]), "bb26d1d:src/solver.py", "exec"),
         namespace,
@@ -38,15 +39,10 @@ def reference_scan() -> Callable[..., tuple[bool, int, int]]:
 
 def main() -> None:
     """Replay the original experiment with its fixed pre-full-scan policy."""
-    original = solver._greedy_descent
-    solver._greedy_descent = reference_scan()
-    try:
-        replay()
-    finally:
-        solver._greedy_descent = original
+    replay(solver.SearchOperators(greedy=reference_scan()))
 
 
-def replay() -> None:
+def replay(operators: solver.SearchOperators | None = None) -> None:
     """Compare exact output bytes, preserving source and stored batch provenance."""
     revision = "bb26d1dfd87e8e533a5de2c3b98986071f851a85"
     source = subprocess.check_output(["git", "show", f"{revision}:src/solver.py"], text=True)
@@ -54,8 +50,24 @@ def replay() -> None:
     output.mkdir(parents=True, exist_ok=True)
     report: list[dict[str, object]] = []
     with tempfile.TemporaryDirectory(prefix="gs4-replay-") as directory:
+        tracker_path = Path(directory) / "baseline_tracker.py"
+        tracker_path.write_text(
+            subprocess.check_output(["git", "show", f"{revision}:src/tracker.py"], text=True),
+            encoding="utf-8",
+        )
+        tracker_name = "src._replay_baseline_tracker"
+        tracker_spec = importlib.util.spec_from_file_location(tracker_name, tracker_path)
+        assert tracker_spec is not None and tracker_spec.loader is not None
+        baseline_tracker = importlib.util.module_from_spec(tracker_spec)
+        sys.modules[tracker_name] = baseline_tracker
+        tracker_spec.loader.exec_module(baseline_tracker)
         path = Path(directory) / "baseline_solver.py"
-        path.write_text(source, encoding="utf-8")
+        path.write_text(
+            source.replace(
+                "from .tracker import Tracker", "from ._replay_baseline_tracker import Tracker"
+            ),
+            encoding="utf-8",
+        )
         name = "src._replay_baseline_solver"
         spec = importlib.util.spec_from_file_location(name, path)
         assert spec is not None and spec.loader is not None
@@ -72,14 +84,27 @@ def replay() -> None:
             ).fetchall()
         for row in pairs:
             states: dict[str, str] = {}
-            for label, module in (("master", baseline), ("research", solver)):
+            for label in ("master", "research"):
                 rng = np.random.default_rng(row["seed"])
                 start = RANDOM_START.build(56, rng)
-                result = module.search(start, Tracker(), rng, candidate_budget=row["old_budget"])
+                if label == "master":
+                    result = baseline.search(
+                        start, baseline_tracker.Tracker(), rng, candidate_budget=row["old_budget"]
+                    )
+                else:
+                    result = solver.search(
+                        start,
+                        Tracker(),
+                        rng,
+                        candidate_budget=row["old_budget"],
+                        operators=operators,
+                    )
                 states[label] = base64.b64encode(result.sequences.tobytes()).decode()
             rng = np.random.default_rng(row["seed"])
             start = RANDOM_START.build(56, rng)
-            actual = solver.search(start, Tracker(), rng, candidate_budget=row["new_budget"])
+            actual = solver.search(
+                start, Tracker(), rng, candidate_budget=row["new_budget"], operators=operators
+            )
             states["actual"] = base64.b64encode(actual.sequences.tobytes()).decode()
             record: dict[str, object] = {
                 "seed": row["seed"],
